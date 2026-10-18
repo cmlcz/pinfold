@@ -2,6 +2,12 @@
 
 Design: `idea-codemode-mcp-workflow-compiler.md`. Vocabulary: `GLOSSARY.md`. Decisions: `docs/adr/`.
 
+Packages are deep modules: see [src/packages/README.md](./src/packages/README.md) before adding or importing one.
+
+## Checks
+
+`npm run check` (type check, lint, module boundaries) and `npm test`. Source runs directly on Node's type stripping, so relative imports carry the `.ts` extension and only erasable TypeScript syntax is allowed.
+
 ## Commits
 
 - Use Conventional Commits: `type(scope): subject`, where `type` is one of `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore`. The scope is optional.
