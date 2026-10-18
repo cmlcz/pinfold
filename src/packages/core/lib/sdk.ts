@@ -72,11 +72,19 @@ function typeOf(schema: JsonSchema | boolean | undefined): string {
   if (schema === false) return "never";
   if ("const" in schema) return JSON.stringify(schema.const);
   if (Array.isArray(schema.enum)) {
+    if (schema.enum.length === 0) return "never";
     return schema.enum.map((value) => JSON.stringify(value)).join(" | ");
   }
   const union = schema.anyOf ?? schema.oneOf;
-  if (Array.isArray(union)) return union.map(typeOf).join(" | ");
-  if (Array.isArray(schema.allOf)) return schema.allOf.map(typeOf).join(" & ");
+  if (Array.isArray(union)) {
+    return union.length === 0 ? "never" : union.map(typeOf).join(" | ");
+  }
+  if (Array.isArray(schema.allOf)) {
+    if (schema.allOf.length === 0) return "unknown";
+    return schema.allOf
+      .map((member: JsonSchema) => parenthesize(typeOf(member)))
+      .join(" & ");
+  }
   if (Array.isArray(schema.type)) {
     return schema.type.map((type) => typeOf({ ...schema, type })).join(" | ");
   }
@@ -110,14 +118,27 @@ function objectType(schema: JsonSchema): string {
     ([name, field]) =>
       `${propertyKey(name)}${required.has(name) ? "" : "?"}: ${typeOf(field)}`
   );
+  // Other keys are allowed too; their values can be anything, since an
+  // index signature must cover the declared properties as well.
+  const extra = schema.additionalProperties;
+  if (extra === true || (typeof extra === "object" && extra !== null)) {
+    fields.push("[key: string]: unknown");
+  }
   return fields.length === 0 ? "{}" : `{ ${fields.join("; ")} }`;
 }
 
-// Wraps a union or intersection so `[]` applies to all of it.
+// Wraps a top-level union or intersection, so that `[]` or `&` applies to
+// all of it. Brackets and operators inside string literals do not count.
 function parenthesize(type: string): string {
   let depth = 0;
-  for (const char of type) {
-    if ("{[(<".includes(char)) depth++;
+  let quoted = false;
+  for (let i = 0; i < type.length; i++) {
+    const char = type[i]!;
+    if (quoted) {
+      if (char === "\\") i++;
+      else if (char === '"') quoted = false;
+    } else if (char === '"') quoted = true;
+    else if ("{[(<".includes(char)) depth++;
     else if ("}])>".includes(char)) depth--;
     else if (depth === 0 && (char === "|" || char === "&")) return `(${type})`;
   }

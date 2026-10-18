@@ -96,10 +96,12 @@ async function callTool(
   return result.structuredContent ?? parseJsonText(text);
 }
 
-// Many servers send JSON only as text; anything else stays a string.
+// Many servers send JSON objects and arrays only as text. Anything else,
+// including text that happens to parse as a number, stays a string.
 function parseJsonText(text: string): unknown {
   try {
-    return JSON.parse(text);
+    const value: unknown = JSON.parse(text);
+    return typeof value === "object" && value !== null ? value : text;
   } catch {
     return text;
   }

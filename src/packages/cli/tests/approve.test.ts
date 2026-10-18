@@ -30,12 +30,11 @@ afterEach(() => rm(dir, { recursive: true, force: true }));
 
 async function pinfold(...args: string[]) {
   try {
-    const { stdout } = await promisify(execFile)(process.execPath, [
-      bin,
-      ...args,
-      "--config",
-      config,
-    ]);
+    const { stdout } = await promisify(execFile)(
+      process.execPath,
+      [bin, ...args, "--config", config],
+      { timeout: 30_000 }
+    );
     return { code: 0, stdout, stderr: "" };
   } catch (error) {
     const { code, stdout, stderr } = error as {

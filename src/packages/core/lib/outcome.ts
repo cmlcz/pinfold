@@ -90,20 +90,22 @@ export function writeCount(plan: WritePlan): string {
 
 /** JSON, except that a Placeholder reads as `<write 1>.id`. */
 function formatValue(value: unknown): string {
-  const placeholders: Placeholder[] = [];
-  const json =
-    JSON.stringify(value, (_, field: unknown) => {
-      if (!(field instanceof Placeholder)) return field;
-      placeholders.push(field);
-      return token(placeholders.length - 1);
-    }) ?? "undefined";
-  return placeholders.reduce(
-    (text, placeholder, index) =>
-      text.replace(JSON.stringify(token(index)), String(placeholder)),
-    json
-  );
+  return render(value) ?? "undefined";
 }
 
-function token(index: number): string {
-  return `\u0000placeholder ${index}\u0000`;
+// Built like JSON.stringify, so that no data can be mistaken for a
+// Placeholder however it is spelled.
+function render(value: unknown): string | undefined {
+  if (value instanceof Placeholder) return String(value);
+  if (typeof value !== "object" || value === null) return JSON.stringify(value);
+  const { toJSON } = value as { toJSON?: unknown };
+  if (typeof toJSON === "function") return render(toJSON.call(value));
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => render(item) ?? "null").join(",")}]`;
+  }
+  const fields = Object.entries(value).flatMap(([key, field]) => {
+    const text = render(field);
+    return text === undefined ? [] : [`${JSON.stringify(key)}:${text}`];
+  });
+  return `{${fields.join(",")}}`;
 }

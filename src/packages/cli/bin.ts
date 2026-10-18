@@ -38,7 +38,11 @@ async function main(): Promise<number> {
     case "classify":
       return classify(rest);
     case "plans": {
-      const pending = await openPlans(root).pending();
+      const plans = openPlans(root);
+      for (const file of await plans.unreadable()) {
+        console.error(`Skipped unreadable Write Plan file ${file}`);
+      }
+      const pending = await plans.pending();
       if (pending.length === 0) console.log("No pending Write Plans.");
       for (const plan of pending) console.log(formatPlan(plan));
       return 0;
@@ -55,8 +59,12 @@ async function main(): Promise<number> {
           `Approved Write Plan ${id}. It is sent when the same code runs again and rebuilds the same plan.`
         );
       } else {
-        await plans.decline(id);
-        console.log(`Declined Write Plan ${id}. It will never be sent.`);
+        const { previous } = await plans.decline(id);
+        console.log(
+          previous === "applying"
+            ? `Declined Write Plan ${id}. No run will send it again; writes a stopped run already sent stay sent.`
+            : `Declined Write Plan ${id}. It will never be sent.`
+        );
       }
       return 0;
     }

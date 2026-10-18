@@ -29,12 +29,11 @@ afterEach(() => rm(dir, { recursive: true, force: true }));
 
 async function pinfold(...args: string[]) {
   try {
-    const { stdout } = await promisify(execFile)(process.execPath, [
-      bin,
-      ...args,
-      "--config",
-      config,
-    ]);
+    const { stdout } = await promisify(execFile)(
+      process.execPath,
+      [bin, ...args, "--config", config],
+      { timeout: 30_000 }
+    );
     return { code: 0, stdout, stderr: "" };
   } catch (error) {
     const { code, stdout, stderr } = error as {
@@ -65,6 +64,7 @@ describe("pinfold classify", () => {
       ["sentry.getIssue", "write", "read", "new"],
       ["sentry.listIssueEvents", "write", "read", "new"],
       ["sentry.listProjects", "write", "write", "new"],
+      ["sentry.getProjectTeam", "write", "read", "new"],
       ["linear.searchIssues", "write", "read", "new"],
       ["linear.createIssue", "write", "write", "new"],
     ]);

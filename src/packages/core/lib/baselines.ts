@@ -76,6 +76,9 @@ export async function openBaselines(root: string): Promise<Baselines> {
       const id = baselineKey(tool.server, tool.tool);
       if (pinned.has(id)) return;
       if (tool.outputSchema !== undefined) return pin(tool, tool.outputSchema);
+      // Plain text, an empty answer or a bare number says nothing reliable
+      // about the shape of the Tool's later responses.
+      if (typeof response !== "object" || response === null) return;
       const merged = mergeSchemas(observed.get(id), inferSchema(response));
       if (isFullyObserved(merged)) return pin(tool, forPinning(merged));
       observed.set(id, merged);

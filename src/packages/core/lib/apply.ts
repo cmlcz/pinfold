@@ -35,7 +35,7 @@ export function resolvePlaceholders(
       if (
         typeof resolved !== "object" ||
         resolved === null ||
-        !(step in resolved)
+        !Object.hasOwn(resolved, step)
       ) {
         throw new Error(`${value} has no value in the real result`);
       }

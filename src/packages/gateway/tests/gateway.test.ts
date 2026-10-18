@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { openPlans } from "../../core/index.ts";
 import { driftKitCommand } from "../../drift-kit/index.ts";
 
 let dir: string;
@@ -125,6 +126,32 @@ describe("Gateway", () => {
         ].join("\n")
       )
     );
+  });
+
+  it("applies a plan the developer approved when the agent runs the code again", async () => {
+    const run = () =>
+      client.callTool({
+        name: "run_sandbox",
+        arguments: {
+          code: `export async function main() {
+            const ticket = await sdk.linear.createIssue({ title: "Fix totals" });
+            return [ticket.identifier];
+          }`,
+        },
+      });
+    const pending = await run();
+    const [first] = pending.content as [{ type: "text"; text: string }];
+    const id = /pinfold approve ([0-9a-f]{12})/.exec(first.text)![1]!;
+
+    await openPlans(dir).approve(id);
+    const applied = await run();
+
+    expect(applied.content).toEqual([
+      {
+        type: "text",
+        text: `["ENG-102"]\n\nApplied Write Plan ${id}: 1 write sent.`,
+      },
+    ]);
   });
 
   it("reports a failed run as a tool error", async () => {

@@ -1,7 +1,7 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Core } from "../index.ts";
+import { formatPlan, type Core } from "../index.ts";
 import { createWorkspace, sentryReads, type Workspace } from "./workspace.ts";
 
 let ws: Workspace;
@@ -139,12 +139,13 @@ describe("Plan", () => {
     const result = await core.explore({
       code: `export async function main() {
         await sdk.linear.createIssue({ title: "Fix checkout totals" });
-        const { issues } = await sdk.linear.searchIssues({ query: "checkout" });
-        return issues.length;
+        const planned = await sdk.linear.searchIssues({ query: "checkout" });
+        const existing = await sdk.linear.searchIssues({ query: "deadlock" });
+        return [planned.issues.length, existing.issues.length];
       }`,
     });
 
-    expect(result).toMatchObject({ ok: true, value: 0 });
+    expect(result).toMatchObject({ ok: true, value: [0, 1] });
   });
 });
 
@@ -164,38 +165,54 @@ describe("Write Tools in the SDK", () => {
 
 describe("Placeholder rules", () => {
   it.each([
-    ["compares", "return ticket.title.length > 5;"],
-    ["formats", "return `#${ticket.identifier}`;"],
-    ["converts", "return String(ticket.id);"],
-    ["serializes", "return JSON.stringify(ticket);"],
-    ["lists the keys of", "return Object.keys(ticket);"],
-    ["tests a key of", 'return "id" in ticket;'],
+    [
+      "compares",
+      "return ticket.title.length > 5;",
+      "read, compared or formatted",
+    ],
+    [
+      "formats",
+      "return `#${ticket.identifier}`;",
+      "read, compared or formatted",
+    ],
+    ["converts", "return String(ticket.id);", "read, compared or formatted"],
+    // JSON.stringify calls the Placeholder's toJSON, which is itself one.
+    ["serializes", "return JSON.stringify(ticket);", "called"],
+    ["lists the keys of", "return Object.keys(ticket);", "inspected"],
+    ["tests a key of", 'return "id" in ticket;', "inspected"],
     [
       "catches the error after it reads",
       "try { return `${ticket.id}`; } catch { return 'escaped'; }",
+      "read, compared or formatted",
     ],
-    ["calls a method of", "return ticket.title.toUpperCase();"],
+    ["calls a method of", "return ticket.title.toUpperCase();", "called"],
     [
       "catches the error after it calls",
       "try { return ticket.title.toUpperCase(); } catch { return 'escaped'; }",
+      "called",
     ],
-  ])("fails the Plan at the line that %s a Placeholder", async (_, use) => {
-    const core = await openTriage();
+  ])(
+    "fails the Plan at the line that %s a Placeholder",
+    async (_, use, operation) => {
+      const core = await openTriage();
 
-    const result = await core.explore({
-      code: [
-        "export async function main() {",
-        '  const ticket = await sdk.linear.createIssue({ title: "T" });',
-        `  ${use}`,
-        "}",
-      ].join("\n"),
-    });
+      const result = await core.explore({
+        code: [
+          "export async function main() {",
+          '  const ticket = await sdk.linear.createIssue({ title: "T" });',
+          `  ${use}`,
+          "}",
+        ].join("\n"),
+      });
 
-    expect(result.ok).toBe(false);
-    expect(!result.ok && result.error).toMatch(
-      /^PlaceholderError: .+\n\s+at main \(program\.ts:3:\d+\)/
-    );
-  });
+      expect(result.ok).toBe(false);
+      expect(!result.ok && result.error).toMatch(
+        new RegExp(
+          `^PlaceholderError: a Placeholder cannot be ${operation} during a Plan.*\\n\\s+at main \\(program\\.ts:3:\\d+\\)`
+        )
+      );
+    }
+  );
 
   it("fails the Plan when a Placeholder is passed to a Read Tool", async () => {
     const core = await openTriage();
@@ -235,6 +252,62 @@ describe("Data that looks like a Placeholder", () => {
     });
 
     expect(result).toMatchObject({ ok: true, value: lookalike });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.plan.writes).toEqual([
+      {
+        tool: "linear.createIssue",
+        arguments: { description: JSON.stringify(lookalike), title: "T" },
+      },
+    ]);
+  });
+});
+
+describe("The readable Write Plan", () => {
+  it("shows data that looks like a Placeholder as data", async () => {
+    const core = await openTriage();
+    const lookalike = "\u0000placeholder 0\u0000";
+
+    const result = await core.explore({
+      code: `export async function main() {
+        const parent = await sdk.linear.createIssue({ title: "Parent" });
+        await sdk.linear.createIssue({
+          assigneeEmail: ${JSON.stringify(lookalike)},
+          title: "Child",
+          description: parent.url,
+        });
+        // @ts-expect-error -- a path that String.replace would garble
+        await sdk.linear.createIssue({ title: "Odd", description: parent["$&"] });
+      }`,
+    });
+    if (!result.ok) throw new Error(result.error);
+
+    expect(formatPlan(result.plan)).toBe(
+      [
+        `Write Plan ${result.plan.id}: 3 writes, none sent yet`,
+        '  1. linear.createIssue {"title":"Parent"}',
+        `  2. linear.createIssue {"assigneeEmail":${JSON.stringify(lookalike)},"description":<write 1>.url,"title":"Child"}`,
+        '  3. linear.createIssue {"description":<write 1>.$&,"title":"Odd"}',
+      ].join("\n")
+    );
+  });
+});
+
+describe("Servers named like Object members", () => {
+  it("work like any other server and leave Object alone", async () => {
+    const core = await ws.open({
+      servers: { constructor: ws.sentry("ctor") },
+      classification: { constructor: sentryReads.sentry },
+    });
+
+    const result = await core.explore({
+      code: `export async function main() {
+        const { issues } = await sdk.constructor.listIssues({ project: "api" });
+        return issues.map((issue) => issue.shortId);
+      }`,
+    });
+
+    expect(result).toMatchObject({ ok: true, value: ["API-2A"] });
+    expect(Object.hasOwn(Object, "listIssues")).toBe(false);
   });
 });
 
