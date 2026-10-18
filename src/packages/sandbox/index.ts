@@ -8,6 +8,7 @@ export type {
 } from "./lib/types.ts";
 export { quickJsSandbox } from "./lib/quickjs.ts";
 export {
+  decodeValue,
   encodeValue,
   Placeholder,
   PlaceholderError,

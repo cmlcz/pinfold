@@ -14,7 +14,7 @@ export function createGateway(core: Core): McpServer {
         "The program must `export async function main(input)`; `input` is passed through.",
         "Call a Downstream Server's Tool with `await sdk.<server>.<tool>(args)`; find signatures with search_sdk.",
         "The program is type-checked against the SDK before it runs.",
-        "Each run is a Plan: Read Tools run live, but calls to Write Tools are only recorded into a Write Plan and return a Placeholder. Pass a Placeholder to other Write Tools or return it; reading, comparing, formatting or calling it fails the run. A Placeholder is always truthy, so never branch on one. The result lists the Write Plan; nothing is sent.",
+        "Each run is a Plan: Read Tools run live, but calls to Write Tools are only recorded into a Write Plan and return a Placeholder. Pass a Placeholder to other Write Tools or return it; reading, comparing, formatting or calling it fails the run. A Placeholder is always truthy, so never branch on one. The result lists the Write Plan and nothing is sent until the developer approves it in a terminal; then running the same code again applies it and returns real values.",
         "The sandbox has no filesystem, network, environment, timers or imports, and each run has time, memory and Tool-call limits.",
         "main's return value must be JSON-serializable.",
       ].join("\n"),
@@ -30,7 +30,7 @@ export function createGateway(core: Core): McpServer {
             content: [
               {
                 type: "text",
-                text: formatOutcome(result.value, result.plan),
+                text: formatOutcome(result),
               },
             ],
           }

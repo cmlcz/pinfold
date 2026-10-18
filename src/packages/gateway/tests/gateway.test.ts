@@ -117,7 +117,11 @@ describe("Gateway", () => {
           "",
           String.raw`Write Plan [0-9a-f]{12}: 2 writes, none sent yet`,
           String.raw`  1\. linear\.createIssue \{"title":"Fix totals"\}`,
-          String.raw`  2\. linear\.createIssue \{"description":<write 1>\.url,"title":"Follow up"\}$`,
+          String.raw`  2\. linear\.createIssue \{"description":<write 1>\.url,"title":"Follow up"\}`,
+          "",
+          "To send these writes, ask the developer to approve the plan in a terminal:",
+          String.raw`  pinfold approve [0-9a-f]{12}`,
+          String.raw`Then call run_sandbox again with the same code and input to apply it\.$`,
         ].join("\n")
       )
     );
