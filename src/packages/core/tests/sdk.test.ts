@@ -76,13 +76,37 @@ describe("Baselines", () => {
         slug: { type: "string" },
         name: { type: "string" },
         platform: { type: "string" },
+        // Seen as a string and as null.
+        team: { anyOf: [{ type: "string" }, { type: "null" }] },
+        // Only ever seen as null, so its type is still unknown.
+        archivedAt: {},
       },
-      required: ["slug", "name", "platform"],
+      required: ["slug", "name", "platform", "team", "archivedAt"],
     };
     expect((await readBaseline("sentry.listProjects")).outputSchema).toEqual({
       type: "object",
       properties: { projects: { type: "array", items: project } },
       required: ["projects"],
+    });
+  });
+
+  it("waits to pin an inferred shape until a response shows what its arrays hold", async () => {
+    const core = await ws.open();
+    const listProjects = (platform?: string) =>
+      core.explore({
+        code: `export async function main(input: { platform?: string }) {
+          await sdk.sentry.listProjects(input);
+        }`,
+        input: platform === undefined ? {} : { platform },
+      });
+
+    await listProjects("go");
+    await expect(readdir(baselines())).rejects.toThrow(/ENOENT/);
+
+    await listProjects();
+    const { outputSchema } = await readBaseline("sentry.listProjects");
+    expect(outputSchema.properties.projects.items.properties.slug).toEqual({
+      type: "string",
     });
   });
 
@@ -202,7 +226,7 @@ describe("search_sdk", () => {
       core.searchSdk("projects of the organization")[0]!.split("\n")[1];
 
     expect(listProjects()).toBe(
-      "sdk.sentry.listProjects(args?: {}): Promise<unknown>"
+      "sdk.sentry.listProjects(args?: { platform?: string }): Promise<unknown>"
     );
 
     await core.explore({
@@ -210,7 +234,7 @@ describe("search_sdk", () => {
     });
 
     expect(listProjects()).toBe(
-      "sdk.sentry.listProjects(args?: {}): Promise<{ projects: { slug: string; name: string; platform: string }[] }>"
+      "sdk.sentry.listProjects(args?: { platform?: string }): Promise<{ projects: { slug: string; name: string; platform: string; team: string | null; archivedAt: unknown }[] }>"
     );
   });
 

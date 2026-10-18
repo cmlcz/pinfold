@@ -90,15 +90,18 @@ export function createSentryServer(world: World<SentryState>): McpServer {
   // No outputSchema and text-only JSON, as many real servers answer.
   server.registerTool(
     "listProjects",
-    { description: "List the Sentry projects of the organization." },
-    async () => ({
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({ projects: world.state.projects }),
-        },
-      ],
-    })
+    {
+      description: "List the Sentry projects of the organization.",
+      inputSchema: z.object({ platform: z.string().optional() }),
+    },
+    async ({ platform }) => {
+      const projects = world.state.projects.filter(
+        (project) => platform === undefined || project.platform === platform
+      );
+      return {
+        content: [{ type: "text", text: JSON.stringify({ projects }) }],
+      };
+    }
   );
 
   return server;

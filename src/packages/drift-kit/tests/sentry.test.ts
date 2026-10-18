@@ -81,11 +81,31 @@ describe("Sentry-shaped Drift Kit server", () => {
         type: "text",
         text: JSON.stringify({
           projects: [
-            { slug: "web", name: "Web storefront", platform: "javascript" },
-            { slug: "api", name: "Orders API", platform: "node" },
+            {
+              slug: "web",
+              name: "Web storefront",
+              platform: "javascript",
+              team: "storefront",
+              archivedAt: null,
+            },
+            {
+              slug: "api",
+              name: "Orders API",
+              platform: "node",
+              team: null,
+              archivedAt: null,
+            },
           ],
         }),
       },
+    ]);
+
+    const goProjects = await client.callTool({
+      name: "listProjects",
+      arguments: { platform: "go" },
+    });
+    expect(goProjects.content).toEqual([
+      { type: "text", text: JSON.stringify({ projects: [] }) },
     ]);
   });
 
