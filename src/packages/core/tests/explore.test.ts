@@ -217,8 +217,8 @@ describe("Exploration limits", () => {
     const result = await core.explore({
       code: `
         export async function main() {
-          const chunks: string[] = [];
-          while (true) chunks.push("x".repeat(1024) + chunks.length);
+          const buffers: Uint8Array[] = [];
+          while (true) buffers.push(new Uint8Array(1024 * 1024));
         }
       `,
     });
