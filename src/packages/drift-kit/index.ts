@@ -1,6 +1,8 @@
 import { fileURLToPath } from "node:url";
 
-export type DriftKitServerName = "sentry";
+import type { DriftKitServerName } from "./lib/servers.ts";
+
+export type { DriftKitServerName };
 
 /** The command that runs a Drift Kit server as a stdio MCP Downstream Server. */
 export function driftKitCommand(

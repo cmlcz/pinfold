@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod";
-import type { Core } from "../core/index.ts";
+import { formatOutcome, type Core } from "../core/index.ts";
 
 /** The MCP server the agent connects to. It holds no logic of its own. */
 export function createGateway(core: Core): McpServer {
@@ -14,6 +14,7 @@ export function createGateway(core: Core): McpServer {
         "The program must `export async function main(input)`; `input` is passed through.",
         "Call a Downstream Server's Tool with `await sdk.<server>.<tool>(args)`; find signatures with search_sdk.",
         "The program is type-checked against the SDK before it runs.",
+        "Each run is a Plan: Read Tools run live, but calls to Write Tools are only recorded into a Write Plan and return a Placeholder. Pass a Placeholder to other Write Tools or return it; reading, comparing, formatting or calling it fails the run. A Placeholder is always truthy, so never branch on one. The result lists the Write Plan; nothing is sent.",
         "The sandbox has no filesystem, network, environment, timers or imports, and each run has time, memory and Tool-call limits.",
         "main's return value must be JSON-serializable.",
       ].join("\n"),
@@ -29,7 +30,7 @@ export function createGateway(core: Core): McpServer {
             content: [
               {
                 type: "text",
-                text: JSON.stringify(result.value) ?? "undefined",
+                text: formatOutcome(result.value, result.plan),
               },
             ],
           }

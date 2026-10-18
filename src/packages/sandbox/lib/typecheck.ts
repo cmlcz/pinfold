@@ -5,14 +5,14 @@ import ts from "typescript";
 const programFile = "/pinfold/program.ts";
 const sdkFile = "/pinfold/sdk.d.ts";
 
-// Strict, except that unannotated parameters stay allowed while exploring.
+// Plain strict mode. Turning off noImplicitAny would type `const xs = []` as
+// never[] and break the most common way of collecting results.
 const options: ts.CompilerOptions = {
   target: ts.ScriptTarget.ES2023,
   lib: ["lib.es2023.d.ts"],
   module: ts.ModuleKind.ESNext,
   moduleResolution: ts.ModuleResolutionKind.Bundler,
   strict: true,
-  noImplicitAny: false,
   noEmit: true,
   types: [],
 };

@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod";
+import { structured } from "../reply.ts";
 import { createWorld, type World } from "../world.ts";
 import {
   eventSchema,
@@ -35,15 +36,13 @@ export function createSentryServer(world: World<SentryState>): McpServer {
       description: "List the issues of a Sentry project.",
       inputSchema: z.object({ project: z.string() }),
       outputSchema: z.object({ issues: z.array(issueSchema) }),
+      annotations: { readOnlyHint: true },
     },
     async ({ project }) => {
       const output = {
         issues: world.state.issues.filter((issue) => issue.project === project),
       };
-      return {
-        content: [{ type: "text", text: JSON.stringify(output) }],
-        structuredContent: output,
-      };
+      return structured(output);
     }
   );
 
@@ -53,6 +52,7 @@ export function createSentryServer(world: World<SentryState>): McpServer {
       description: "Get one Sentry issue by its id.",
       inputSchema: z.object({ id: z.string() }),
       outputSchema: issueSchema,
+      annotations: { readOnlyHint: true },
     },
     async ({ id }) => {
       const issue = world.state.issues.find((issue) => issue.id === id);
@@ -62,10 +62,7 @@ export function createSentryServer(world: World<SentryState>): McpServer {
           isError: true,
         };
       }
-      return {
-        content: [{ type: "text", text: JSON.stringify(issue) }],
-        structuredContent: issue,
-      };
+      return structured(issue);
     }
   );
 
@@ -75,15 +72,13 @@ export function createSentryServer(world: World<SentryState>): McpServer {
       description: "List the events recorded for a Sentry issue, newest first.",
       inputSchema: z.object({ issueId: z.string() }),
       outputSchema: z.object({ events: z.array(eventSchema) }),
+      annotations: { readOnlyHint: true },
     },
     async ({ issueId }) => {
       const output = {
         events: world.state.events.filter((event) => event.issueId === issueId),
       };
-      return {
-        content: [{ type: "text", text: JSON.stringify(output) }],
-        structuredContent: output,
-      };
+      return structured(output);
     }
   );
 

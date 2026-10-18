@@ -83,7 +83,7 @@ The subset of a Tool's Baseline response shape that a specific Workflow actually
 _Avoid_: schema, assertion, expectation
 
 **Drift**:
-A discrepancy between a Tool's live responses (after its current Response Adapter) and its pinned Baseline. A Workflow is affected only when Drift touches its Contract.
+A discrepancy between a Tool as its Downstream Server offers it now (its responses after the current Response Adapter, or the inputs it accepts) and its pinned Baseline. A Workflow is affected only when Drift touches its Contract or the inputs it sends.
 _Avoid_: breaking change, API change, schema mismatch
 
 **Response Adapter**:

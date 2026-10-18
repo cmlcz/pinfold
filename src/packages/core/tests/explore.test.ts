@@ -40,7 +40,7 @@ describe("Exploration Run", () => {
       input: { project: "web" },
     });
 
-    expect(result).toEqual({ ok: true, value: ["WEB-1A", "WEB-1C"] });
+    expect(result).toMatchObject({ ok: true, value: ["WEB-1A", "WEB-1C"] });
   });
 });
 
@@ -109,7 +109,7 @@ describe("Exploration isolation", () => {
       `,
     });
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: true,
       value: { present: [], escaped: "undefined" },
     });
@@ -170,7 +170,7 @@ describe("Exploration isolation", () => {
       `,
     });
 
-    expect(result).toEqual({ ok: true, value: "blocked" });
+    expect(result).toMatchObject({ ok: true, value: "blocked" });
   });
 });
 
@@ -312,7 +312,7 @@ describe("Exploration errors", () => {
       `,
     });
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: true,
       value: expect.stringMatching(/^Error: sentry\.listIssues failed: /),
     });

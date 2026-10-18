@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createWorkspace, type Workspace } from "./workspace.ts";
+import { createWorkspace, sentryReads, type Workspace } from "./workspace.ts";
 
 let ws: Workspace;
 
@@ -31,7 +31,7 @@ describe("Baselines", () => {
       }`,
     });
 
-    expect(result).toEqual({ ok: true, value: ["web", "api"] });
+    expect(result).toMatchObject({ ok: true, value: ["web", "api"] });
     expect((await readdir(baselines())).sort()).toEqual([
       "sentry.listIssues.json",
       "sentry.listProjects.json",
@@ -241,6 +241,7 @@ describe("search_sdk", () => {
   it("keeps same-named Tools of different Downstream Servers apart by namespace", async () => {
     const core = await ws.open({
       servers: { sentry: ws.sentry("sentry"), staging: ws.sentry("staging") },
+      classification: { ...sentryReads, staging: sentryReads.sentry },
     });
 
     expect(
@@ -253,6 +254,6 @@ describe("search_sdk", () => {
         return [a.shortId, b.shortId];
       }`,
     });
-    expect(result).toEqual({ ok: true, value: ["WEB-1A", "API-2A"] });
+    expect(result).toMatchObject({ ok: true, value: ["WEB-1A", "API-2A"] });
   });
 });
