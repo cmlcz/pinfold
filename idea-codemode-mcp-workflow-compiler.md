@@ -78,16 +78,15 @@ export async function main(input: { project: string; minEvents: number }) {
 }
 ```
 
-The code runs inside the sandbox. Large Sentry responses stay in the sandbox, and only the return value is sent back to the agent. Along the way, pinfold records the **Fixtures** (requests and responses) and tracks which response fields the code actually read.
+The code runs inside the sandbox, under the same Plan rules as any Workflow Run: the `createIssue` calls are recorded into a Write Plan and need Approval before Apply, so even freshly written code cannot send a write unseen. Large Sentry responses stay in the sandbox, and only the return value (with Placeholders replaced by real results after Apply) is sent back to the agent. Along the way, pinfold records the **Fixtures** (requests and responses) and tracks which response fields the code actually read.
 
 ### 3.2 Saving the Workflow
 
 The developer says *"save that as `triage_sentry`"*. `save_workflow` succeeds only if every check passes:
 
 - the code exports a typed `main(input)` function;
-- the Exploration Run finished without error;
-- the code type-checks against the generated SDK;
-- re-running the code as a Plan succeeds, proving that all Placeholder rules hold; and
+- the Exploration Run, which itself ran as a Plan, finished without error and respected the Placeholder rules;
+- the code type-checks against the generated SDK; and
 - the developer has confirmed the Exploration Run's result.
 
 When those checks pass, pinfold writes:
@@ -136,8 +135,8 @@ Two months later, Sentry's MCP server renames `count` to `eventCount`.
                  │ MCP (stdio)                                                   │
                  ▼                                                               ▼
  ┌──────────────────────────────────── pinfold ───────────────────────────────────────┐
- │  Gateway: fixed tool set: search_sdk, run_sandbox, save_workflow,                  │
- │           list_workflows, run_workflow (per-Workflow tools opt-in)                 │
+ │  Gateway: fixed tool set: search_sdk, run_sandbox, save_workflow, list_workflows,  │
+ │           run_workflow, propose_repair (per-Workflow tools opt-in)                 │
  │                                                                                    │
  │  SDK generator ── Tool classification (Read/Write) ── search index                 │
  │  Sandbox (QuickJS/Wasm) ◄── sdk.* bridge ── Plan engine (Placeholders, field use)  │
@@ -205,7 +204,7 @@ Two months later, Sentry's MCP server renames `count` to `eventCount`.
 ## 7. Scope
 
 **In v1:**
-- MCP Gateway with the fixed tool set (`search_sdk`, `run_sandbox`, `save_workflow`, `list_workflows`, `run_workflow`), supporting `stdio` and Streamable HTTP Downstream Servers with static headers.
+- MCP Gateway with the fixed tool set (`search_sdk`, `run_sandbox`, `save_workflow`, `list_workflows`, `run_workflow`, `propose_repair`), supporting `stdio` and Streamable HTTP Downstream Servers with static headers.
 - Per-Tool Read/Write classification, TypeScript SDK generation from Baselines, and SDK signature search.
 - Isolated QuickJS/Wasm sandbox with resource and call limits.
 - Exploration Runs and `save_workflow` validation gates.
