@@ -13,6 +13,8 @@ export type Limits = {
 export type Program = {
   /** TypeScript source that exports `main(input)`. */
   source: string;
+  /** Declarations of `sdk` that the source must type-check against. */
+  declarations: string;
   input: unknown;
   sdk: Sdk;
   limits: Limits;

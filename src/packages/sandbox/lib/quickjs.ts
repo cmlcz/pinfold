@@ -34,7 +34,7 @@ const runner = `async (input) => {
 
 export const quickJsSandbox: Sandbox = {
   async run(program) {
-    const compiled = compile(program.source);
+    const compiled = compile(program.source, program.declarations);
     if (!compiled.ok) return compiled;
 
     // A fresh module per run, so a fault inside one run cannot outlive it.

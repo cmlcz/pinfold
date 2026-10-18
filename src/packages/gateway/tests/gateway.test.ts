@@ -35,10 +35,40 @@ afterEach(async () => {
 });
 
 describe("Gateway", () => {
-  it("runs an agent's program through run_sandbox and returns only its result", async () => {
+  it("exposes only its own fixed tools", async () => {
     const { tools } = await client.listTools();
-    expect(tools.map((tool) => tool.name)).toEqual(["run_sandbox"]);
+    expect(tools.map((tool) => tool.name).sort()).toEqual([
+      "run_sandbox",
+      "search_sdk",
+    ]);
+  });
 
+  it("returns only the SDK signatures that match a search", async () => {
+    const result = await client.callTool({
+      name: "search_sdk",
+      arguments: { query: "events recorded for an issue" },
+    });
+
+    expect(result.isError).toBeFalsy();
+    const [content] = result.content as [{ type: "text"; text: string }];
+    expect(content.text).toMatch(
+      /^\/\*\* List the events recorded for a Sentry issue/
+    );
+    expect(content.text).toContain(
+      "sdk.sentry.listIssueEvents(args: { issueId: string })"
+    );
+    expect(content.text).not.toContain("listProjects");
+
+    const none = await client.callTool({
+      name: "search_sdk",
+      arguments: { query: "kubernetes" },
+    });
+    expect(none.content).toEqual([
+      { type: "text", text: 'No Tools match "kubernetes".' },
+    ]);
+  });
+
+  it("runs an agent's program through run_sandbox and returns only its result", async () => {
     const result = await client.callTool({
       name: "run_sandbox",
       arguments: {

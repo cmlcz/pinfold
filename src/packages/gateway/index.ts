@@ -12,7 +12,8 @@ export function createGateway(core: Core): McpServer {
       description: [
         "Run a TypeScript program in an isolated sandbox and get back only its return value.",
         "The program must `export async function main(input)`; `input` is passed through.",
-        "Call a Downstream Server's Tool with `await sdk.<server>.<tool>(args)`.",
+        "Call a Downstream Server's Tool with `await sdk.<server>.<tool>(args)`; find signatures with search_sdk.",
+        "The program is type-checked against the SDK before it runs.",
         "The sandbox has no filesystem, network, environment, timers or imports, and each run has time, memory and Tool-call limits.",
         "main's return value must be JSON-serializable.",
       ].join("\n"),
@@ -33,6 +34,25 @@ export function createGateway(core: Core): McpServer {
             ],
           }
         : { content: [{ type: "text", text: result.error }], isError: true };
+    }
+  );
+
+  server.registerTool(
+    "search_sdk",
+    {
+      description:
+        "Search the sdk available to run_sandbox programs by keywords. Returns the TypeScript signatures of the matching Tools only.",
+      inputSchema: z.object({
+        query: z.string().describe("Keywords describing the task"),
+      }),
+    },
+    async ({ query }) => {
+      const signatures = core.searchSdk(query);
+      const text =
+        signatures.length > 0
+          ? signatures.join("\n\n")
+          : `No Tools match ${JSON.stringify(query)}.`;
+      return { content: [{ type: "text", text }] };
     }
   );
 

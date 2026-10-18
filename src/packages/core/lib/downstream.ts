@@ -2,10 +2,10 @@
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import type { ServerConfig } from "./config.ts";
+import type { SdkTool } from "./sdk.ts";
 
-export type DownstreamTool = {
-  server: string;
-  name: string;
+/** A Tool as its Downstream Server lists it now, before any Baseline. */
+export type DownstreamTool = SdkTool & {
   call(args: unknown): Promise<unknown>;
 };
 
@@ -56,7 +56,14 @@ async function connect(server: string, config: ServerConfig) {
       client,
       tools: tools.map((tool): DownstreamTool => ({
         server,
-        name: tool.name,
+        tool: tool.name,
+        ...(tool.description !== undefined && {
+          description: tool.description,
+        }),
+        inputSchema: tool.inputSchema,
+        ...(tool.outputSchema !== undefined && {
+          outputSchema: tool.outputSchema,
+        }),
         call: (args) => callTool(client, server, tool.name, args),
       })),
     };
@@ -83,5 +90,14 @@ async function callTool(
     .flatMap((part) => (part.type === "text" ? [part.text] : []))
     .join("\n");
   if (result.isError) throw new Error(`${server}.${name} failed: ${text}`);
-  return result.structuredContent ?? text;
+  return result.structuredContent ?? parseJsonText(text);
+}
+
+// Many servers send JSON only as text; anything else stays a string.
+function parseJsonText(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
 }

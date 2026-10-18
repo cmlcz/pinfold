@@ -1,35 +1,26 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { driftKitCommand } from "../../drift-kit/index.ts";
 import {
   loadConfig,
   openCore,
   type Core,
   type PinfoldConfig,
 } from "../index.ts";
+import { createWorkspace, type Workspace } from "./workspace.ts";
 
-let dir: string;
+let ws: Workspace;
 let core: Core;
 
-async function open(config: Omit<PinfoldConfig, "servers"> = {}) {
-  core = await openCore({
-    ...config,
-    servers: {
-      sentry: driftKitCommand("sentry", { control: join(dir, "sentry.sock") }),
-    },
-  });
+async function open(config: Partial<PinfoldConfig> = {}) {
+  core = await ws.open(config);
 }
 
 beforeEach(async () => {
-  dir = await mkdtemp(join(tmpdir(), "pinfold-core-"));
+  ws = await createWorkspace();
 });
 
-afterEach(async () => {
-  await core?.close();
-  await rm(dir, { recursive: true, force: true });
-});
+afterEach(() => ws.close());
 
 describe("Exploration Run", () => {
   it("runs TypeScript that calls a Downstream Server Tool and returns only main's result", async () => {
@@ -55,14 +46,16 @@ describe("Exploration Run", () => {
 
 describe("Configuration", () => {
   it("loads Downstream Servers and limits from a config file", async () => {
-    const path = join(dir, "pinfold.json");
-    const sentry = driftKitCommand("sentry", { control: join(dir, "s.sock") });
+    const path = join(ws.dir, "pinfold.json");
     await writeFile(
       path,
-      JSON.stringify({ servers: { sentry }, limits: { toolCalls: 1 } })
+      JSON.stringify({
+        servers: { sentry: ws.sentry() },
+        limits: { toolCalls: 1 },
+      })
     );
 
-    core = await openCore(await loadConfig(path));
+    core = await ws.open(await loadConfig(path));
     const result = await core.explore({
       code: `export async function main() {
         await sdk.sentry.listIssues({ project: "web" });
@@ -77,7 +70,7 @@ describe("Configuration", () => {
   });
 
   it("rejects a config file that does not match the expected shape", async () => {
-    const path = join(dir, "pinfold.json");
+    const path = join(ws.dir, "pinfold.json");
     await writeFile(
       path,
       JSON.stringify({ servers: { sentry: { args: [] } } })
@@ -90,7 +83,10 @@ describe("Configuration", () => {
 
   it("names the Downstream Server that cannot be started", async () => {
     await expect(
-      openCore({ servers: { broken: { command: join(dir, "missing") } } })
+      openCore(
+        { servers: { broken: { command: join(ws.dir, "missing") } } },
+        { root: ws.dir }
+      )
     ).rejects.toThrow(/Downstream Server "broken" could not be started/);
   });
 });
@@ -145,7 +141,8 @@ describe("Exploration isolation", () => {
       await open();
 
       const result = await core.explore({
-        code: `import { ${binding} } from "${module}";
+        code: `// @ts-expect-error -- skip the type check to reach the runtime
+        import { ${binding} } from "${module}";
         export async function main() { return ${use}; }`,
       });
 
@@ -163,6 +160,7 @@ describe("Exploration isolation", () => {
       code: `
         export async function main() {
           try {
+            // @ts-expect-error -- skip the type check to reach the runtime
             const fs = await import("node:fs");
             return Object.keys(fs);
           } catch (error) {
@@ -304,6 +302,7 @@ describe("Exploration errors", () => {
       code: `
         export async function main() {
           try {
+            // @ts-expect-error -- send arguments the server rejects
             await sdk.sentry.listIssues({ project: 42 });
             return "no error";
           } catch (error) {
