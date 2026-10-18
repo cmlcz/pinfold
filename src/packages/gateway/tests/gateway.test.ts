@@ -14,7 +14,17 @@ beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "pinfold-gateway-"));
   const config = join(dir, "pinfold.json");
   const sentry = driftKitCommand("sentry", { control: join(dir, "s.sock") });
-  await writeFile(config, JSON.stringify({ servers: { sentry } }));
+  const linear = driftKitCommand("linear", { control: join(dir, "l.sock") });
+  await writeFile(
+    config,
+    JSON.stringify({
+      servers: { sentry, linear },
+      classification: {
+        sentry: { listIssues: "read", listIssueEvents: "read" },
+        linear: { searchIssues: "read" },
+      },
+    })
+  );
 
   client = new Client({ name: "gateway-test", version: "0.0.0" });
   await client.connect(
@@ -84,6 +94,33 @@ describe("Gateway", () => {
       content: [{ type: "text", text: "3" }],
     });
     expect(result.isError).toBeFalsy();
+  });
+
+  it("returns the Write Plan of a run that writes, with nothing sent", async () => {
+    const result = await client.callTool({
+      name: "run_sandbox",
+      arguments: {
+        code: `export async function main() {
+          const ticket = await sdk.linear.createIssue({ title: "Fix totals" });
+          await sdk.linear.createIssue({ title: "Follow up", description: ticket.url });
+          return { created: ticket.identifier };
+        }`,
+      },
+    });
+
+    expect(result.isError).toBeFalsy();
+    const [content] = result.content as [{ type: "text"; text: string }];
+    expect(content.text).toMatch(
+      new RegExp(
+        [
+          String.raw`^\{"created":<write 1>\.identifier\}`,
+          "",
+          String.raw`Write Plan [0-9a-f]{12}: 2 writes, none sent yet`,
+          String.raw`  1\. linear\.createIssue \{"title":"Fix totals"\}`,
+          String.raw`  2\. linear\.createIssue \{"description":<write 1>\.url,"title":"Follow up"\}$`,
+        ].join("\n")
+      )
+    );
   });
 
   it("reports a failed run as a tool error", async () => {

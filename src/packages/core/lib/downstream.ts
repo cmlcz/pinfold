@@ -6,6 +6,8 @@ import type { SdkTool } from "./sdk.ts";
 
 /** A Tool as its Downstream Server lists it now, before any Baseline. */
 export type DownstreamTool = SdkTool & {
+  /** The server's own claim that the Tool changes nothing; untrusted (ADR 0004). */
+  readOnlyHint: boolean;
   call(args: unknown): Promise<unknown>;
 };
 
@@ -64,6 +66,7 @@ async function connect(server: string, config: ServerConfig) {
         ...(tool.outputSchema !== undefined && {
           outputSchema: tool.outputSchema,
         }),
+        readOnlyHint: tool.annotations?.readOnlyHint === true,
         call: (args) => callTool(client, server, tool.name, args),
       })),
     };
