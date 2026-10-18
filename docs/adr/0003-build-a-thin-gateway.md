@@ -1,0 +1,4 @@
+# Build a thin Gateway instead of reusing an existing code-mode implementation
+
+Code mode for MCP is already well established (Cloudflare Code Mode, Anthropic programmatic tool calling, and several open-source implementations). However, none of these tools exposes the boundary between the sandbox and the Downstream Servers—a layer that Plan requires in order to intercept every Tool call, return Placeholders for writes, and record which response fields a Workflow reads. We therefore build a minimal custom Gateway (SDK generation, `search_sdk`, `run_sandbox`, and the sandbox bridge) and keep it to a small share of the project's budget. It adopts Cloudflare's architecture (typed interfaces, a fresh isolated environment per run, and no host access except through the bridge) without reusing its Cloudflare Workers–specific code.
+
