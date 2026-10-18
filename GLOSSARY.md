@@ -75,11 +75,11 @@ _Avoid_: write cap, max writes, circuit breaker
 ## Contracts and drift
 
 **Baseline**:
-The response shape of a Tool pinned when the Tool was first used, through which every Workflow accesses that Tool.
+The shape of a Tool, both what it accepts and what it returns, pinned the first time the Tool is called, through which every Workflow accesses that Tool.
 _Avoid_: schema version, snapshot, original schema
 
 **Contract**:
-The subset of a Tool's Baseline that a specific Workflow actually reads.
+The subset of a Tool's Baseline response shape that a specific Workflow actually reads.
 _Avoid_: schema, assertion, expectation
 
 **Drift**:
@@ -115,4 +115,3 @@ _Avoid_: baseline (reserved for a Tool's pinned shape), condition, variant
 **Break-even Point**:
 The number of runs required for a Workflow's upfront and maintenance costs (its Exploration Run, saving it, and any Repairs) to be paid back by the per-run savings over another Arm.
 _Avoid_: payback, ROI
-
