@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { loadConfig, openCore } from "../../core/index.ts";
-import { driftKitCommand } from "../../drift-kit/index.ts";
+import { loadConfig, openCore, openPlans } from "../../core/index.ts";
+import { connectControl, driftKitCommand } from "../../drift-kit/index.ts";
 
 const bin = fileURLToPath(new URL("../bin.ts", import.meta.url));
 let dir: string;
@@ -111,5 +111,51 @@ describe("pinfold plans, approve and decline", () => {
 
     expect(code).toBe(1);
     expect(stderr).toMatch(/no Write Plan 000000000000/);
+  });
+});
+
+/** Leaves a run whose Apply stopped at its first write, and returns its ID. */
+async function stoppedRun(): Promise<{ run: string; id: string }> {
+  const core = await openCore(await loadConfig(config), { root: dir });
+  try {
+    const code = `export async function main() {
+      await sdk.linear.createIssue({ title: "Fix totals" });
+    }`;
+    const planned = await core.explore({ code });
+    if (!planned.ok) throw new Error(planned.error);
+    await openPlans(dir).approve(planned.plan.id);
+    await connectControl(join(dir, "l.sock")).failWrite(1);
+    const stopped = await core.explore({ code });
+    const run =
+      !stopped.ok && /`pinfold resume (\S+)`/.exec(stopped.error)?.[1];
+    if (!run) throw new Error("the Apply did not stop");
+    return { run, id: planned.plan.id };
+  } finally {
+    await core.close();
+  }
+}
+
+describe("pinfold resume", () => {
+  it("sends the writes a stopped run did not send, then does nothing", async () => {
+    const { run, id } = await stoppedRun();
+
+    const resumed = await pinfold("resume", run);
+    const again = await pinfold("resume", run);
+
+    expect(resumed).toMatchObject({
+      code: 0,
+      stdout: `Resumed run ${run}: sent write 1 of Write Plan ${id}.\n`,
+    });
+    expect(again).toMatchObject({
+      code: 0,
+      stdout: `Run ${run} had already applied Write Plan ${id} in full; nothing was sent.\n`,
+    });
+  });
+
+  it("fails clearly for an unknown run ID", async () => {
+    const { code, stderr } = await pinfold("resume", "nope");
+
+    expect(code).toBe(1);
+    expect(stderr).toMatch(/no run nope/);
   });
 });

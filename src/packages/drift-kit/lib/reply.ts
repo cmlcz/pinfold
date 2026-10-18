@@ -7,3 +7,13 @@ export function structured<Output extends Record<string, unknown>>(
     structuredContent: output,
   };
 }
+
+/** The error result of a write the control channel chose to fail. */
+export function failedOnRequest() {
+  return {
+    content: [
+      { type: "text" as const, text: "Drift Kit failed this write on request" },
+    ],
+    isError: true,
+  };
+}

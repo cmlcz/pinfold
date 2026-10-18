@@ -86,4 +86,25 @@ describe("Linear-shaped Drift Kit server", () => {
       issues: [],
     });
   });
+
+  it("fails a chosen write with an error and does not take it", async () => {
+    const control = connectControl(controlPath);
+    await control.failWrite(2);
+
+    await call("createIssue", { title: "First" });
+    const failed = await client.callTool({
+      name: "createIssue",
+      arguments: { title: "Second" },
+    });
+    await call("createIssue", { title: "Third" });
+
+    expect(failed.isError).toBe(true);
+    expect(failed.content).toEqual([
+      { type: "text", text: "Drift Kit failed this write on request" },
+    ]);
+    expect((await control.receivedWrites()).map((w) => w.arguments)).toEqual([
+      { title: "First" },
+      { title: "Third" },
+    ]);
+  });
 });

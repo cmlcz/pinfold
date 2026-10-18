@@ -1,25 +1,58 @@
 // Apply: send an approved Write Plan's writes in order, giving each write the
 // real results of the earlier writes its Placeholders stand for.
 import { Placeholder } from "../../sandbox/index.ts";
+import { ToolError } from "./downstream.ts";
+import type { RunJournal } from "./journal.ts";
+import { span } from "./outcome.ts";
 import type { PlannedWrite } from "./plan.ts";
 
+/** An Apply stopped at a write that failed; the report says what was sent. */
+export class ApplyStopped extends Error {}
+
+/**
+ * Sends the writes the journal has not recorded as sent and returns the
+ * results of all writes. Stops at the first write that fails.
+ */
 export async function sendWrites(
   writes: PlannedWrite[],
+  journal: RunJournal,
   send: (write: PlannedWrite, args: unknown) => Promise<unknown>
 ): Promise<unknown[]> {
-  const results: unknown[] = [];
-  for (const [index, write] of writes.entries()) {
-    try {
-      results.push(
-        await send(write, resolvePlaceholders(write.arguments, results))
-      );
-    } catch (error) {
-      throw new Error(
-        `Apply stopped at write ${index + 1} of ${writes.length} (${write.tool}): ${(error as Error).message}. ` +
-          `Writes sent: ${index}; not sent: ${writes.length - index}.`,
+  const results = journal.sent();
+  for (let index = results.length; index < writes.length; index++) {
+    const write = writes[index]!;
+    const position = index + 1;
+    const stopped = (error: unknown, inDoubt: boolean) =>
+      new ApplyStopped(
+        `Apply stopped at write ${position} of ${writes.length} (${write.tool}): ${(error as Error).message}. ` +
+          `Sent: ${span(1, index)}.` +
+          (inDoubt
+            ? ` May have been sent: write ${position}. Not sent: ${span(position + 1, writes.length)}. ` +
+              `No resume sends this run's writes, since write ${position} may have reached its server.`
+            : ` Not sent: ${span(position, writes.length)}. ` +
+              `\`pinfold resume ${journal.run}\` sends the writes not sent.`),
         { cause: error }
       );
+    let args: unknown;
+    try {
+      args = resolvePlaceholders(write.arguments, results);
+    } catch (error) {
+      throw stopped(error, false);
     }
+    if (!journal.take(index)) {
+      throw new Error(`Write ${position} is being sent by another Apply.`);
+    }
+    try {
+      results.push(await send(write, args));
+    } catch (error) {
+      // A server that answered with an error did not take the write. Any
+      // other failure may have reached it, so the write stays taken and is
+      // never sent again.
+      const refused = error instanceof ToolError;
+      if (refused) journal.release(index);
+      throw stopped(error, !refused);
+    }
+    journal.settle(index, results[index]);
   }
   return results;
 }

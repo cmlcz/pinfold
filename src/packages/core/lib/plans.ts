@@ -11,6 +11,7 @@ export type PlanStatus =
   "pending" | "approved" | "declined" | "applying" | "applied" | "failed";
 
 export type PlanRecord = WritePlan & {
+  /** Identifies this Approval request, and the run it belongs to. */
   record: string;
   status: PlanStatus;
   /** Identifies the code and input whose run built the plan. */
@@ -34,6 +35,8 @@ export type Plans = {
 export type PlanStore = Plans & {
   /** The newest record of a Write Plan. */
   latest(id: string): Promise<PlanRecord | undefined>;
+  /** The record with that ID, which is also its run's ID. */
+  get(record: string): Promise<PlanRecord | undefined>;
   /** The latest approved plan built by a run of the same code and input. */
   approvedFor(run: string): Promise<PlanRecord | undefined>;
   addPending(plan: WritePlan, run: string): Promise<void>;
@@ -117,6 +120,8 @@ export function openPlanStore(root: string): PlanStore {
 
   return {
     latest,
+    get: async (record) =>
+      (await all()).find((candidate) => candidate.record === record),
     pending: async () =>
       (await all()).filter((record) => record.status === "pending"),
     unreadable: async () => (await scan()).unreadable,

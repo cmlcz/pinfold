@@ -2,11 +2,13 @@
 //   node bin.ts classify [read|write <server.tool>...] [--config pinfold.json]
 //   node bin.ts plans [--config pinfold.json]
 //   node bin.ts approve|decline <plan-id> [--config pinfold.json]
+//   node bin.ts resume <run-id> [--config pinfold.json]
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import {
   classifyTools,
   formatPlan,
+  formatResume,
   loadConfig,
   openCore,
   openPlans,
@@ -17,7 +19,8 @@ import {
 const usage = `usage:
   pinfold classify [read|write <server.tool>...] [--config <path>]
   pinfold plans [--config <path>]
-  pinfold approve|decline <plan-id> [--config <path>]`;
+  pinfold approve|decline <plan-id> [--config <path>]
+  pinfold resume <run-id> [--config <path>]`;
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -67,6 +70,15 @@ async function main(): Promise<number> {
         );
       }
       return 0;
+    }
+    case "resume": {
+      const [run] = rest;
+      if (run === undefined || rest.length > 1) return fail();
+      const core = await openCore(await loadConfig(values.config), { root });
+      return withCore(core, async () => {
+        console.log(formatResume(await core.resume(run)));
+        return 0;
+      });
     }
     default:
       return fail();
