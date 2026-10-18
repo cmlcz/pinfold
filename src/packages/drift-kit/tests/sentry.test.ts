@@ -32,7 +32,12 @@ async function listIssues(args: Record<string, unknown>) {
 describe("Sentry-shaped Drift Kit server", () => {
   it("lists its issues to any MCP client over stdio", async () => {
     const { tools } = await client.listTools();
-    expect(tools.map((tool) => tool.name)).toEqual(["listIssues"]);
+    expect(tools.map((tool) => tool.name)).toEqual([
+      "listIssues",
+      "getIssue",
+      "listIssueEvents",
+      "listProjects",
+    ]);
 
     const { issues } = await listIssues({ project: "web" });
     expect(issues.map((issue) => issue.shortId)).toEqual([
@@ -48,6 +53,40 @@ describe("Sentry-shaped Drift Kit server", () => {
       status: "unresolved",
       count: 128,
     });
+  });
+
+  it("looks up one issue, its events and the projects", async () => {
+    const issue = await client.callTool({
+      name: "getIssue",
+      arguments: { id: "4601" },
+    });
+    expect(issue.structuredContent).toMatchObject({ shortId: "API-2A" });
+
+    const events = await client.callTool({
+      name: "listIssueEvents",
+      arguments: { issueId: "4501" },
+    });
+    expect(events.structuredContent).toMatchObject({
+      events: [{ issueId: "4501" }, { issueId: "4501" }],
+    });
+
+    // Like many real servers, listProjects answers with JSON text only.
+    const projects = await client.callTool({
+      name: "listProjects",
+      arguments: {},
+    });
+    expect(projects.structuredContent).toBeUndefined();
+    expect(projects.content).toEqual([
+      {
+        type: "text",
+        text: JSON.stringify({
+          projects: [
+            { slug: "web", name: "Web storefront", platform: "javascript" },
+            { slug: "api", name: "Orders API", platform: "node" },
+          ],
+        }),
+      },
+    ]);
   });
 
   it("has a control channel that resets state and reads the received writes", async () => {

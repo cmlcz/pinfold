@@ -80,3 +80,44 @@ export const seedIssues: readonly SentryIssue[] = [
     lastSeen: "2026-10-17T23:10:00Z",
   },
 ];
+
+export const eventSchema = z.object({
+  id: z.string(),
+  issueId: z.string(),
+  timestamp: z.string(),
+  release: z.string(),
+  message: z.string(),
+});
+
+export type SentryEvent = z.infer<typeof eventSchema>;
+
+export const seedEvents: readonly SentryEvent[] = [
+  {
+    id: "e-9001",
+    issueId: "4501",
+    timestamp: "2026-10-17T21:40:00Z",
+    release: "web@3.4.1",
+    message: "Cannot read properties of undefined (reading 'total')",
+  },
+  {
+    id: "e-9002",
+    issueId: "4501",
+    timestamp: "2026-10-17T20:12:00Z",
+    release: "web@3.4.0",
+    message: "Cannot read properties of undefined (reading 'total')",
+  },
+  {
+    id: "e-9101",
+    issueId: "4601",
+    timestamp: "2026-10-17T23:10:00Z",
+    release: "api@1.9.0",
+    message: "deadlock detected",
+  },
+];
+
+export type SentryProject = { slug: string; name: string; platform: string };
+
+export const seedProjects: readonly SentryProject[] = [
+  { slug: "web", name: "Web storefront", platform: "javascript" },
+  { slug: "api", name: "Orders API", platform: "node" },
+];
