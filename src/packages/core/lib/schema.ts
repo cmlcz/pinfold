@@ -35,6 +35,14 @@ export function isFullyObserved(schema: JsonSchema): boolean {
 /** The shape to pin: a value only ever seen as null says nothing of its type. */
 export function forPinning(schema: JsonSchema): JsonSchema {
   if (schema.type === "null") return {};
+  // In a union, null is one of the observed kinds and stays.
+  if (Array.isArray(schema.anyOf)) {
+    return {
+      anyOf: (schema.anyOf as JsonSchema[]).map((option) =>
+        option.type === "null" ? option : forPinning(option)
+      ),
+    };
+  }
   if (schema.type === "array") {
     return { ...schema, items: forPinning(schema.items as JsonSchema) };
   }
@@ -91,11 +99,18 @@ export function mergeSchemas(
       items: mergeSchemas(a.items as JsonSchema, b.items as JsonSchema),
     };
   }
-  const options = [a, b].flatMap(
-    (s) => (s.anyOf as JsonSchema[] | undefined) ?? [s]
-  );
-  const unique = [
-    ...new Map(options.map((s) => [JSON.stringify(s), s])).values(),
-  ];
-  return { anyOf: unique };
+  // A union keeps one option per kind of value, each merged across
+  // observations: null | [] and then [string] give null | string[].
+  const options = optionsOf(a);
+  for (const option of optionsOf(b)) {
+    if (isUnobserved(option)) continue;
+    const same = options.findIndex((o) => o.type === option.type);
+    if (same === -1) options.push(option);
+    else options[same] = mergeSchemas(options[same], option);
+  }
+  return options.length === 1 ? options[0]! : { anyOf: options };
+}
+
+function optionsOf(schema: JsonSchema): JsonSchema[] {
+  return [...((schema.anyOf as JsonSchema[] | undefined) ?? [schema])];
 }

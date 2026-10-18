@@ -139,3 +139,13 @@ export const seedProjects: readonly SentryProject[] = [
     archivedAt: null,
   },
 ];
+
+export type TeamMember = { name: string; email?: string };
+
+// Shaped to vary between calls: a team that was never set, an empty one, and
+// members that differ in which fields they have.
+export const seedTeams: Readonly<Record<string, TeamMember[] | null>> = {
+  web: [{ name: "Ana", email: "ana@example.com" }, { name: "Li" }],
+  api: [],
+  legacy: null,
+};

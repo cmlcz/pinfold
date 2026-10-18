@@ -1,6 +1,7 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { Core } from "../index.ts";
 import { createWorkspace, sentryReads, type Workspace } from "./workspace.ts";
 
 let ws: Workspace;
@@ -255,5 +256,110 @@ describe("search_sdk", () => {
       }`,
     });
     expect(result).toMatchObject({ ok: true, value: ["WEB-1A", "API-2A"] });
+  });
+});
+
+describe("Baselines from varying responses", () => {
+  const team = (core: Core, slug: string) =>
+    core.explore({
+      code: `export async function main(input: { slug: string }) {
+        await sdk.sentry.getProjectTeam(input);
+      }`,
+      input: { slug },
+    });
+
+  it("pins once a field has been empty, null and then filled", async () => {
+    const core = await ws.open();
+
+    await team(core, "missing"); // plain text, no shape to learn from
+    await team(core, "api"); // members: []
+    await team(core, "legacy"); // members: null
+    await expect(readdir(baselines())).rejects.toThrow(/ENOENT/);
+
+    await team(core, "web");
+
+    const member = {
+      type: "object",
+      properties: { name: { type: "string" }, email: { type: "string" } },
+      required: ["name"],
+    };
+    expect((await readBaseline("sentry.getProjectTeam")).outputSchema).toEqual({
+      type: "object",
+      properties: {
+        slug: { type: "string" },
+        members: {
+          anyOf: [{ type: "array", items: member }, { type: "null" }],
+        },
+      },
+      required: ["slug", "members"],
+    });
+  });
+
+  it("does not pin a shape from a plain text answer", async () => {
+    const core = await ws.open();
+
+    await team(core, "missing");
+
+    await expect(readdir(baselines())).rejects.toThrow(/ENOENT/);
+    expect(core.searchSdk("members of a project team")[0]!.split("\n")[1]).toBe(
+      "sdk.sentry.getProjectTeam(args: { slug: string }): Promise<unknown>"
+    );
+  });
+});
+
+describe("Declarations from unusual schemas", () => {
+  it("stay valid TypeScript, so correct code still type-checks", async () => {
+    await mkdir(baselines(), { recursive: true });
+    const outputSchema = {
+      type: "object",
+      properties: {
+        never: { enum: [] },
+        tags: { type: "array", items: { enum: ["a(", "b"] } },
+        mixed: {
+          allOf: [
+            { anyOf: [{ type: "string" }, { type: "number" }] },
+            { type: "object" },
+          ],
+        },
+        extra: {
+          type: "object",
+          properties: { a: { type: "string" } },
+          additionalProperties: true,
+        },
+      },
+    };
+    await writeFile(
+      join(baselines(), "sentry.listIssues.json"),
+      JSON.stringify({
+        server: "sentry",
+        tool: "listIssues",
+        inputSchema: {
+          type: "object",
+          properties: { project: { type: "string" } },
+          required: ["project"],
+        },
+        outputSchema,
+      })
+    );
+    const core = await ws.open();
+
+    const signature = core.searchSdk("list issues project")[0]!;
+    const result = await core.explore({
+      code: `export async function main() {
+        const r = await sdk.sentry.listIssues({ project: "web" });
+        const extra: { a?: string; b?: number } | undefined = r.extra;
+        return typeof extra;
+      }`,
+    });
+
+    expect(signature).toContain("never?: never");
+    expect(signature).toContain('tags?: ("a(" | "b")[]');
+    expect(signature).toContain(
+      "mixed?: (string | number) & Record<string, unknown>"
+    );
+    expect(signature).toContain(
+      "extra?: { a?: string; [key: string]: unknown }"
+    );
+    expect(result).toMatchObject({ ok: true });
   });
 });

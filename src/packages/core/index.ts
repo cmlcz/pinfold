@@ -75,16 +75,24 @@ export async function openCore(
 ): Promise<Core> {
   const baselines = await openBaselines(options.root);
   const downstream = await connectDownstream(config.servers);
-  const classificationOf = (tool: DownstreamTool) =>
-    config.classification?.[tool.server]?.[tool.tool];
+  const classificationOf = (tool: DownstreamTool) => {
+    const servers = config.classification ?? {};
+    const tools = Object.hasOwn(servers, tool.server)
+      ? servers[tool.server]!
+      : {};
+    return Object.hasOwn(tools, tool.tool) ? tools[tool.tool] : undefined;
+  };
   const isRead = (tool: DownstreamTool) => classificationOf(tool) === "read";
 
   // During a Plan, Read Tools run live and Write Tool calls are recorded.
   function planSdk(writes: PlannedWrite[]): Sdk {
-    const sdk: Sdk = {};
+    // No prototype, so a server named like an Object member is just a name.
+    const sdk: Sdk = Object.create(null);
     for (const tool of downstream.tools) {
       const name = `${tool.server}.${tool.tool}`;
-      (sdk[tool.server] ??= {})[tool.tool] = isRead(tool)
+      if (!Object.hasOwn(sdk, tool.server))
+        sdk[tool.server] = Object.create(null);
+      sdk[tool.server]![tool.tool] = isRead(tool)
         ? async (args) => {
             if (containsPlaceholder(args)) {
               throw new PlaceholderError(
@@ -222,6 +230,6 @@ function runKey(code: string, input: unknown): string {
 function busy(plan: WritePlan): ExploreResult {
   return {
     ok: false,
-    error: `Write Plan ${plan.id} is being applied by another run; nothing was sent.`,
+    error: `Write Plan ${plan.id} is being applied by another run, or a run applying it stopped; nothing was sent. If no run is applying it, \`pinfold decline ${plan.id}\` gives it up.`,
   };
 }

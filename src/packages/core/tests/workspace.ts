@@ -21,6 +21,7 @@ export const sentryReads = {
     getIssue: "read",
     listIssueEvents: "read",
     listProjects: "read",
+    getProjectTeam: "read",
   },
 } as const;
 
@@ -66,8 +67,11 @@ export async function createWorkspace(): Promise<Workspace> {
       return core;
     },
     async close() {
-      await Promise.all(cores.map((core) => core.close()));
-      await rm(dir, { recursive: true, force: true });
+      try {
+        await Promise.allSettled(cores.map((core) => core.close()));
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
     },
   };
 }

@@ -1,3 +1,5 @@
+import { readdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openPlans, type Core, type ExploreResult } from "../index.ts";
 import { createWorkspace, sentryReads, type Workspace } from "./workspace.ts";
@@ -208,6 +210,10 @@ describe("Approval and Apply", () => {
     expect(results.filter((r) => r.ok && r.status === "applied")).toHaveLength(
       1
     );
+    const loser = results.find((r) => !r.ok);
+    expect(loser && !loser.ok && loser.error).toMatch(
+      /is being applied by another run/
+    );
     expect(await ws.control("linear").receivedWrites()).toHaveLength(2);
   });
 
@@ -256,6 +262,91 @@ describe("Approval and Apply", () => {
       status: "pending",
     });
     expect(await ws.control("linear").receivedWrites()).toHaveLength(1);
+  });
+
+  it("does not resolve a Placeholder path through inherited members", async () => {
+    const core = await openTriage();
+    const code = {
+      code: `export async function main() {
+        const ticket = await sdk.linear.createIssue({ title: "Once" });
+        // Every object inherits constructor; a real result does not own it.
+        return ticket.constructor;
+      }`,
+    };
+    const id = planId(await core.explore(code));
+    await openPlans(ws.dir).approve(id);
+
+    const result = await core.explore(code);
+
+    expect(!result.ok && result.error).toMatch(
+      /Its result could not be built: <write 1>\.constructor has no value/
+    );
+  });
+
+  it("lets the developer decline a plan whose Apply stopped half-way", async () => {
+    const core = await openTriage();
+    const code = {
+      code: `export async function main() {
+        await sdk.linear.createIssue({ title: "Once" });
+      }`,
+    };
+    const id = planId(await core.explore(code));
+    const plans = openPlans(ws.dir);
+    await plans.approve(id);
+    // A run that claimed the plan and then died before finishing.
+    const claimed = (await readdir(join(ws.dir, ".pinfold", "plans"))).find(
+      (file) => file.endsWith(".json")
+    );
+    await writeFile(
+      join(ws.dir, ".pinfold", "plans", claimed!.replace(/\.json$/, ".claim")),
+      ""
+    );
+
+    const stuck = await core.explore(code);
+    await plans.decline(id);
+    const after = await core.explore(code);
+
+    expect(!stuck.ok && stuck.error).toMatch(
+      new RegExp(`pinfold decline ${id}`)
+    );
+    expect(after).toMatchObject({ ok: true, status: "declined" });
+    expect(await ws.control("linear").receivedWrites()).toEqual([]);
+  });
+
+  it("never sends a plan once a decline succeeded, even racing an approval", async () => {
+    const core = await openTriage();
+    const id = planId(await core.explore(triage));
+    const plans = openPlans(ws.dir);
+
+    const [, declined] = await Promise.allSettled([
+      plans.approve(id),
+      plans.decline(id),
+    ]);
+
+    expect(declined.status).toBe("fulfilled");
+    expect(await core.explore(triage)).toMatchObject({
+      ok: true,
+      status: "declined",
+    });
+    expect(await ws.control("linear").receivedWrites()).toEqual([]);
+  });
+
+  it("keeps working when one plan file is unreadable", async () => {
+    const core = await openTriage();
+    const id = planId(await core.explore(triage));
+    await writeFile(
+      join(ws.dir, ".pinfold", "plans", "broken.json"),
+      "{ not json"
+    );
+
+    const plans = openPlans(ws.dir);
+
+    expect((await plans.pending()).map((plan) => plan.id)).toEqual([id]);
+    await plans.approve(id);
+    expect(await core.explore(triage)).toMatchObject({
+      ok: true,
+      status: "applied",
+    });
   });
 
   it("completes a run without writes at once", async () => {

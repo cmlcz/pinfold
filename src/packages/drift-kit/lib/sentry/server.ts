@@ -8,6 +8,7 @@ import {
   seedEvents,
   seedIssues,
   seedProjects,
+  seedTeams,
   type SentryEvent,
   type SentryIssue,
   type SentryProject,
@@ -95,6 +96,29 @@ export function createSentryServer(world: World<SentryState>): McpServer {
       );
       return {
         content: [{ type: "text", text: JSON.stringify({ projects }) }],
+      };
+    }
+  );
+
+  // No outputSchema, and plain text when there is no such project.
+  server.registerTool(
+    "getProjectTeam",
+    {
+      description: "Get the members of a Sentry project's team.",
+      inputSchema: z.object({ slug: z.string() }),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ slug }) => {
+      if (!Object.hasOwn(seedTeams, slug)) {
+        return { content: [{ type: "text", text: `No project ${slug}.` }] };
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ slug, members: seedTeams[slug] }),
+          },
+        ],
       };
     }
   );

@@ -37,6 +37,7 @@ describe("Sentry-shaped Drift Kit server", () => {
       "getIssue",
       "listIssueEvents",
       "listProjects",
+      "getProjectTeam",
     ]);
 
     const { issues } = await listIssues({ project: "web" });

@@ -26,23 +26,52 @@ const stackBytes = 256 * 1024;
 // Placeholder, and any attempt to look at or call its value reports misuse.
 // No proxy can see strict equality, truthiness or typeof. Values are encoded
 // as in ./placeholder.ts.
+//
+// The prelude runs before the program, so it captures every built-in it
+// relies on: a program that replaces Object, JSON or a prototype method
+// cannot change how values are encoded, nor forge a Placeholder.
 const prelude = `(call, misuse, names) => {
+  const { create, defineProperty, hasOwn, keys } = Object;
+  const { parse, stringify } = JSON;
+  const { isArray } = Array;
+  const { apply } = Reflect;
+  const ProxyType = Proxy;
+  const ErrorType = Error;
+  const TypeErrorType = TypeError;
+  const weakGet = WeakMap.prototype.get;
+  const weakSet = WeakMap.prototype.set;
+  const startsWith = String.prototype.startsWith;
+  const slice = String.prototype.slice;
+  const then = Promise.prototype.then;
   const marker = ${JSON.stringify(placeholderMarker)};
   const refs = new WeakMap();
 
+  const define = (target, key, value) =>
+    defineProperty(target, key, {
+      value,
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+  const begins = (text, prefix) => apply(startsWith, text, [prefix]);
+  const stack = () => new ErrorType().stack;
+
   const fail = (what) => {
-    misuse(what, new Error().stack);
-    throw new TypeError("a Placeholder cannot be " + what);
+    misuse(what, stack());
+    throw new TypeErrorType("a Placeholder cannot be " + what);
   };
   const inspect = () => fail("inspected");
   const change = () => fail("changed");
 
   function placeholder(ref) {
-    const proxy = new Proxy(function () {}, {
+    const proxy = new ProxyType(function () {}, {
       get(_, property) {
         if (property === "then") return undefined;
         if (typeof property === "symbol") fail("read, compared or formatted");
-        return placeholder([...ref, property]);
+        const next = [];
+        for (let i = 0; i < ref.length; i++) define(next, i, ref[i]);
+        define(next, ref.length, property);
+        return placeholder(next);
       },
       apply: () => fail("called"),
       construct: () => fail("called"),
@@ -55,53 +84,63 @@ const prelude = `(call, misuse, names) => {
       deleteProperty: change,
       setPrototypeOf: change,
     });
-    refs.set(proxy, ref);
+    apply(weakSet, refs, [proxy, ref]);
     return proxy;
   }
 
   function encode(value) {
-    const ref = refs.get(value);
-    if (ref) return { [marker]: ref };
+    const ref = apply(weakGet, refs, [value]);
+    if (ref !== undefined) return { [marker]: ref };
     if (typeof value !== "object" || value === null) return value;
-    if (typeof value.toJSON === "function") return encode(value.toJSON());
-    if (Array.isArray(value)) return value.map(encode);
-    return Object.fromEntries(
-      Object.keys(value).map((field) => [
-        field.startsWith("$") ? "$" + field : field,
-        encode(value[field]),
-      ])
-    );
+    const toJSON = value.toJSON;
+    if (typeof toJSON === "function") return encode(apply(toJSON, value, []));
+    if (isArray(value)) {
+      const copy = [];
+      for (let i = 0; i < value.length; i++) define(copy, i, encode(value[i]));
+      return copy;
+    }
+    const copy = {};
+    const fields = keys(value);
+    for (let i = 0; i < fields.length; i++) {
+      const field = fields[i];
+      define(copy, begins(field, "$") ? "$" + field : field, encode(value[field]));
+    }
+    return copy;
   }
 
   const decode = (json) =>
-    JSON.parse(json, (_, value) => {
-      if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    parse(json, (_, value) => {
+      if (typeof value !== "object" || value === null || isArray(value)) {
         return value;
       }
-      if (Object.hasOwn(value, marker)) return placeholder(value[marker]);
-      return Object.fromEntries(
-        Object.entries(value).map(([field, item]) => [
-          field.startsWith("$$") ? field.slice(1) : field,
-          item,
-        ])
-      );
+      if (hasOwn(value, marker)) return placeholder(value[marker]);
+      const copy = {};
+      const fields = keys(value);
+      for (let i = 0; i < fields.length; i++) {
+        const field = fields[i];
+        define(copy, begins(field, "$$") ? apply(slice, field, [1]) : field, value[field]);
+      }
+      return copy;
     });
 
-  const sdk = {};
-  for (const [namespace, name] of JSON.parse(names)) {
-    sdk[namespace] ??= {};
-    sdk[namespace][name] = (args) =>
-      call(namespace, name, JSON.stringify(encode(args ?? {})), new Error().stack)
-        .then(decode);
+  const sdk = create(null);
+  const pairs = parse(names);
+  for (let i = 0; i < pairs.length; i++) {
+    const namespace = pairs[i][0];
+    const name = pairs[i][1];
+    if (!hasOwn(sdk, namespace)) define(sdk, namespace, create(null));
+    define(sdk[namespace], name, (args) =>
+      apply(then, call(namespace, name, stringify(encode(args ?? {})), stack()), [decode])
+    );
   }
   globalThis.sdk = sdk;
 
   return async (input) => {
     if (typeof globalThis.__program?.main !== "function") {
-      throw new TypeError("the program must export a main(input) function");
+      throw new TypeErrorType("the program must export a main(input) function");
     }
-    const value = await globalThis.__program.main(JSON.parse(input));
-    return JSON.stringify({ value: encode(value) });
+    const value = await globalThis.__program.main(parse(input));
+    return stringify({ value: encode(value) });
   };
 }`;
 
@@ -182,12 +221,25 @@ export const quickJsSandbox: Sandbox = {
           return deferred.handle;
         }
         callHost(program, namespace!, name!, json!).then(
-          (value) =>
+          (value) => {
+            let encoded: string;
+            try {
+              encoded = encodeValue(value);
+            } catch (error) {
+              settle(deferred, () =>
+                withHandle(
+                  vm.newError(
+                    `the result of sdk.${namespace}.${name} cannot be passed to the program: ${messageOf(error)}`
+                  ),
+                  (h) => deferred.reject(h)
+                )
+              );
+              return;
+            }
             settle(deferred, () =>
-              withHandle(vm.newString(encodeValue(value)), (h) =>
-                deferred.resolve(h)
-              )
-            ),
+              withHandle(vm.newString(encoded), (h) => deferred.resolve(h))
+            );
+          },
           (error: unknown) => {
             if (error instanceof PlaceholderError) {
               fail(placeholderError(error.message, stack!));
@@ -250,6 +302,7 @@ export const quickJsSandbox: Sandbox = {
       const settled = vm.resolvePromise(promise);
       runtime.executePendingJobs().dispose();
       const json = unwrap(await Promise.race([settled, stopped]));
+      if (Date.now() > deadline) exceed(timeLimit);
       const error = failed();
       if (error !== undefined) return { ok: false, error };
       const { value } = decodeValue(vm.getString(json)) as { value: unknown };
@@ -263,14 +316,31 @@ export const quickJsSandbox: Sandbox = {
       if (error instanceof GuestError) {
         return { ok: false, error: compiled.describe(error.value) };
       }
+      // Deep recursion inside a QuickJS built-in (JSON.stringify of a deeply
+      // nested value, say) exhausts the WebAssembly stack before QuickJS's own
+      // stack limit sees it.
+      if (
+        error instanceof Error &&
+        (error instanceof RangeError || error.name === "RuntimeError")
+      ) {
+        return {
+          ok: false,
+          error: `InternalError: the program exhausted the stack inside a built-in function (${error.message})`,
+        };
+      }
       throw error;
     } finally {
       finished = true;
       clearTimeout(timer);
       for (const deferred of pending) deferred.dispose();
-      for (const handle of handles) handle.dispose();
-      vm.dispose();
-      runtime.dispose();
+      try {
+        for (const handle of handles) handle.dispose();
+        vm.dispose();
+        runtime.dispose();
+      } catch {
+        // A stack overflow inside a QuickJS built-in can leave the module
+        // aborted. The module belongs to this run alone and is dropped here.
+      }
     }
   },
 };
@@ -289,7 +359,10 @@ async function callHost(
   name: string,
   json: string
 ): Promise<unknown> {
-  const fn = program.sdk[namespace]?.[name];
+  const tools = Object.hasOwn(program.sdk, namespace)
+    ? program.sdk[namespace]
+    : undefined;
+  const fn = tools && Object.hasOwn(tools, name) ? tools[name] : undefined;
   if (fn === undefined) throw new Error(`sdk.${namespace}.${name} is unknown`);
   return fn(decodeValue(json));
 }
