@@ -14,11 +14,15 @@ import { connectDownstream, type DownstreamTool } from "./lib/downstream.ts";
 import {
   canonicalize,
   containsPlaceholder,
+  shortHash,
   writePlan,
   type PlannedWrite,
   type WritePlan,
 } from "./lib/plan.ts";
 import { declarations, searchTools, type SdkTool } from "./lib/sdk.ts";
+import { resolvePlaceholders, sendWrites } from "./lib/apply.ts";
+import { openPlanStore, type PlanRecord } from "./lib/plans.ts";
+import { writeCount, type ExploreResult } from "./lib/outcome.ts";
 
 export {
   classifyTools,
@@ -28,15 +32,21 @@ export {
   type ToolKind,
 } from "./lib/config.ts";
 export type { PlannedWrite, WritePlan } from "./lib/plan.ts";
-export { formatOutcome } from "./lib/format.ts";
+export {
+  openPlans,
+  type PlanRecord,
+  type Plans,
+  type PlanStatus,
+} from "./lib/plans.ts";
+export {
+  formatOutcome,
+  formatPlan,
+  type ExploreResult,
+} from "./lib/outcome.ts";
 export type { Placeholder } from "../sandbox/index.ts";
 
 const writeToolNote =
   "Write Tool: a run records this call in its Write Plan instead of sending it, and gets a Placeholder back.";
-
-/** An Exploration Run ran as a Plan: its result, and the writes it would send. */
-export type ExploreResult =
-  { ok: true; value: unknown; plan: WritePlan } | { ok: false; error: string };
 
 /** How a Tool is treated, and what its server's annotations suggest. */
 export type ToolClassification = {
@@ -102,6 +112,53 @@ export async function openCore(
       const description = [known.description, writeToolNote].filter(Boolean);
       return { ...known, description: description.join(" ") };
     });
+  const plans = openPlanStore(options.root);
+  const tools = new Map(
+    downstream.tools.map((tool) => [`${tool.server}.${tool.tool}`, tool])
+  );
+  function toolOf(write: PlannedWrite): DownstreamTool {
+    const tool = tools.get(write.tool);
+    if (tool === undefined) throw new Error(`${write.tool} is not offered`);
+    return tool;
+  }
+
+  // The plan was rebuilt by this very run, so its reads are fresh.
+  async function apply(
+    record: PlanRecord,
+    plan: WritePlan,
+    value: unknown
+  ): Promise<ExploreResult> {
+    if (!(await plans.claim(record))) {
+      return busy(plan);
+    }
+    let results: unknown[];
+    try {
+      results = await sendWrites(plan.writes, (write, args) =>
+        toolOf(write).call(args)
+      );
+    } catch (error) {
+      await plans.finish(record, "failed");
+      return { ok: false, error: (error as Error).message };
+    }
+    await plans.finish(record, "applied");
+    try {
+      for (const [index, write] of plan.writes.entries()) {
+        await baselines.record(toolOf(write), results[index]);
+      }
+      return {
+        ok: true,
+        status: "applied",
+        value: resolvePlaceholders(value, results),
+        plan,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: `Applied Write Plan ${plan.id}: ${writeCount(plan)} sent. Its result could not be built: ${(error as Error).message}`,
+      };
+    }
+  }
+
   const limits = resolveLimits(config);
   return {
     toolClassifications: () =>
@@ -113,17 +170,58 @@ export async function openCore(
         classified: classificationOf(tool) !== undefined,
       })),
     searchSdk: (query) => searchTools(sdkTools(), query),
-    async explore({ code, input }) {
+    async explore({ code, input = {} }) {
       const writes: PlannedWrite[] = [];
       const result = await quickJsSandbox.run({
         source: code,
         declarations: declarations(sdkTools()),
-        input: input ?? {},
+        input,
         sdk: planSdk(writes),
         limits,
       });
-      return result.ok ? { ...result, plan: writePlan(writes) } : result;
+      if (!result.ok) return result;
+      const { value } = result;
+      const plan = writePlan(writes);
+      if (plan.writes.length === 0)
+        return { ok: true, status: "complete", value, plan };
+
+      const run = runKey(code, input);
+      const record = await plans.latest(plan.id);
+      switch (record?.status) {
+        case "declined":
+          return { ok: true, status: "declined", value, plan };
+        case "approved":
+          return apply(record, plan, value);
+        case "applying":
+          return busy(plan);
+        case "failed":
+          return {
+            ok: false,
+            error: `Write Plan ${plan.id} stopped after a failed write and is never sent again by a run; nothing was sent.`,
+          };
+        case "pending":
+          break;
+        default:
+          // New, or applied before: the developer approves this run afresh.
+          await plans.addPending(plan, run);
+      }
+      const approved = await plans.approvedFor(run);
+      return approved === undefined
+        ? { ok: true, status: "pending", value, plan }
+        : { ok: true, status: "changed", value, plan, approved };
     },
     close: downstream.close,
+  };
+}
+
+// The same code and input give the same run key.
+function runKey(code: string, input: unknown): string {
+  return shortHash(JSON.stringify([code, input]));
+}
+
+function busy(plan: WritePlan): ExploreResult {
+  return {
+    ok: false,
+    error: `Write Plan ${plan.id} is being applied by another run; nothing was sent.`,
   };
 }

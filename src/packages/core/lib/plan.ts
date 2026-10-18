@@ -16,11 +16,12 @@ export type WritePlan = {
 };
 
 export function writePlan(writes: PlannedWrite[]): WritePlan {
-  const id = createHash("sha256")
-    .update(encodeValue(writes))
-    .digest("hex")
-    .slice(0, 12);
-  return { id, writes };
+  return { id: shortHash(encodeValue(writes)), writes };
+}
+
+/** A short, stable ID for a text. */
+export function shortHash(text: string): string {
+  return createHash("sha256").update(text).digest("hex").slice(0, 12);
 }
 
 /** A copy whose object keys are sorted, so equal arguments serialize equally. */
