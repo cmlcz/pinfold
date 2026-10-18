@@ -1,0 +1,30 @@
+/** A host function the sandboxed program reaches as `sdk.<namespace>.<name>(args)`. */
+export type HostFunction = (args: unknown) => Promise<unknown>;
+
+export type Sdk = Record<string, Record<string, HostFunction>>;
+
+/** Per-run limits. A run that exceeds one stops with a `LimitError`. */
+export type Limits = {
+  timeoutMs: number;
+  memoryBytes: number;
+  toolCalls: number;
+};
+
+export type Program = {
+  /** TypeScript source that exports `main(input)`. */
+  source: string;
+  input: unknown;
+  sdk: Sdk;
+  limits: Limits;
+};
+
+export type SandboxResult =
+  { ok: true; value: unknown } | { ok: false; error: string };
+
+/**
+ * Runs untrusted code with no host access except its `sdk`.
+ * The runtime behind it is replaceable (ADR 0005).
+ */
+export type Sandbox = {
+  run(program: Program): Promise<SandboxResult>;
+};
