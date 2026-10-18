@@ -6,7 +6,6 @@ import {
 import { openBaselines } from "./lib/baselines.ts";
 import { resolveLimits, type PinfoldConfig } from "./lib/config.ts";
 import { connectDownstream } from "./lib/downstream.ts";
-import { inferSchema } from "./lib/schema.ts";
 import { declarations, searchTools, type SdkTool } from "./lib/sdk.ts";
 
 export {
@@ -37,10 +36,7 @@ export async function openCore(
   for (const tool of downstream.tools) {
     (sdk[tool.server] ??= {})[tool.tool] = async (args) => {
       const value = await tool.call(args);
-      await baselines.pin({
-        ...tool,
-        outputSchema: tool.outputSchema ?? inferSchema(value),
-      });
+      await baselines.record(tool, value);
       return value;
     };
   }

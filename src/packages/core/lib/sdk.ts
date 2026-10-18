@@ -113,8 +113,15 @@ function objectType(schema: JsonSchema): string {
   return fields.length === 0 ? "{}" : `{ ${fields.join("; ")} }`;
 }
 
+// Wraps a union or intersection so `[]` applies to all of it.
 function parenthesize(type: string): string {
-  return /[|&]/.test(type) ? `(${type})` : type;
+  let depth = 0;
+  for (const char of type) {
+    if ("{[(<".includes(char)) depth++;
+    else if ("}])>".includes(char)) depth--;
+    else if (depth === 0 && (char === "|" || char === "&")) return `(${type})`;
+  }
+  return type;
 }
 
 const identifier = /^[A-Za-z_$][\w$]*$/;

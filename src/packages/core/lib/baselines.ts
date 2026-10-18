@@ -3,7 +3,13 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as z from "zod";
-import type { JsonSchema } from "./schema.ts";
+import {
+  forPinning,
+  inferSchema,
+  isFullyObserved,
+  mergeSchemas,
+  type JsonSchema,
+} from "./schema.ts";
 import type { SdkTool } from "./sdk.ts";
 
 const baselineSchema = z.object({
@@ -19,8 +25,11 @@ export type Baseline = SdkTool & { outputSchema: JsonSchema };
 
 export type Baselines = {
   get(server: string, tool: string): Baseline | undefined;
-  /** Pins a Tool's Baseline unless it already has one. */
-  pin(baseline: Baseline): Promise<void>;
+  /**
+   * Records a response from a successful call, pinning the Tool's Baseline
+   * once its response shape is known: declared, or observed well enough.
+   */
+  record(tool: SdkTool, response: unknown): Promise<void>;
 };
 
 export async function openBaselines(root: string): Promise<Baselines> {
@@ -43,21 +52,33 @@ export async function openBaselines(root: string): Promise<Baselines> {
     );
   }
 
+  // Inferred shapes of Tools whose responses have not shown enough yet.
+  const observed = new Map<string, JsonSchema>();
+
+  async function pin(tool: SdkTool, outputSchema: JsonSchema) {
+    const id = baselineKey(tool.server, tool.tool);
+    // Parsing drops anything beyond the Baseline's own fields.
+    const baseline = baselineSchema.parse({
+      ...tool,
+      outputSchema,
+    }) as Baseline;
+    pinned.set(id, baseline);
+    observed.delete(id);
+    await mkdir(dir, { recursive: true });
+    // Tool names come from Downstream Servers, so keep them out of the path.
+    const file = `${baseline.server}.${encodeURIComponent(baseline.tool)}.json`;
+    await writeFile(join(dir, file), `${JSON.stringify(baseline, null, 2)}\n`);
+  }
+
   return {
     get: (server, tool) => pinned.get(baselineKey(server, tool)),
-    async pin(tool) {
+    async record(tool, response) {
       const id = baselineKey(tool.server, tool.tool);
       if (pinned.has(id)) return;
-      // Parsing drops anything beyond the Baseline's own fields.
-      const baseline = baselineSchema.parse(tool) as Baseline;
-      pinned.set(id, baseline);
-      await mkdir(dir, { recursive: true });
-      // Tool names come from Downstream Servers, so keep them out of the path.
-      const file = `${baseline.server}.${encodeURIComponent(baseline.tool)}.json`;
-      await writeFile(
-        join(dir, file),
-        `${JSON.stringify(baseline, null, 2)}\n`
-      );
+      if (tool.outputSchema !== undefined) return pin(tool, tool.outputSchema);
+      const merged = mergeSchemas(observed.get(id), inferSchema(response));
+      if (isFullyObserved(merged)) return pin(tool, forPinning(merged));
+      observed.set(id, merged);
     },
   };
 }

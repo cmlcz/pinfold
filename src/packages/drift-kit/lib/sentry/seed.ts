@@ -115,9 +115,27 @@ export const seedEvents: readonly SentryEvent[] = [
   },
 ];
 
-export type SentryProject = { slug: string; name: string; platform: string };
+export type SentryProject = {
+  slug: string;
+  name: string;
+  platform: string;
+  team: string | null;
+  archivedAt: string | null;
+};
 
 export const seedProjects: readonly SentryProject[] = [
-  { slug: "web", name: "Web storefront", platform: "javascript" },
-  { slug: "api", name: "Orders API", platform: "node" },
+  {
+    slug: "web",
+    name: "Web storefront",
+    platform: "javascript",
+    team: "storefront",
+    archivedAt: null,
+  },
+  {
+    slug: "api",
+    name: "Orders API",
+    platform: "node",
+    team: null,
+    archivedAt: null,
+  },
 ];
