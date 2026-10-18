@@ -84,6 +84,27 @@ function formatWrites(plan: WritePlan): string[] {
   );
 }
 
+/** What resuming a stopped run sent. */
+export type ResumeResult = {
+  run: string;
+  plan: WritePlan;
+  /** The writes sent now, counted from 1; none if all were sent before. */
+  sent: number[];
+};
+
+/** What the developer reads after a resume. */
+export function formatResume({ run, plan, sent }: ResumeResult): string {
+  return sent.length === 0
+    ? `Run ${run} had already applied Write Plan ${plan.id} in full; nothing was sent.`
+    : `Resumed run ${run}: sent ${span(sent[0]!, sent.at(-1)!)} of Write Plan ${plan.id}.`;
+}
+
+/** Writes `from` to `to`, counted from 1. */
+export function span(from: number, to: number): string {
+  if (from > to) return "none";
+  return from === to ? `write ${from}` : `writes ${from}–${to}`;
+}
+
 export function writeCount(plan: WritePlan): string {
   return plan.writes.length === 1 ? "1 write" : `${plan.writes.length} writes`;
 }

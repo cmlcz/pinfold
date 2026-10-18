@@ -9,9 +9,14 @@ export function serveControl(
   world: World<unknown>
 ): Promise<Server> {
   const server = createServer((req, res) => {
-    const route = `${req.method} ${req.url}`;
+    const url = new URL(req.url ?? "/", "http://control");
+    const route = `${req.method} ${url.pathname}`;
+    const call = Number(url.searchParams.get("call"));
     if (route === "POST /reset") {
       world.reset();
+      res.writeHead(204).end();
+    } else if (route === "POST /fail-write" && Number.isSafeInteger(call)) {
+      world.failWrite(call);
       res.writeHead(204).end();
     } else if (route === "GET /writes") {
       res
@@ -34,6 +39,11 @@ export type ControlClient = {
   reset(): Promise<void>;
   /** Every write the server has received since it started or was last reset. */
   receivedWrites(): Promise<ReceivedWrite[]>;
+  /**
+   * Makes the `call`-th write from now on (1 is the next) fail with an error
+   * result. A failed write changes nothing and is not logged as received.
+   */
+  failWrite(call: number): Promise<void>;
 };
 
 export function connectControl(path: string): ControlClient {
@@ -43,6 +53,9 @@ export function connectControl(path: string): ControlClient {
     },
     async receivedWrites() {
       return JSON.parse(await send(path, "GET", "/writes")) as ReceivedWrite[];
+    },
+    async failWrite(call) {
+      await send(path, "POST", `/fail-write?call=${call}`);
     },
   };
 }

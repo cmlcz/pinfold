@@ -20,9 +20,14 @@ import {
   type WritePlan,
 } from "./lib/plan.ts";
 import { declarations, searchTools, type SdkTool } from "./lib/sdk.ts";
-import { resolvePlaceholders, sendWrites } from "./lib/apply.ts";
+import { ApplyStopped, resolvePlaceholders, sendWrites } from "./lib/apply.ts";
+import { openJournal } from "./lib/journal.ts";
 import { openPlanStore, type PlanRecord } from "./lib/plans.ts";
-import { writeCount, type ExploreResult } from "./lib/outcome.ts";
+import {
+  writeCount,
+  type ExploreResult,
+  type ResumeResult,
+} from "./lib/outcome.ts";
 
 export {
   classifyTools,
@@ -41,7 +46,9 @@ export {
 export {
   formatOutcome,
   formatPlan,
+  formatResume,
   type ExploreResult,
+  type ResumeResult,
 } from "./lib/outcome.ts";
 export type { Placeholder } from "../sandbox/index.ts";
 
@@ -65,6 +72,8 @@ export type Core = {
   searchSdk(query: string): string[];
   /** Runs the agent's program as an Exploration Run, which is a Plan. */
   explore(request: { code: string; input?: unknown }): Promise<ExploreResult>;
+  /** Sends the writes a stopped run's Apply did not send, and no others. */
+  resume(run: string): Promise<ResumeResult>;
   close(): Promise<void>;
 };
 
@@ -130,6 +139,41 @@ export async function openCore(
     return tool;
   }
 
+  const journal = openJournal(options.root);
+
+  // Sends the writes of the run's Write Plan that the Apply Journal does not
+  // hold yet. Returns the results of all its writes, and how many were sent
+  // before.
+  async function sendRest(
+    record: PlanRecord
+  ): Promise<{ results: unknown[]; before: number }> {
+    const run = journal.run(record.record);
+    const before = run.sent().length;
+    let results: unknown[];
+    try {
+      results = await sendWrites(record.writes, run, (write, args) =>
+        toolOf(write).call(args)
+      );
+    } catch (error) {
+      // Any other error stopped this Apply before it took a write, so the
+      // status is left to the Apply that holds it.
+      if (error instanceof ApplyStopped) await plans.finish(record, "failed");
+      throw error;
+    }
+    await plans.finish(record, "applied");
+    return { results, before };
+  }
+
+  async function pinResults(
+    writes: PlannedWrite[],
+    results: unknown[],
+    from: number
+  ) {
+    for (let index = from; index < writes.length; index++) {
+      await baselines.record(toolOf(writes[index]!), results[index]);
+    }
+  }
+
   // The plan was rebuilt by this very run, so its reads are fresh.
   async function apply(
     record: PlanRecord,
@@ -137,22 +181,16 @@ export async function openCore(
     value: unknown
   ): Promise<ExploreResult> {
     if (!(await plans.claim(record))) {
-      return busy(plan);
+      return busy(plan, record);
     }
     let results: unknown[];
     try {
-      results = await sendWrites(plan.writes, (write, args) =>
-        toolOf(write).call(args)
-      );
+      ({ results } = await sendRest(record));
     } catch (error) {
-      await plans.finish(record, "failed");
       return { ok: false, error: (error as Error).message };
     }
-    await plans.finish(record, "applied");
     try {
-      for (const [index, write] of plan.writes.entries()) {
-        await baselines.record(toolOf(write), results[index]);
-      }
+      await pinResults(plan.writes, results, 0);
       return {
         ok: true,
         status: "applied",
@@ -201,11 +239,11 @@ export async function openCore(
         case "approved":
           return apply(record, plan, value);
         case "applying":
-          return busy(plan);
+          return busy(plan, record);
         case "failed":
           return {
             ok: false,
-            error: `Write Plan ${plan.id} stopped after a failed write and is never sent again by a run; nothing was sent.`,
+            error: `Write Plan ${plan.id} stopped after a failed write and is never sent again by a run; nothing was sent. \`pinfold resume ${record.record}\` sends the writes not sent.`,
           };
         case "pending":
           break;
@@ -218,7 +256,32 @@ export async function openCore(
         ? { ok: true, status: "pending", value, plan }
         : { ok: true, status: "changed", value, plan, approved };
     },
-    close: downstream.close,
+    async resume(run) {
+      const record = await plans.get(run);
+      if (record === undefined) throw new Error(`no run ${run}`);
+      const plan = { id: record.id, writes: record.writes };
+      switch (record.status) {
+        case "applied":
+          return { run, plan, sent: [] };
+        // An Apply still running is safe to resume too: the journal lets
+        // only one Apply take each write, and only after the one before it.
+        case "failed":
+        case "applying":
+          break;
+        default:
+          throw new Error(
+            `Write Plan ${plan.id} is ${record.status}; there is nothing to resume.`
+          );
+      }
+      const { results, before } = await sendRest(record);
+      await pinResults(plan.writes, results, before);
+      const sent = [...results.keys()].slice(before).map((index) => index + 1);
+      return { run, plan, sent };
+    },
+    async close() {
+      journal.close();
+      await downstream.close();
+    },
   };
 }
 
@@ -227,9 +290,9 @@ function runKey(code: string, input: unknown): string {
   return shortHash(JSON.stringify([code, input]));
 }
 
-function busy(plan: WritePlan): ExploreResult {
+function busy(plan: WritePlan, record: PlanRecord): ExploreResult {
   return {
     ok: false,
-    error: `Write Plan ${plan.id} is being applied by another run, or a run applying it stopped; nothing was sent. If no run is applying it, \`pinfold decline ${plan.id}\` gives it up.`,
+    error: `Write Plan ${plan.id} is being applied by another run, or a run applying it stopped; nothing was sent. If no run is applying it, \`pinfold resume ${record.record}\` sends the writes not sent, or \`pinfold decline ${plan.id}\` gives it up.`,
   };
 }

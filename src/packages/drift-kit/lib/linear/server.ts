@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod";
-import { structured } from "../reply.ts";
+import { failedOnRequest, structured } from "../reply.ts";
 import { createWorld, type World } from "../world.ts";
 
 const issueSchema = z.object({
@@ -74,7 +74,9 @@ export function createLinearServer(world: World<LinearState>): McpServer {
       annotations: { readOnlyHint: false, destructiveHint: false },
     },
     async (args) => {
-      world.receivedWrites.push({ tool: "createIssue", arguments: args });
+      if (!world.receive({ tool: "createIssue", arguments: args })) {
+        return failedOnRequest();
+      }
       const number = world.state.issues.length + 1;
       const issue: LinearIssue = {
         id: `lin-${number}`,

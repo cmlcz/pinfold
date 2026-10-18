@@ -1,4 +1,4 @@
-import { readdir, writeFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openPlans, type Core, type ExploreResult } from "../index.ts";
@@ -190,7 +190,7 @@ describe("Approval and Apply", () => {
 
     expect(failed).toMatchObject({ ok: false });
     expect(!failed.ok && failed.error).toMatch(
-      /^Apply stopped at write 2 of 2 \(linear\.createIssue\): .*Writes sent: 1; not sent: 1\.$/s
+      /^Apply stopped at write 2 of 2 \(linear\.createIssue\): .*Sent: write 1\. Not sent: write 2\. `pinfold resume \S+` sends the writes not sent\.$/s
     );
     expect(again).toMatchObject({ ok: false });
     expect(!again.ok && again.error).toMatch(/stopped after a failed write/);
@@ -358,5 +358,151 @@ describe("Approval and Apply", () => {
 
     expect(result).toMatchObject({ ok: true, status: "complete", value: 1 });
     expect(await openPlans(ws.dir).pending()).toEqual([]);
+  });
+});
+
+// Four writes; the last one uses the first one's real result.
+const fourWrites = {
+  code: `export async function main() {
+    const first = await sdk.linear.createIssue({ title: "One" });
+    await sdk.linear.createIssue({ title: "Two" });
+    await sdk.linear.createIssue({ title: "Three" });
+    await sdk.linear.createIssue({ title: "Four", description: first.url });
+  }`,
+};
+
+/** The run ID that a stopped Apply tells the developer to resume. */
+function stoppedRun(result: ExploreResult): string {
+  if (result.ok) throw new Error(`run ${result.status}, not stopped`);
+  const run = /`pinfold resume (\S+)`/.exec(result.error)?.[1];
+  if (run === undefined) throw new Error(result.error);
+  return run;
+}
+
+async function sentTitles(): Promise<unknown[]> {
+  const writes = await ws.control("linear").receivedWrites();
+  return writes.map((write) => write.arguments.title);
+}
+
+describe("Apply Journal and resume", () => {
+  it("stops at the first failed write and says which writes were sent", async () => {
+    const core = await openTriage();
+    await openPlans(ws.dir).approve(planId(await core.explore(fourWrites)));
+    await ws.control("linear").failWrite(3);
+
+    const result = await core.explore(fourWrites);
+
+    expect(!result.ok && result.error).toMatch(
+      /^Apply stopped at write 3 of 4 \(linear\.createIssue\): .*Sent: writes 1–2\. Not sent: writes 3–4\. `pinfold resume \S+` sends the writes not sent\.$/s
+    );
+    expect(await sentTitles()).toEqual(["One", "Two"]);
+  });
+
+  it("resumes a stopped run by sending only the writes not sent", async () => {
+    const core = await openTriage();
+    const id = planId(await core.explore(fourWrites));
+    await openPlans(ws.dir).approve(id);
+    await ws.control("linear").failWrite(3);
+    const run = stoppedRun(await core.explore(fourWrites));
+
+    const resumed = await core.resume(run);
+
+    expect(resumed).toMatchObject({ run, plan: { id }, sent: [3, 4] });
+    const writes = await ws.control("linear").receivedWrites();
+    expect(writes.map((write) => write.arguments)).toEqual([
+      { title: "One" },
+      { title: "Two" },
+      { title: "Three" },
+      { title: "Four", description: "https://linear.example/issue/ENG-102" },
+    ]);
+  });
+
+  it("stops a resumed run again at its next failed write", async () => {
+    const core = await openTriage();
+    await openPlans(ws.dir).approve(planId(await core.explore(fourWrites)));
+    await ws.control("linear").failWrite(2);
+    const run = stoppedRun(await core.explore(fourWrites));
+    await ws.control("linear").failWrite(2);
+
+    await expect(core.resume(run)).rejects.toThrow(
+      /Apply stopped at write 3 of 4 .*Sent: writes 1–2\. Not sent: writes 3–4\./s
+    );
+    expect(await core.resume(run)).toMatchObject({ sent: [3, 4] });
+    expect(await sentTitles()).toEqual(["One", "Two", "Three", "Four"]);
+  });
+
+  it("sends nothing when resuming a run that was fully applied", async () => {
+    const core = await openTriage();
+    await openPlans(ws.dir).approve(planId(await core.explore(fourWrites)));
+    await ws.control("linear").failWrite(4);
+    const run = stoppedRun(await core.explore(fourWrites));
+    await core.resume(run);
+
+    const again = await core.resume(run);
+
+    expect(again).toMatchObject({ run, sent: [] });
+    expect(await sentTitles()).toEqual(["One", "Two", "Three", "Four"]);
+  });
+
+  it("sends each write once when two resumes race", async () => {
+    const core = await openTriage();
+    await openPlans(ws.dir).approve(planId(await core.explore(fourWrites)));
+    await ws.control("linear").failWrite(1);
+    const run = stoppedRun(await core.explore(fourWrites));
+
+    await Promise.allSettled([core.resume(run), core.resume(run)]);
+    await Promise.allSettled([core.resume(run)]);
+
+    expect(await sentTitles()).toEqual(["One", "Two", "Three", "Four"]);
+  });
+
+  it("resumes a run whose Apply stopped before it could record the stop", async () => {
+    const core = await openTriage();
+    const id = planId(await core.explore(fourWrites));
+    await openPlans(ws.dir).approve(id);
+    // A run that claimed the plan and then died before sending anything.
+    const dir = join(ws.dir, ".pinfold", "plans");
+    const file = (await readdir(dir)).find((name) => name.endsWith(".json"))!;
+    const record = await readFile(join(dir, file), "utf8");
+    await writeFile(
+      join(dir, file),
+      record.replace('"approved"', '"applying"')
+    );
+    await writeFile(join(dir, file.replace(/\.json$/, ".claim")), "");
+    const run = stoppedRun(await core.explore(fourWrites));
+
+    expect(await core.resume(run)).toMatchObject({ sent: [1, 2, 3, 4] });
+    expect(await core.explore(fourWrites)).toMatchObject({ status: "pending" });
+    expect(await sentTitles()).toEqual(["One", "Two", "Three", "Four"]);
+  });
+
+  it("never deduplicates a new run against an earlier one", async () => {
+    const core = await openTriage();
+    const plans = openPlans(ws.dir);
+    const first = planId(await core.explore(fourWrites));
+    await plans.approve(first);
+    await core.explore(fourWrites);
+
+    const second = await core.explore(fourWrites);
+    await plans.approve(planId(second));
+    const applied = await core.explore(fourWrites);
+
+    expect(applied).toMatchObject({ ok: true, status: "applied" });
+    expect(await sentTitles()).toEqual([
+      ...["One", "Two", "Three", "Four"],
+      ...["One", "Two", "Three", "Four"],
+    ]);
+  });
+
+  it("refuses to resume a run it does not know or that never started applying", async () => {
+    const core = await openTriage();
+    const id = planId(await core.explore(fourWrites));
+    const [pending] = await openPlans(ws.dir).pending();
+
+    await expect(core.resume("nope")).rejects.toThrow(/no run nope/);
+    await expect(core.resume(pending!.record)).rejects.toThrow(
+      new RegExp(`Write Plan ${id} is pending; there is nothing to resume`)
+    );
+    expect(await sentTitles()).toEqual([]);
   });
 });
