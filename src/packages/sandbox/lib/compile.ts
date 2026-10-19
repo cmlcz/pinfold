@@ -74,8 +74,14 @@ function describeCompileError(failure: TransformFailure): string {
   return failure.errors
     .map(({ text, location }) =>
       location
-        ? `SyntaxError: ${text}\n    at ${sourceFile}:${location.line}:${location.column + 1}`
+        ? `SyntaxError: ${text}\n    at ${sourceFile}:${location.line}:${characterColumn(location.lineText, location.column) + 1}`
         : `SyntaxError: ${text}`
     )
     .join("\n");
+}
+
+// esbuild counts columns in UTF-8 bytes; the agent's editor counts characters,
+// as type errors and stack frames do.
+function characterColumn(lineText: string, byteColumn: number): number {
+  return Buffer.from(lineText).subarray(0, byteColumn).toString().length;
 }

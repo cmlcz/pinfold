@@ -127,3 +127,37 @@ describe("The sdk object", () => {
     expect(received[0]).not.toBeInstanceOf(Placeholder);
   });
 });
+
+describe("The type check", () => {
+  it("reports syntax errors at character columns after non-ASCII text", async () => {
+    const result = await run(`const s = "ééé€"; let = ;`);
+
+    expect(result).toEqual({
+      ok: false,
+      error: expect.stringContaining("at program.ts:1:25"),
+    });
+  });
+
+  it("does not load libraries beyond the standard ES library", async () => {
+    const result = await run(`/// <reference lib="dom" />
+      export async function main() {
+        return typeof fetch;
+      }`);
+
+    expect(result.ok).toBe(false);
+  });
+
+  it("does not resolve imports to files on the host", async () => {
+    const result =
+      await run(`import type { Plans } from "${process.cwd()}/src/packages/core/lib/plans.ts";
+      export async function main() {
+        const plans: Plans | null = null;
+        return plans;
+      }`);
+
+    expect(result).toEqual({
+      ok: false,
+      error: expect.stringContaining("TS2307"),
+    });
+  });
+});

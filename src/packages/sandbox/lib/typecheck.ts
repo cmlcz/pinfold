@@ -18,8 +18,22 @@ const options: ts.CompilerOptions = {
 };
 
 const defaultHost = ts.createCompilerHost(options);
-// The standard library files never change, so parse them once.
-const libraryFiles = new Map<string, ts.SourceFile | undefined>();
+// The standard library files never change, so parse them once. Only the files
+// the configured library is built from are served: a triple-slash reference
+// to another library, such as dom, finds nothing.
+const libraryFiles = new Map(
+  ts
+    .createProgram([programFile], options, {
+      ...defaultHost,
+      getSourceFile: (fileName, languageVersion) =>
+        fileName === programFile
+          ? ts.createSourceFile(fileName, "", languageVersion)
+          : defaultHost.getSourceFile(fileName, languageVersion),
+    })
+    .getSourceFiles()
+    .filter((file) => file.fileName !== programFile)
+    .map((file) => [file.fileName, file])
+);
 
 /** Error messages with positions in program.ts; empty when the program checks. */
 export function typecheck(source: string, declarations: string): string[] {
@@ -33,21 +47,17 @@ export function typecheck(source: string, declarations: string): string[] {
       ts.createSourceFile(sdkFile, declarations, ts.ScriptTarget.ES2023),
     ],
   ]);
+  // The program sees only itself, the SDK and the library, never the host's
+  // files, so an import cannot reveal what a file on the host declares.
   const host: ts.CompilerHost = {
     ...defaultHost,
-    getSourceFile(fileName, languageVersion) {
-      const file = files.get(fileName);
-      if (file) return file;
-      if (!libraryFiles.has(fileName)) {
-        libraryFiles.set(
-          fileName,
-          defaultHost.getSourceFile(fileName, languageVersion)
-        );
-      }
-      return libraryFiles.get(fileName);
-    },
-    fileExists: (fileName) =>
-      files.has(fileName) || defaultHost.fileExists(fileName),
+    getSourceFile: (fileName) =>
+      files.get(fileName) ?? libraryFiles.get(fileName),
+    fileExists: (fileName) => files.has(fileName),
+    readFile: () => undefined,
+    directoryExists: () => false,
+    getDirectories: () => [],
+    realpath: (path) => path,
     writeFile: () => {},
   };
   const program = ts.createProgram([programFile, sdkFile], options, host);
