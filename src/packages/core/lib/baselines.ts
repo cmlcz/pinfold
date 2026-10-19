@@ -22,7 +22,7 @@ const baselineSchema = z.object({
 });
 
 /** A pinned Tool: unlike a live listing, its response shape is always known. */
-export type Baseline = SdkTool & { outputSchema: JsonSchema };
+type Baseline = SdkTool & { outputSchema: JsonSchema };
 
 export type Baselines = {
   get(server: string, tool: string): Baseline | undefined;

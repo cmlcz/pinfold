@@ -4,14 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadConfig, openCore } from "../../core/index.ts";
 import { driftKitCommand } from "../../drift-kit/index.ts";
 
 const bin = fileURLToPath(new URL("../bin.ts", import.meta.url));
-
-// Each test runs the CLI in processes of its own, given up to 30 s each.
-vi.setConfig({ testTimeout: 30_000 });
 let dir: string;
 let config: string;
 
@@ -31,11 +28,20 @@ beforeEach(async () => {
 
 afterEach(() => rm(dir, { recursive: true, force: true }));
 
-async function pinfold(...args: string[]) {
+function pinfold(...args: string[]) {
+  return pinfoldExactly(...args, "--config", config);
+}
+
+/**
+ * Runs the CLI with these arguments only, --config included. Node 22
+ * warns that node:sqlite is experimental; the flag keeps that out of the
+ * stderr the tests compare exactly.
+ */
+async function pinfoldExactly(...args: string[]) {
   try {
     const { stdout } = await promisify(execFile)(
       process.execPath,
-      [bin, ...args, "--config", config],
+      ["--disable-warning=ExperimentalWarning", bin, ...args],
       { timeout: 30_000 }
     );
     return { code: 0, stdout, stderr: "" };
@@ -126,5 +132,43 @@ describe("pinfold run", () => {
     expect(stderr).toBe(
       "Workflow nothing not run: there is no saved Workflow by that name.\n"
     );
+  });
+
+  it("takes --config before the command too", async () => {
+    await saveWorkflow();
+
+    const { code, stdout } = await pinfoldExactly(
+      "--config",
+      config,
+      "run",
+      "file_issue",
+      "--title=--draft"
+    );
+
+    expect(code).toBe(3);
+    expect(stdout).toContain('linear.createIssue {"title":"--draft"}');
+  });
+
+  it("refuses unclear arguments with the usage and exit code 2", async () => {
+    await saveWorkflow();
+
+    const repeated = await pinfold(
+      "run",
+      "file_issue",
+      "--title",
+      "A",
+      "--title",
+      "B"
+    );
+    const dashes = await pinfold("run", "file_issue", "--", "--title", "A");
+    const unknown = await pinfold("plans", "--bogus");
+    const short = await pinfold("run", "file_issue", "-v");
+    const bareConfig = await pinfoldExactly("plans", "--config");
+
+    for (const result of [repeated, dashes, unknown, short, bareConfig]) {
+      expect(result.code).toBe(2);
+      expect(result.stderr).toContain("usage:");
+    }
+    expect(repeated.stderr).toMatch(/^--title is given more than once\n/);
   });
 });

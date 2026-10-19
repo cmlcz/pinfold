@@ -65,6 +65,8 @@ export function mainInputSchema(
 // type cannot be checked, and the input is refused rather than accepted
 // unchecked.
 const maxNodes = 10_000;
+/** The keys of a number index signature, as a patternProperties pattern. */
+export const numberKeyPattern = "^-?\\d+(\\.\\d+)?$";
 
 class UncheckableType extends Error {}
 
@@ -127,21 +129,31 @@ function objectSchema(walk: Walk, type: ts.Type): JsonSchema {
   const properties: Record<string, JsonSchema> = {};
   const required: string[] = [];
   for (const property of checker.getPropertiesOfType(type)) {
-    // Defined, so a field named __proto__ is a field like any other.
-    Object.defineProperty(properties, property.name, {
-      value: schemaOf(walk, checker.getTypeOfSymbol(property)),
-      enumerable: true,
-      writable: true,
-      configurable: true,
-    });
+    // A schema with such a field would check it as the object's prototype.
+    if (property.name === "__proto__") {
+      throw new UncheckableType(
+        "main's input has a field named __proto__, which cannot be checked"
+      );
+    }
+    properties[property.name] = schemaOf(
+      walk,
+      checker.getTypeOfSymbol(property)
+    );
     if (!(property.flags & ts.SymbolFlags.Optional))
       required.push(property.name);
   }
   const values = checker.getIndexTypeOfType(type, ts.IndexKind.String);
+  // JSON keys are strings: a number index takes the keys that spell numbers.
+  const numbered = values
+    ? undefined
+    : checker.getIndexTypeOfType(type, ts.IndexKind.Number);
   return {
     type: "object",
     properties,
     required,
+    ...(numbered
+      ? { patternProperties: { [numberKeyPattern]: schemaOf(walk, numbered) } }
+      : {}),
     additionalProperties: values ? schemaOf(walk, values) : false,
   };
 }

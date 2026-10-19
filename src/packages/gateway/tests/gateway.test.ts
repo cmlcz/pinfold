@@ -264,6 +264,32 @@ describe("Gateway", () => {
     });
   });
 
+  it("runs a Workflow whose main takes a string through run_workflow", async () => {
+    const run = await client.callTool({
+      name: "run_sandbox",
+      arguments: {
+        code: `export async function main(input: string) {
+          return input.toUpperCase();
+        }`,
+        input: "web",
+      },
+    });
+    const [content] = run.content as [{ type: "text"; text: string }];
+    const exploration = /Exploration Run ([0-9a-f]{8})/.exec(content.text)![1]!;
+    await client.callTool({
+      name: "save_workflow",
+      arguments: { run: exploration, name: "shout", confirmed: true },
+    });
+
+    const ran = await client.callTool({
+      name: "run_workflow",
+      arguments: { name: "shout", input: "api" },
+    });
+
+    expect(ran.isError).toBeFalsy();
+    expect(ran.content).toEqual([{ type: "text", text: '"API"' }]);
+  });
+
   it("reports a failed run as a tool error", async () => {
     const result = await client.callTool({
       name: "run_sandbox",

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   formatWorkflowRun,
-  inputFromFlags,
+  formatWorkflows,
   listWorkflows,
   openPlans,
   type Core,
@@ -336,6 +336,72 @@ describe("run_workflow", () => {
     ]);
   });
 
+  it("keeps the keys of a map out of Baselines and Contracts", async () => {
+    const core = await ws.open({
+      servers: {
+        uneven: {
+          command: process.execPath,
+          args: [fileURLToPath(new URL("uneven-server.ts", import.meta.url))],
+        },
+      },
+      classification: { uneven: { users: "read" } },
+    });
+    const explored = await core.explore({
+      code: `export async function main() {
+        const { byEmail, headers }: any = await sdk.uneven.users({});
+        return [byEmail["alice@corp.com"].name, headers["content-type"]];
+      }`,
+    });
+    if (!explored.ok) throw new Error(explored.error);
+    await core.saveWorkflow({
+      run: explored.exploration,
+      name: "users",
+      confirmed: true,
+    });
+
+    const committed = await Promise.all(
+      ["baselines", "."].map(async (sub) => {
+        const dir = join(ws.dir, ".workflows", sub);
+        const files = (await readdir(dir)).filter((f) => f.endsWith(".json"));
+        return Promise.all(files.map((f) => readFile(join(dir, f), "utf8")));
+      })
+    );
+
+    expect(committed.flat().join("\n")).not.toContain("alice@corp.com");
+    const record = JSON.parse(
+      await readFile(join(ws.dir, ".workflows", "users.json"), "utf8")
+    );
+    expect(record.contract["uneven.users"]).toEqual([
+      "byEmail",
+      'headers["content-type"]',
+    ]);
+    expect(await core.runWorkflow({ name: "users", input: {} })).toMatchObject({
+      ok: true,
+      value: ["Alice", "json"],
+    });
+  });
+
+  it("checks a Contract against a Baseline whose type is a list of types", async () => {
+    const core = await openTriage();
+    await saveTriage(core);
+    const dir = join(ws.dir, ".workflows", "baselines");
+    const [file] = (await readdir(dir)).filter((f) =>
+      f.startsWith("sentry.listIssues.")
+    );
+    const baseline = JSON.parse(await readFile(join(dir, file!), "utf8"));
+    baseline.outputSchema = {
+      ...baseline.outputSchema,
+      type: ["object"],
+    };
+    await writeFile(join(dir, file!), JSON.stringify(baseline));
+    await core.close();
+    const reopened = await openTriage();
+
+    const result = await reopened.runWorkflow({ name: "triage_sentry", input });
+
+    expect(result.ok ? "ok" : result.error).toBe("ok");
+  });
+
   it("refuses a Workflow that is not saved", async () => {
     const core = await openTriage();
 
@@ -368,19 +434,136 @@ describe("run_workflow", () => {
   });
 });
 
-describe("inputFromFlags", () => {
-  it("reads values as JSON unless the field takes a string", () => {
-    const schema = {
-      type: "object",
-      properties: {
-        project: { type: "string" },
-        minEvents: { type: "number" },
-        dry: { type: "boolean" },
-      },
-    };
+describe("run_workflow from a command line", () => {
+  const schemaCode = (
+    type: string
+  ) => `export async function main(input: ${type}) {
+    return input;
+  }`;
 
-    expect(
-      inputFromFlags(schema, { project: "42", minEvents: "50", dry: true })
-    ).toEqual({ project: "42", minEvents: 50, dry: true });
+  async function saveCode(core: Core, name: string, type: string) {
+    const explored = await core.explore({ code: schemaCode(type), input: {} });
+    if (!explored.ok) throw new Error(explored.error);
+    const saved = await core.saveWorkflow({
+      run: explored.exploration,
+      name,
+      confirmed: true,
+    });
+    if (!saved.ok) throw new Error(saved.error);
+  }
+
+  it("reads each flag as JSON where that fits its field, as text otherwise", async () => {
+    const core = await ws.open();
+    await saveCode(
+      core,
+      "flags",
+      `{ project: string; minEvents: number; id: string | null; level: "1" | "2"; dry?: boolean; none: number | null }`
+    );
+
+    const result = await core.runWorkflow({
+      name: "flags",
+      commandLine: {
+        flags: {
+          project: "42",
+          minEvents: "50",
+          id: "123",
+          level: "1",
+          dry: true,
+          none: "null",
+        },
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        project: "42",
+        minEvents: 50,
+        id: "123",
+        level: "1",
+        dry: true,
+        none: null,
+      },
+    });
+  });
+
+  it("reads flags against main's input type as the code is now", async () => {
+    const core = await ws.open();
+    await saveCode(core, "edited", "{ limit: number }");
+    const file = join(ws.dir, ".workflows", "edited.ts");
+    await writeFile(
+      file,
+      (await readFile(file, "utf8")).replace(
+        "{ limit: number }",
+        "{ id: string }"
+      )
+    );
+
+    const [listed] = await listWorkflows(ws.dir);
+    const result = await core.runWorkflow({
+      name: "edited",
+      commandLine: { flags: { id: "123" } },
+    });
+
+    expect(result).toMatchObject({ ok: true, value: { id: "123" } });
+    expect(listed!.input).toMatchObject({
+      properties: { id: { type: "string" } },
+    });
+  });
+
+  it("keeps the saved input of an edited Workflow that is refused", async () => {
+    const core = await ws.open();
+    await saveCode(core, "broken", "{ limit: number }");
+    const file = join(ws.dir, ".workflows", "broken.ts");
+    const record = join(ws.dir, ".workflows", "broken.json");
+    const saved = await readFile(record, "utf8");
+    await writeFile(
+      file,
+      (await readFile(file, "utf8")).replace(
+        "{ limit: number }",
+        "{ id: string }) { const n: number = input.id; return n; } function unused("
+      )
+    );
+
+    const result = await core.runWorkflow({
+      name: "broken",
+      input: { id: "1" },
+    });
+
+    expect(!result.ok && result.error).toMatch(/does not type-check/);
+    expect(await readFile(record, "utf8")).toBe(saved);
+  });
+
+  it("lists the keys of an index signature among the inputs", async () => {
+    const core = await ws.open();
+    await saveCode(core, "indexed", "{ byId: Record<number, string> }");
+
+    expect(formatWorkflows(await listWorkflows(ws.dir))).toContain(
+      "inputs: byId: { [key: number]: string }"
+    );
+  });
+
+  it("reads flags for the keys of a number index", async () => {
+    const core = await ws.open();
+    await saveCode(core, "numbered", "Record<number, string>");
+
+    const result = await core.runWorkflow({
+      name: "numbered",
+      commandLine: { flags: { "1": "123" } },
+    });
+
+    expect(result).toMatchObject({ ok: true, value: { "1": "123" } });
+  });
+
+  it("takes one value for a main whose input is not an object", async () => {
+    const core = await ws.open();
+    await saveCode(core, "search", "string");
+
+    const result = await core.runWorkflow({
+      name: "search",
+      commandLine: { value: "42", flags: {} },
+    });
+
+    expect(result).toMatchObject({ ok: true, value: "42" });
   });
 });

@@ -58,7 +58,10 @@ export async function compile(
         .split("\n")
         .filter((frame) => frame.includes(`(${scriptFile}:`))
         .map((frame) => frame.replace(scriptPosition, toSourcePosition));
-      const header = `${String(name ?? "Error")}: ${String(message)}`;
+      const header =
+        message === undefined
+          ? "Error: the program threw a value that is not an Error"
+          : `${String(name ?? "Error")}: ${String(message)}`;
       return [header, ...frames].join("\n");
     },
   };

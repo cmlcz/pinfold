@@ -45,5 +45,5 @@ describe("The type check", () => {
       ok: true,
       value: 2,
     });
-  }, 30_000);
+  });
 });
