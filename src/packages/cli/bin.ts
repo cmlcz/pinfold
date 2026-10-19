@@ -3,12 +3,15 @@
 //   node bin.ts plans [--config pinfold.json]
 //   node bin.ts approve|decline <plan-id> [--config pinfold.json]
 //   node bin.ts resume <run-id> [--config pinfold.json]
+//   node bin.ts list [--config pinfold.json]
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import {
   classifyTools,
   formatPlan,
   formatResume,
+  formatWorkflows,
+  listWorkflows,
   loadConfig,
   openCore,
   openPlans,
@@ -20,7 +23,8 @@ const usage = `usage:
   pinfold classify [read|write <server.tool>...] [--config <path>]
   pinfold plans [--config <path>]
   pinfold approve|decline <plan-id> [--config <path>]
-  pinfold resume <run-id> [--config <path>]`;
+  pinfold resume <run-id> [--config <path>]
+  pinfold list [--config <path>]`;
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -80,6 +84,10 @@ async function main(): Promise<number> {
         return 0;
       });
     }
+    case "list":
+      if (rest.length > 0) return fail();
+      console.log(formatWorkflows(await listWorkflows(root)));
+      return 0;
     default:
       return fail();
   }

@@ -8,7 +8,16 @@ import type { WritePlan } from "./plan.ts";
  * again rebuilds the plan and applies it if nothing changed.
  */
 export type ExploreResult =
-  | { ok: false; error: string }
+  | Failed
+  | (PlanOutcome & {
+      /** Identifies the run, which save_workflow can save as a Workflow. */
+      exploration: string;
+    });
+
+export type Failed = { ok: false; error: string };
+
+/** What became of a successful run's Write Plan. */
+export type PlanOutcome =
   | {
       ok: true;
       status: "complete" | "pending" | "declined";
@@ -36,6 +45,14 @@ export type ExploreResult =
 export function formatOutcome(
   result: Extract<ExploreResult, { ok: true }>
 ): string {
+  return [
+    describePlanOutcome(result),
+    "",
+    `Exploration Run ${result.exploration}. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run.`,
+  ].join("\n");
+}
+
+function describePlanOutcome(result: PlanOutcome): string {
   const value = formatValue(result.value);
   const { plan } = result;
   switch (result.status) {

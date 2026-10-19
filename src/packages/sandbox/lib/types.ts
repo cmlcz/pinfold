@@ -29,8 +29,12 @@ export type Program = {
   clock?: Clock;
 };
 
+/** The paths of the result fields a run read, by Tool as `namespace.name`. */
+export type FieldReads = Record<string, string[]>;
+
 export type SandboxResult =
-  { ok: true; value: unknown } | { ok: false; error: string };
+  | { ok: true; value: unknown; reads: FieldReads }
+  | { ok: false; error: string };
 
 /**
  * Runs untrusted code with no host access except its `sdk`.

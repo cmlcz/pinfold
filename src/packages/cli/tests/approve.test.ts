@@ -159,3 +159,40 @@ describe("pinfold resume", () => {
     expect(stderr).toMatch(/no run nope/);
   });
 });
+
+describe("pinfold list", () => {
+  it("lists the saved Workflows", async () => {
+    expect((await pinfold("list")).stdout).toBe("No saved Workflows.\n");
+    const core = await openCore(await loadConfig(config), { root: dir });
+    try {
+      const result = await core.explore({
+        code: `export async function main(input: { title: string }) {
+          return sdk.linear.createIssue({ title: input.title });
+        }`,
+        input: { title: "Fix totals" },
+      });
+      if (!result.ok) throw new Error(result.error);
+      await core.saveWorkflow({
+        run: result.exploration,
+        name: "file_issue",
+        confirmed: true,
+      });
+    } finally {
+      await core.close();
+    }
+
+    const { code, stdout } = await pinfold("list");
+
+    expect(code).toBe(0);
+    expect(stdout).toBe(
+      [
+        "file_issue",
+        "  inputs: title: string",
+        "  tools: linear.createIssue",
+        "  last run: never",
+        "  status: ready",
+        "",
+      ].join("\n")
+    );
+  });
+});
