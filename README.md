@@ -2,7 +2,7 @@
 
 pinfold is a local MCP server for coding agents. It sits between your agent and the MCP servers you use, such as Sentry, GitHub, or Linear. It runs the code your agent writes in an isolated sandbox, and it does not send any write to those servers until you approve it.
 
-> **Early version (0.0.0).** Only the features below work today. Saving workflows and automatic repairs are planned but not available yet.
+> **Early version (0.0.0).** Only the features below work today. Running saved workflows and automatic repairs are planned but not available yet.
 
 ## What works today
 
@@ -10,6 +10,7 @@ pinfold is a local MCP server for coding agents. It sits between your agent and 
 - **Read tools run live.** Tools you mark as read run against the real server.
 - **Writes wait for approval.** Tools that change something are recorded into a plan. Nothing is sent until you approve that exact plan.
 - **Resume.** If an approved plan stops partway through, `resume` sends the writes that were not sent yet. A write that may have reached the server is never sent again.
+- **Save workflows.** A successful run can be saved as a workflow: an ordinary TypeScript file in `.workflows/` that you own, with the response fields it reads and its recorded tool calls.
 
 ## Requirements
 
@@ -49,6 +50,7 @@ Create a `pinfold.json` file in your project:
 
 - **`servers`** lists the MCP servers pinfold connects to. Each server's tools appear in the sandbox as `sdk.<server>.<tool>`. Server names must be valid JavaScript identifiers.
 - **`classification`** marks tools as `"read"`. Any tool you leave out is a write tool.
+- **`redact`** is optional. It lists, by server and tool, the fields that are replaced with `[redacted]` before a saved workflow's recorded calls are written to disk. A path starts with `arguments` or `response`, and `[]` stands for every element of an array, as in `"response.issues[].assignee.email"`.
 - **`limits`** is optional. The values above are the defaults: 30 seconds, 64 MiB of memory, and 100 tool calls per run.
 
 ## Connect your agent
@@ -59,10 +61,12 @@ Start pinfold as an MCP server over stdio. Add this command to your agent's MCP 
 node src/packages/gateway/bin.ts --config pinfold.json
 ```
 
-The agent gets two tools:
+The agent gets four tools:
 
 - **`search_sdk`** finds the TypeScript signatures of the tools that match a keyword query.
 - **`run_sandbox`** runs a program that exports `main(input)` and calls tools with `await sdk.<server>.<tool>(args)`.
+- **`save_workflow`** saves a successful run as a workflow, after you confirm its result.
+- **`list_workflows`** lists the saved workflows.
 
 ## Mark read tools
 
@@ -89,10 +93,36 @@ node src/packages/cli/bin.ts resume <run-id>    # finish a plan that stopped par
 
 After you approve a plan, the agent runs the same code again. pinfold rebuilds the plan and sends the writes only if the plan has not changed. If it has changed, nothing is sent, and you need to approve the new plan. Inside a run, `Date` stands still and `Math.random` is seeded. The run after Approval gets the same time and seed, so a write that uses them rebuilds as you approved it.
 
+## Save a workflow
+
+Each successful `run_sandbox` result names its run. When you are happy with the result, tell the agent to save it, for example "save that as `triage_sentry`". The agent calls `save_workflow` with the run, the name, and your confirmation. pinfold saves the run only if all of these hold:
+
+- the code exports `main(input)` with a typed `input`;
+- the run finished without error;
+- the code, with the workflow's settings added, type-checks against the SDK; and
+- you confirmed the result.
+
+If a check fails, nothing is written, and the result names the failed check. A run can be saved only from the gateway session that ran it.
+
+A saved workflow is made of these files:
+
+- **`.workflows/<name>.ts`** holds the code and `export const settings = { writeBudget: 10 }`. You own this file and may edit it.
+- **`.workflows/<name>.json`** holds the input schema, the tools the workflow calls, and its contract: the response fields the code read.
+- **`.workflows/fixtures/<name>.json`** holds the run's input and its read tool calls with their responses, after redaction. It is git-ignored.
+
+List the saved workflows with their inputs, tools, last run, and status:
+
+```sh
+node src/packages/cli/bin.ts list
+```
+
+Running a saved workflow is not available yet.
+
 ## Where pinfold keeps its state
 
 - **`.pinfold/`** holds the write plans and a journal of the writes already sent. It is git-ignored.
 - **`.workflows/baselines/`** holds the recorded response shape of each tool.
+- **`.workflows/`** also holds the saved workflows. **`.workflows/fixtures/`** is git-ignored.
 
 ## License
 

@@ -49,7 +49,9 @@ describe("Gateway", () => {
   it("exposes only its own fixed tools", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((tool) => tool.name).sort()).toEqual([
+      "list_workflows",
       "run_sandbox",
+      "save_workflow",
       "search_sdk",
     ]);
   });
@@ -92,7 +94,12 @@ describe("Gateway", () => {
     });
 
     expect(result).toMatchObject({
-      content: [{ type: "text", text: "3" }],
+      content: [
+        {
+          type: "text",
+          text: expect.stringMatching(/^3\n\nExploration Run [0-9a-f]{8}\. /),
+        },
+      ],
     });
     expect(result.isError).toBeFalsy();
   });
@@ -122,7 +129,9 @@ describe("Gateway", () => {
           "",
           "To send these writes, ask the developer to approve the plan in a terminal:",
           String.raw`  pinfold approve [0-9a-f]{12}`,
-          String.raw`Then call run_sandbox again with the same code and input to apply it\.$`,
+          String.raw`Then call run_sandbox again with the same code and input to apply it\.`,
+          "",
+          String.raw`Exploration Run [0-9a-f]{8}\. To keep it as a Workflow, .*$`,
         ].join("\n")
       )
     );
@@ -149,7 +158,64 @@ describe("Gateway", () => {
     expect(applied.content).toEqual([
       {
         type: "text",
-        text: `["ENG-102"]\n\nApplied Write Plan ${id}: 1 write sent.`,
+        text: expect.stringMatching(
+          new RegExp(
+            String.raw`^\["ENG-102"\]\n\nApplied Write Plan ${id}: 1 write sent\.\n\nExploration Run `
+          )
+        ),
+      },
+    ]);
+  });
+
+  it("saves a confirmed run as a Workflow and lists it", async () => {
+    const run = await client.callTool({
+      name: "run_sandbox",
+      arguments: {
+        code: `export async function main(input: { project: string }) {
+          const { issues } = await sdk.sentry.listIssues(input);
+          return issues.length;
+        }`,
+        input: { project: "web" },
+      },
+    });
+    const [content] = run.content as [{ type: "text"; text: string }];
+    const exploration = /Exploration Run ([0-9a-f]{8})/.exec(content.text)![1]!;
+
+    const unconfirmed = await client.callTool({
+      name: "save_workflow",
+      arguments: { run: exploration, name: "count_issues", confirmed: false },
+    });
+    const saved = await client.callTool({
+      name: "save_workflow",
+      arguments: { run: exploration, name: "count_issues", confirmed: true },
+    });
+    const listed = await client.callTool({
+      name: "list_workflows",
+      arguments: {},
+    });
+
+    expect(unconfirmed).toMatchObject({
+      isError: true,
+      content: [{ text: expect.stringMatching(/Failed check: confirmation$/) }],
+    });
+    expect(saved.isError).toBeFalsy();
+    expect(saved.content).toMatchObject([
+      {
+        text: expect.stringMatching(
+          /^Saved Workflow count_issues as \.workflows\/count_issues\.ts\./
+        ),
+      },
+    ]);
+    expect(listed.content).toEqual([
+      {
+        type: "text",
+        text: [
+          "count_issues",
+          "  inputs: project: string",
+          "  tools: sentry.listIssues",
+          "  last run: never",
+          "  status: ready",
+        ].join("\n"),
       },
     ]);
   });

@@ -37,7 +37,7 @@ describe("Host results", () => {
       sdk
     );
 
-    expect(result).toEqual({ ok: true, value: 2 });
+    expect(result).toMatchObject({ ok: true, value: 2 });
   });
 });
 
@@ -87,7 +87,10 @@ describe("The sdk object", () => {
       sdk
     );
 
-    expect(result).toEqual({ ok: true, value: ["a", "b", [], "undefined"] });
+    expect(result).toMatchObject({
+      ok: true,
+      value: ["a", "b", [], "undefined"],
+    });
   });
 
   it("cannot be made to forge a Placeholder by tampering with built-ins", async () => {
@@ -121,7 +124,7 @@ describe("The sdk object", () => {
       sdk
     );
 
-    expect(result).toEqual({ ok: true, value: lookalike });
+    expect(result).toMatchObject({ ok: true, value: lookalike });
     expect(received).toEqual([lookalike]);
     expect(JSON.stringify(received)).not.toContain("Placeholder");
     expect(received[0]).not.toBeInstanceOf(Placeholder);
@@ -189,5 +192,45 @@ describe("The clock", () => {
     expect(a).not.toBe(b);
     expect(again).toEqual(first);
     expect(other).not.toEqual(first);
+  });
+});
+
+describe("Field reads", () => {
+  it("reports the result fields the program read, by Tool", async () => {
+    const issues = {
+      issues: [
+        { id: "1", count: 60, culprit: "a.ts", "weird key": 1, meta: { x: 1 } },
+        { id: "2", count: 3, culprit: "b.ts", "weird key": 2, meta: { x: 2 } },
+      ],
+      total: 2,
+    };
+    const sdk = {
+      sentry: { listIssues: async () => issues, other: async () => [{ a: 1 }] },
+    };
+
+    const result = await run(
+      `export async function main() {
+        const { issues } = await sdk.sentry.listIssues({});
+        const [first] = await sdk.sentry.other({});
+        const frequent = issues.filter((i: any) => i.count >= 50);
+        return { ids: frequent.map((i: any) => i.id), weird: issues[0]["weird key"], first };
+      }`,
+      sdk
+    );
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value).toEqual({ ids: ["1"], weird: 1, first: { a: 1 } });
+    expect(Object.keys(result.reads).sort()).toEqual([
+      "sentry.listIssues",
+      "sentry.other",
+    ]);
+    expect([...result.reads["sentry.listIssues"]!].sort()).toEqual([
+      "issues",
+      "issues[]",
+      "issues[].count",
+      "issues[].id",
+      'issues[]["weird key"]',
+    ]);
+    expect([...result.reads["sentry.other"]!].sort()).toEqual(["[]", "[].a"]);
   });
 });

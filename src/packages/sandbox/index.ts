@@ -1,5 +1,6 @@
 export type {
   Clock,
+  FieldReads,
   HostFunction,
   Limits,
   Program,
@@ -14,3 +15,5 @@ export {
   Placeholder,
   PlaceholderError,
 } from "./lib/placeholder.ts";
+export { mainInputSchema, type JsonSchema } from "./lib/signature.ts";
+export { typecheck } from "./lib/typecheck.ts";

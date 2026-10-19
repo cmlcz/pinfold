@@ -9,9 +9,8 @@ const { values } = parseArgs({
   options: { config: { type: "string", default: "pinfold.json" } },
 });
 
-const core = await openCore(await loadConfig(values.config), {
-  root: dirname(resolve(values.config)),
-});
+const root = dirname(resolve(values.config));
+const core = await openCore(await loadConfig(values.config), { root });
 const transport = new StdioServerTransport();
 transport.onclose = () => void core.close();
-await createGateway(core).connect(transport);
+await createGateway(core, { root }).connect(transport);

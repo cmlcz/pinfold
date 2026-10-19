@@ -1,8 +1,9 @@
-import { randomInt } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import {
   Placeholder,
   PlaceholderError,
   quickJsSandbox,
+  type Clock,
   type Sdk,
 } from "../sandbox/index.ts";
 import { openBaselines } from "./lib/baselines.ts";
@@ -27,8 +28,16 @@ import { openPlanStore, type PlanRecord } from "./lib/plans.ts";
 import {
   writeCount,
   type ExploreResult,
+  type Failed,
+  type PlanOutcome,
   type ResumeResult,
 } from "./lib/outcome.ts";
+import {
+  saveWorkflow,
+  type Exploration,
+  type RecordedCall,
+  type SaveResult,
+} from "./lib/workflows.ts";
 
 export {
   classifyTools,
@@ -51,6 +60,13 @@ export {
   type ExploreResult,
   type ResumeResult,
 } from "./lib/outcome.ts";
+export {
+  formatWorkflows,
+  listWorkflows,
+  type SaveCheck,
+  type SaveResult,
+  type WorkflowSummary,
+} from "./lib/workflows.ts";
 export type { Placeholder } from "../sandbox/index.ts";
 
 const writeToolNote =
@@ -75,6 +91,15 @@ export type Core = {
   explore(request: { code: string; input?: unknown }): Promise<ExploreResult>;
   /** Sends the writes a stopped run's Apply did not send, and no others. */
   resume(run: string): Promise<ResumeResult>;
+  /**
+   * Saves a successful Exploration Run of this session as a Workflow, once
+   * the developer has confirmed its result.
+   */
+  saveWorkflow(request: {
+    run: string;
+    name: string;
+    confirmed: boolean;
+  }): Promise<SaveResult>;
   close(): Promise<void>;
 };
 
@@ -95,7 +120,8 @@ export async function openCore(
   const isRead = (tool: DownstreamTool) => classificationOf(tool) === "read";
 
   // During a Plan, Read Tools run live and Write Tool calls are recorded.
-  function planSdk(writes: PlannedWrite[]): Sdk {
+  // Read Tool calls are kept with their responses, as Fixtures.
+  function planSdk(writes: PlannedWrite[], calls: RecordedCall[]): Sdk {
     // No prototype, so a server named like an Object member is just a name.
     const sdk: Sdk = Object.create(null);
     for (const tool of downstream.tools) {
@@ -110,6 +136,7 @@ export async function openCore(
               );
             }
             const value = await tool.call(args);
+            calls.push({ tool: name, arguments: args, response: value });
             await baselines.record(tool, value);
             return value;
           }
@@ -180,7 +207,7 @@ export async function openCore(
     record: PlanRecord,
     plan: WritePlan,
     value: unknown
-  ): Promise<ExploreResult> {
+  ): Promise<PlanOutcome | Failed> {
     if (!(await plans.claim(record))) {
       return busy(plan, record);
     }
@@ -206,6 +233,51 @@ export async function openCore(
     }
   }
 
+  // The latest successful Exploration Runs, which save_workflow can save.
+  // Kept in memory only, so no unredacted response reaches the disk.
+  const explorations = new Map<string, Exploration>();
+  function remember(exploration: Exploration) {
+    explorations.set(exploration.run, exploration);
+    for (const run of explorations.keys()) {
+      if (explorations.size <= 20) break;
+      explorations.delete(run);
+    }
+  }
+
+  // What becomes of a run's Write Plan, given the plan approved for the same
+  // code and input, if any.
+  async function planOutcome(
+    plan: WritePlan,
+    value: unknown,
+    run: { key: string; clock: Clock; approved: PlanRecord | undefined }
+  ): Promise<PlanOutcome | Failed> {
+    if (plan.writes.length === 0)
+      return { ok: true, status: "complete", value, plan };
+    const { approved } = run;
+    const record = await plans.latest(plan.id);
+    switch (record?.status) {
+      case "declined":
+        return { ok: true, status: "declined", value, plan };
+      case "approved":
+        return apply(record, plan, value);
+      case "applying":
+        return busy(plan, record);
+      case "failed":
+        return {
+          ok: false,
+          error: `Write Plan ${plan.id} stopped after a failed write and is never sent again by a run; nothing was sent. \`pinfold resume ${record.record}\` sends the writes not sent.`,
+        };
+      case "pending":
+        break;
+      default:
+        // New, or applied before: the developer approves this run afresh.
+        await plans.addPending(plan, run.key, run.clock);
+    }
+    return approved === undefined
+      ? { ok: true, status: "pending", value, plan }
+      : { ok: true, status: "changed", value, plan, approved };
+  }
+
   const limits = resolveLimits(config);
   return {
     toolClassifications: () =>
@@ -218,51 +290,42 @@ export async function openCore(
       })),
     searchSdk: (query) => searchTools(sdkTools(), query),
     async explore({ code, input = {} }) {
-      const run = runKey(code, input);
+      const key = runKey(code, input);
       // A run after Approval sees the clock the approved run saw, so a plan
       // built from the time or Math.random is rebuilt as it was approved.
-      const approved = await plans.approvedFor(run);
+      const approved = await plans.approvedFor(key);
       const clock = approved?.clock ?? {
         now: Date.now(),
         seed: randomInt(2 ** 32),
       };
       const writes: PlannedWrite[] = [];
+      const calls: RecordedCall[] = [];
       const result = await quickJsSandbox.run({
         source: code,
         declarations: declarations(sdkTools()),
         input,
-        sdk: planSdk(writes),
+        sdk: planSdk(writes, calls),
         limits,
         clock,
       });
       if (!result.ok) return result;
-      const { value } = result;
       const plan = writePlan(writes);
-      if (plan.writes.length === 0)
-        return { ok: true, status: "complete", value, plan };
-
-      const record = await plans.latest(plan.id);
-      switch (record?.status) {
-        case "declined":
-          return { ok: true, status: "declined", value, plan };
-        case "approved":
-          return apply(record, plan, value);
-        case "applying":
-          return busy(plan, record);
-        case "failed":
-          return {
-            ok: false,
-            error: `Write Plan ${plan.id} stopped after a failed write and is never sent again by a run; nothing was sent. \`pinfold resume ${record.record}\` sends the writes not sent.`,
-          };
-        case "pending":
-          break;
-        default:
-          // New, or applied before: the developer approves this run afresh.
-          await plans.addPending(plan, run, clock);
-      }
-      return approved === undefined
-        ? { ok: true, status: "pending", value, plan }
-        : { ok: true, status: "changed", value, plan, approved };
+      const outcome = await planOutcome(plan, result.value, {
+        key,
+        clock,
+        approved,
+      });
+      if (!outcome.ok) return outcome;
+      const exploration = randomUUID().slice(0, 8);
+      remember({
+        run: exploration,
+        code,
+        input,
+        calls,
+        tools: [...new Set([...calls, ...writes].map((call) => call.tool))],
+        reads: result.reads,
+      });
+      return { ...outcome, exploration };
     },
     async resume(run) {
       const record = await plans.get(run);
@@ -286,6 +349,15 @@ export async function openCore(
       const sent = [...results.keys()].slice(before).map((index) => index + 1);
       return { run, plan, sent };
     },
+    saveWorkflow: ({ run, name, confirmed }) =>
+      saveWorkflow(options.root, {
+        name,
+        run,
+        exploration: explorations.get(run),
+        confirmed,
+        declarations: declarations(sdkTools()),
+        redact: config.redact ?? {},
+      }),
     async close() {
       journal.close();
       await downstream.close();
@@ -298,7 +370,7 @@ function runKey(code: string, input: unknown): string {
   return shortHash(JSON.stringify([code, input]));
 }
 
-function busy(plan: WritePlan, record: PlanRecord): ExploreResult {
+function busy(plan: WritePlan, record: PlanRecord): Failed {
   return {
     ok: false,
     error: `Write Plan ${plan.id} is being applied by another run, or a run applying it stopped; nothing was sent. If no run is applying it, \`pinfold resume ${record.record}\` sends the writes not sent, or \`pinfold decline ${plan.id}\` gives it up.`,

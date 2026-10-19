@@ -37,6 +37,16 @@ const libraryFiles = new Map(
 
 /** Error messages with positions in program.ts; empty when the program checks. */
 export function typecheck(source: string, declarations: string): string[] {
+  return ts
+    .getPreEmitDiagnostics(checkedProgram(source, declarations))
+    .map(describeDiagnostic);
+}
+
+/** The program and the SDK, as the type checker sees them. */
+export function checkedProgram(
+  source: string,
+  declarations: string
+): ts.Program & { programFile: string } {
   const files = new Map([
     [
       programFile,
@@ -61,7 +71,7 @@ export function typecheck(source: string, declarations: string): string[] {
     writeFile: () => {},
   };
   const program = ts.createProgram([programFile, sdkFile], options, host);
-  return ts.getPreEmitDiagnostics(program).map(describeDiagnostic);
+  return Object.assign(program, { programFile });
 }
 
 function describeDiagnostic(diagnostic: ts.Diagnostic): string {

@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import * as z from "zod";
 import type { Limits } from "../../sandbox/index.ts";
+import { parsePath } from "./paths.ts";
 
 const serverSchema = z.object({
   command: z.string().min(1),
@@ -8,6 +9,19 @@ const serverSchema = z.object({
 });
 
 const toolKindSchema = z.enum(["read", "write"]);
+
+// A field path into a recorded Tool call: its arguments or its response.
+const redactionPath = z.string().refine(
+  (path) => {
+    const [first] = parsePath(path) ?? [];
+    return (
+      first !== undefined &&
+      "key" in first &&
+      (first.key === "arguments" || first.key === "response")
+    );
+  },
+  { error: "must be a field path that starts with arguments or response" }
+);
 
 const configSchema = z.object({
   /** Downstream Servers by name; a server's Tools appear as `sdk.<name>.<tool>`. */
@@ -21,6 +35,13 @@ const configSchema = z.object({
    */
   classification: z
     .record(z.string(), z.record(z.string(), toolKindSchema))
+    .optional(),
+  /**
+   * Fields kept out of Fixtures, by server and Tool, as field paths into the
+   * recorded call, such as `response.issues[].assignee.email`.
+   */
+  redact: z
+    .record(z.string(), z.record(z.string(), z.array(redactionPath)))
     .optional(),
   /** Per-run limits; each one left out takes its default. */
   limits: z

@@ -32,11 +32,16 @@ const stackBytes = 256 * 1024;
 // relies on: a program that replaces Object, JSON or a prototype method
 // cannot change how values are encoded, nor forge a Placeholder.
 //
+// Each Tool result reaches the program as a proxy that notes which of its
+// fields the program reads, as paths like `issues[].count`. A field counts as
+// read when the program gets it, including when a value holding it is passed
+// to a Tool or returned.
+//
 // It also sets the run's clock: `Date` without arguments and `Date.now()`
 // give the clock's time, and `Math.random` is a seeded generator (mulberry32).
 const prelude = `(call, misuse, names, clock) => {
   const { now, seed } = JSON.parse(clock);
-  const { construct } = Reflect;
+  const { construct, get: reflectGet } = Reflect;
   const { imul } = Math;
   const DateType = Date;
   function FrozenDate(...args) {
@@ -150,14 +155,50 @@ const prelude = `(call, misuse, names, clock) => {
       return copy;
     });
 
+  const identifier = /^[A-Za-z_$][\\w$]*$/;
+  const test = RegExp.prototype.test;
+  const reads = create(null);
+  const tracked = new WeakMap();
+  const note = (tool, path) => {
+    if (!hasOwn(reads, tool)) define(reads, tool, create(null));
+    define(reads[tool], path, true);
+  };
+  const step = (path, key) =>
+    apply(test, identifier, [key])
+      ? (path === "" ? key : path + "." + key)
+      : path + "[" + stringify(key) + "]";
+
+  function track(value, tool, path) {
+    if (typeof value !== "object" || value === null) return value;
+    if (apply(weakGet, refs, [value]) !== undefined) return value;
+    const known = apply(weakGet, tracked, [value]);
+    if (known !== undefined) return known;
+    const list = isArray(value);
+    const proxy = new ProxyType(value, {
+      get(target, property, receiver) {
+        const field = reflectGet(target, property, receiver);
+        if (typeof property !== "string" || !hasOwn(target, property)) return field;
+        if (list && property === "length") return field;
+        const at = list ? path + "[]" : step(path, property);
+        note(tool, at);
+        return track(field, tool, at);
+      },
+    });
+    apply(weakSet, tracked, [value, proxy]);
+    return proxy;
+  }
+
   const sdk = create(null);
   const pairs = parse(names);
   for (let i = 0; i < pairs.length; i++) {
     const namespace = pairs[i][0];
     const name = pairs[i][1];
     if (!hasOwn(sdk, namespace)) define(sdk, namespace, create(null));
+    const tool = namespace + "." + name;
     define(sdk[namespace], name, (args) =>
-      apply(then, call(namespace, name, stringify(encode(args ?? {})), stack()), [decode])
+      apply(then, call(namespace, name, stringify(encode(args ?? {})), stack()), [
+        (json) => track(decode(json), tool, ""),
+      ])
     );
   }
   globalThis.sdk = sdk;
@@ -166,8 +207,11 @@ const prelude = `(call, misuse, names, clock) => {
     if (typeof globalThis.__program?.main !== "function") {
       throw new TypeErrorType("the program must export a main(input) function");
     }
-    const value = await globalThis.__program.main(parse(input));
-    return stringify({ value: encode(value) });
+    const value = encode(await globalThis.__program.main(parse(input)));
+    const paths = create(null);
+    const tools = keys(reads);
+    for (let i = 0; i < tools.length; i++) define(paths, tools[i], keys(reads[tools[i]]));
+    return stringify({ value, reads: paths });
   };
 }`;
 
@@ -342,8 +386,11 @@ export const quickJsSandbox: Sandbox = {
       if (Date.now() > deadline) exceed(timeLimit);
       const error = failed();
       if (error !== undefined) return { ok: false, error };
-      const { value } = decodeValue(vm.getString(json)) as { value: unknown };
-      return { ok: true, value };
+      const { value, reads } = decodeValue(vm.getString(json)) as {
+        value: unknown;
+        reads: Record<string, string[]>;
+      };
+      return { ok: true, value, reads };
     } catch (error) {
       if (error instanceof GuestError && isOutOfMemory(error.value)) {
         exceed(`its memory limit of ${limits.memoryBytes} bytes`);
