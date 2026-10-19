@@ -87,7 +87,7 @@ node src/packages/cli/bin.ts decline <plan-id>  # never send the plan
 node src/packages/cli/bin.ts resume <run-id>    # finish a plan that stopped partway
 ```
 
-After you approve a plan, the agent runs the same code again. pinfold rebuilds the plan and sends the writes only if the plan has not changed. If it has changed, nothing is sent, and you need to approve the new plan.
+After you approve a plan, the agent runs the same code again. pinfold rebuilds the plan and sends the writes only if the plan has not changed. If it has changed, nothing is sent, and you need to approve the new plan. Inside a run, `Date` stands still and `Math.random` is seeded. The run after Approval gets the same time and seed, so a write that uses them rebuilds as you approved it.
 
 ## Where pinfold keeps its state
 

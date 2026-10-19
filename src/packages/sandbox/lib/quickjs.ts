@@ -6,6 +6,7 @@ import {
   type QuickJSDeferredPromise,
   type QuickJSHandle,
 } from "quickjs-emscripten";
+import { randomInt } from "node:crypto";
 import { compile } from "./compile.ts";
 import {
   decodeValue,
@@ -30,7 +31,33 @@ const stackBytes = 256 * 1024;
 // The prelude runs before the program, so it captures every built-in it
 // relies on: a program that replaces Object, JSON or a prototype method
 // cannot change how values are encoded, nor forge a Placeholder.
-const prelude = `(call, misuse, names) => {
+//
+// It also sets the run's clock: `Date` without arguments and `Date.now()`
+// give the clock's time, and `Math.random` is a seeded generator (mulberry32).
+const prelude = `(call, misuse, names, clock) => {
+  const { now, seed } = JSON.parse(clock);
+  const { construct } = Reflect;
+  const { imul } = Math;
+  const DateType = Date;
+  function FrozenDate(...args) {
+    if (new.target === undefined) return new DateType(now).toString();
+    return construct(DateType, args.length > 0 ? args : [now], new.target);
+  }
+  FrozenDate.prototype = DateType.prototype;
+  FrozenDate.parse = DateType.parse;
+  FrozenDate.UTC = DateType.UTC;
+  FrozenDate.now = () => now;
+  DateType.prototype.constructor = FrozenDate;
+  globalThis.Date = FrozenDate;
+  let state = seed >>> 0;
+  Math.random = () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = imul(t ^ (t >>> 15), t | 1);
+    t ^= t + imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+
   const { create, defineProperty, hasOwn, keys } = Object;
   const { parse, stringify } = JSON;
   const { isArray } = Array;
@@ -292,7 +319,17 @@ export const quickJsSandbox: Sandbox = {
           vm.undefined,
           call,
           reportMisuse,
-          track(vm.newString(JSON.stringify(names)))
+          track(vm.newString(JSON.stringify(names))),
+          track(
+            vm.newString(
+              JSON.stringify(
+                program.clock ?? {
+                  now: Date.now(),
+                  seed: randomInt(2 ** 32),
+                }
+              )
+            )
+          )
         )
       );
       unwrap(vm.evalCode(compiled.code, compiled.filename));

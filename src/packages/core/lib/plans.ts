@@ -2,9 +2,17 @@
 // directory .pinfold/. Each Approval request is its own record, so running
 // the same code again never reopens a plan that was applied or failed.
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
+import {
+  link,
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
-import { decodeValue, encodeValue } from "../../sandbox/index.ts";
+import { decodeValue, encodeValue, type Clock } from "../../sandbox/index.ts";
 import type { WritePlan } from "./plan.ts";
 
 export type PlanStatus =
@@ -16,6 +24,8 @@ export type PlanRecord = WritePlan & {
   status: PlanStatus;
   /** Identifies the code and input whose run built the plan. */
   run: string;
+  /** The clock the run saw, so a run after Approval rebuilds the same plan. */
+  clock?: Clock;
   createdAt: string;
 };
 
@@ -39,7 +49,11 @@ export type PlanStore = Plans & {
   get(record: string): Promise<PlanRecord | undefined>;
   /** The latest approved plan built by a run of the same code and input. */
   approvedFor(run: string): Promise<PlanRecord | undefined>;
-  addPending(plan: WritePlan, run: string): Promise<void>;
+  /**
+   * Adds a pending record of a Write Plan, unless a run adding one at the
+   * same time, in this process or another, got there first.
+   */
+  addPending(plan: WritePlan, run: string, clock: Clock): Promise<void>;
   /**
    * Takes an approved record for one Apply. Only the first claim of a record
    * ever succeeds, across processes too.
@@ -82,15 +96,21 @@ export function openPlanStore(root: string): PlanStore {
 
   const all = async () => (await scan()).records;
 
-  async function save(record: PlanRecord): Promise<void> {
+  // Written aside and moved into place, so no reader ever sees half a
+  // record. A new record is linked, which fails if its file exists already.
+  async function save(record: PlanRecord, options = { new: false }) {
     await mkdir(dir, { recursive: true });
     // Nothing in the state directory belongs in version control.
     await writeFile(join(state, ".gitignore"), "*\n");
-    // Written aside and renamed, so no reader ever sees half a record.
     const file = join(dir, `${record.record}.json`);
     const aside = `${file}.${randomUUID().slice(0, 8)}.tmp`;
     await writeFile(aside, `${encodeValue(record)}\n`);
-    await rename(aside, file);
+    if (!options.new) return rename(aside, file);
+    try {
+      await link(aside, file);
+    } finally {
+      await rm(aside);
+    }
   }
 
   // Creates a marker file only if it does not exist yet: the atomic step that
@@ -156,14 +176,27 @@ export function openPlanStore(root: string): PlanStore {
       await save(declined);
       return { ...declined, previous: record.status };
     },
-    async addPending(plan, run) {
-      await save({
+    async addPending(plan, run, clock) {
+      // Records of a plan are numbered, so two runs adding the next record at
+      // once pick the same name and only one of them creates it.
+      const files = (await readOrNone(() => readdir(dir))) ?? [];
+      const ordinal =
+        files.filter(
+          (file) => file.startsWith(`${plan.id}-`) && file.endsWith(".json")
+        ).length + 1;
+      const record: PlanRecord = {
         ...plan,
-        record: `${plan.id}-${randomUUID().slice(0, 8)}`,
+        record: `${plan.id}-${ordinal}`,
         status: "pending",
         run,
+        clock,
         createdAt: new Date().toISOString(),
-      });
+      };
+      try {
+        await save(record, { new: true });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
     },
     async claim(record) {
       if (!(await mark(record, "claim"))) return false;

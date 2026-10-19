@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import {
   Placeholder,
   PlaceholderError,
@@ -217,6 +218,14 @@ export async function openCore(
       })),
     searchSdk: (query) => searchTools(sdkTools(), query),
     async explore({ code, input = {} }) {
+      const run = runKey(code, input);
+      // A run after Approval sees the clock the approved run saw, so a plan
+      // built from the time or Math.random is rebuilt as it was approved.
+      const approved = await plans.approvedFor(run);
+      const clock = approved?.clock ?? {
+        now: Date.now(),
+        seed: randomInt(2 ** 32),
+      };
       const writes: PlannedWrite[] = [];
       const result = await quickJsSandbox.run({
         source: code,
@@ -224,6 +233,7 @@ export async function openCore(
         input,
         sdk: planSdk(writes),
         limits,
+        clock,
       });
       if (!result.ok) return result;
       const { value } = result;
@@ -231,7 +241,6 @@ export async function openCore(
       if (plan.writes.length === 0)
         return { ok: true, status: "complete", value, plan };
 
-      const run = runKey(code, input);
       const record = await plans.latest(plan.id);
       switch (record?.status) {
         case "declined":
@@ -249,9 +258,8 @@ export async function openCore(
           break;
         default:
           // New, or applied before: the developer approves this run afresh.
-          await plans.addPending(plan, run);
+          await plans.addPending(plan, run, clock);
       }
-      const approved = await plans.approvedFor(run);
       return approved === undefined
         ? { ok: true, status: "pending", value, plan }
         : { ok: true, status: "changed", value, plan, approved };

@@ -10,6 +10,13 @@ export type Limits = {
   toolCalls: number;
 };
 
+/**
+ * The time and randomness a run sees: `Date` stands still at `now`, and
+ * `Math.random` draws from `seed`. A run given the same clock, input and Tool
+ * results computes the same values.
+ */
+export type Clock = { now: number; seed: number };
+
 export type Program = {
   /** TypeScript source that exports `main(input)`. */
   source: string;
@@ -18,6 +25,8 @@ export type Program = {
   input: unknown;
   sdk: Sdk;
   limits: Limits;
+  /** Absent, the run sees the host's time at its start and a fresh seed. */
+  clock?: Clock;
 };
 
 export type SandboxResult =
