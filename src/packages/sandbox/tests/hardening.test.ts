@@ -161,3 +161,33 @@ describe("The type check", () => {
     });
   });
 });
+
+describe("The clock", () => {
+  const clocked = (seed: number) =>
+    quickJsSandbox.run({
+      source: `export async function main() {
+        return [Date.now(), new Date().getTime(), Date(), new Date(0).getTime(), Math.random(), Math.random()];
+      }`,
+      declarations,
+      input: {},
+      sdk: {},
+      limits: { timeoutMs: 5000, memoryBytes: 64 * 1024 * 1024, toolCalls: 10 },
+      clock: { now: 1_700_000_000_000, seed },
+    });
+
+  it("gives the run the clock's time and seeded random numbers", async () => {
+    const first = await clocked(7);
+    const again = await clocked(7);
+    const other = await clocked(8);
+
+    if (!first.ok) throw new Error(first.error);
+    const [now, constructed, text, epoch, a, b] = first.value as unknown[];
+    expect([now, constructed, epoch]).toEqual([
+      1_700_000_000_000, 1_700_000_000_000, 0,
+    ]);
+    expect(text).toMatch(/^\w{3} Nov 1[45] 2023 /);
+    expect(a).not.toBe(b);
+    expect(again).toEqual(first);
+    expect(other).not.toEqual(first);
+  });
+});

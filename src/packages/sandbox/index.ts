@@ -1,4 +1,5 @@
 export type {
+  Clock,
   HostFunction,
   Limits,
   Program,

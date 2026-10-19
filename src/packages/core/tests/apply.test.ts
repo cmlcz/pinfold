@@ -349,6 +349,48 @@ describe("Approval and Apply", () => {
     });
   });
 
+  it("keeps one pending record when two runs of new code race", async () => {
+    const core = await openTriage();
+
+    const results = await Promise.all([
+      core.explore(triage),
+      core.explore(triage),
+      core.explore(triage),
+    ]);
+
+    expect(results.every((r) => r.ok && r.status === "pending")).toBe(true);
+    expect(await openPlans(ws.dir).pending()).toHaveLength(1);
+  });
+
+  it("applies an approved plan built from the time and Math.random", async () => {
+    const core = await openTriage();
+    const stamped = {
+      code: `export async function main() {
+        const ticket = await sdk.linear.createIssue({
+          title: "At " + new Date().toISOString() + " " + Date.now(),
+          description: String(Math.random()),
+        });
+        return ticket.identifier;
+      }`,
+    };
+    const first = await core.explore(stamped);
+    await openPlans(ws.dir).approve(planId(first));
+
+    const second = await core.explore(stamped);
+
+    expect(second).toMatchObject({
+      ok: true,
+      status: "applied",
+      plan: { id: planId(first) },
+    });
+    expect(await ws.control("linear").receivedWrites()).toEqual([
+      {
+        tool: "createIssue",
+        arguments: first.ok && first.plan.writes[0]!.arguments,
+      },
+    ]);
+  });
+
   it("completes a run without writes at once", async () => {
     const core = await openTriage();
 
