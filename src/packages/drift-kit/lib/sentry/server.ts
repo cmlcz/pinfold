@@ -56,7 +56,7 @@ export function createSentryServer(world: World<SentryState>): McpServer {
       annotations: { readOnlyHint: true },
     },
     async ({ id }) => {
-      const issue = world.state.issues.find((issue) => issue.id === id);
+      const issue = world.state.issues.find((candidate) => candidate.id === id);
       if (issue === undefined) {
         return {
           content: [{ type: "text", text: `issue ${id} not found` }],
@@ -112,13 +112,9 @@ export function createSentryServer(world: World<SentryState>): McpServer {
       if (!Object.hasOwn(seedTeams, slug)) {
         return { content: [{ type: "text", text: `No project ${slug}.` }] };
       }
+      const members = seedTeams[slug];
       return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({ slug, members: seedTeams[slug] }),
-          },
-        ],
+        content: [{ type: "text", text: JSON.stringify({ slug, members }) }],
       };
     }
   );

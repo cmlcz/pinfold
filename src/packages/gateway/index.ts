@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod";
 import {
   formatOutcome,
+  formatWorkflowRun,
   formatWorkflows,
   listWorkflows,
   type Core,
@@ -36,16 +37,13 @@ export function createGateway(
     },
     async ({ code, input }) => {
       const result = await core.explore({ code, input });
-      return result.ok
-        ? {
-            content: [
-              {
-                type: "text",
-                text: formatOutcome(result),
-              },
-            ],
-          }
-        : { content: [{ type: "text", text: result.error }], isError: true };
+      if (!result.ok) {
+        return {
+          content: [{ type: "text", text: result.error }],
+          isError: true,
+        };
+      }
+      return { content: [{ type: "text", text: formatOutcome(result) }] };
     }
   );
 
@@ -94,24 +92,56 @@ export function createGateway(
     },
     async (request) => {
       const result = await core.saveWorkflow(request);
-      return result.ok
-        ? {
-            content: [
-              {
-                type: "text",
-                text: `Saved Workflow ${result.workflow.name} as .workflows/${result.workflow.name}.ts.\n\n${formatWorkflows([result.workflow])}`,
-              },
-            ],
-          }
-        : {
-            content: [
-              {
-                type: "text",
-                text: `${result.error}\nFailed check: ${result.check}`,
-              },
-            ],
-            isError: true,
-          };
+      if (!result.ok) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `${result.error}\nFailed check: ${result.check}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      const { workflow } = result;
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Saved Workflow ${workflow.name} as .workflows/${workflow.name}.ts.\n\n${formatWorkflows([workflow])}`,
+          },
+        ],
+      };
+    }
+  );
+
+  server.registerTool(
+    "run_workflow",
+    {
+      description: [
+        "Run a saved Workflow with an input, without writing code: list_workflows shows each one's inputs.",
+        "The run is a Plan, then an Apply. Its writes are sent unattended unless Approval is required: the Workflow has never been applied, or its Write Plan exceeds its Write Budget. Then the run pauses, nothing is sent, and the result shows the Write Plan for the developer to approve in a terminal.",
+        "The Workflow is checked before it runs, since the developer may have edited it; a run refused by a check says why.",
+      ].join("\n"),
+      inputSchema: z.object({
+        name: z.string().describe("The Workflow's name"),
+        input: z
+          .unknown()
+          .optional()
+          .describe(
+            "The argument passed to the Workflow's main; an empty object when left out"
+          ),
+      }),
+    },
+    async ({ name, input }) => {
+      const result = await core.runWorkflow({ name, input: input ?? {} });
+      if (!result.ok) {
+        return {
+          content: [{ type: "text", text: result.error }],
+          isError: true,
+        };
+      }
+      return { content: [{ type: "text", text: formatWorkflowRun(result) }] };
     }
   );
 

@@ -77,10 +77,10 @@ export function createLinearServer(world: World<LinearState>): McpServer {
       if (!world.receive({ tool: "createIssue", arguments: args })) {
         return failedOnRequest();
       }
-      const number = world.state.issues.length + 1;
+      const sequence = world.state.issues.length + 1;
       const issue: LinearIssue = {
-        id: `lin-${number}`,
-        identifier: `ENG-${100 + number}`,
+        id: `lin-${sequence}`,
+        identifier: `ENG-${100 + sequence}`,
         title: args.title,
         description: args.description ?? "",
         assigneeEmail: args.assigneeEmail ?? null,

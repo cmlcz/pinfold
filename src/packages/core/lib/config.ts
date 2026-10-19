@@ -81,10 +81,19 @@ export async function classifyTools(
   const json = JSON.parse(
     await readFile(path, "utf8")
   ) as Partial<PinfoldConfig>;
-  json.classification ??= {};
-  for (const { server, tool, kind } of choices) {
-    (json.classification[server] ??= {})[tool] = kind;
+  // No prototypes, so a server or Tool named like an Object member, such as
+  // constructor, is a name like any other.
+  const servers: Record<string, Record<string, ToolKind>> = Object.create(null);
+  for (const [server, tools] of Object.entries(json.classification ?? {})) {
+    servers[server] = Object.assign(Object.create(null), tools);
   }
+  for (const { server, tool, kind } of choices) {
+    const tools: Record<string, ToolKind> =
+      servers[server] ?? Object.create(null);
+    tools[tool] = kind;
+    servers[server] = tools;
+  }
+  json.classification = servers;
   await writeFile(path, `${JSON.stringify(json, null, 2)}\n`);
 }
 

@@ -108,3 +108,28 @@ describe("Linear-shaped Drift Kit server", () => {
     ]);
   });
 });
+
+describe("The control channel", () => {
+  it("is never taken over by a second server on the same socket", async () => {
+    const second = new Client({ name: "second", version: "0.0.0" });
+    const started = second.connect(
+      new StdioClientTransport({
+        ...driftKitCommand("linear", { control: controlPath }),
+        stderr: "ignore",
+      })
+    );
+
+    await expect(started).rejects.toThrow();
+    await call("createIssue", { title: "Kept" });
+    const writes = await connectControl(controlPath).receivedWrites();
+    expect(writes.map((write) => write.arguments.title)).toEqual(["Kept"]);
+  });
+
+  it("refuses to fail a write that is not ahead", async () => {
+    const control = connectControl(controlPath);
+
+    await expect(control.failWrite(0)).rejects.toThrow(
+      "failWrite takes a call from 1, not 0"
+    );
+  });
+});

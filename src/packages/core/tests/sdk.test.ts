@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Core } from "../index.ts";
+import { classifyTools, type Core } from "../index.ts";
 import { createWorkspace, sentryReads, type Workspace } from "./workspace.ts";
 
 let ws: Workspace;
@@ -14,8 +14,15 @@ afterEach(() => ws.close());
 
 const baselines = () => join(ws.dir, ".workflows", "baselines");
 
+/** The pinned Baseline of a Tool, named `server.tool`. */
 async function readBaseline(tool: string) {
-  return JSON.parse(await readFile(join(baselines(), `${tool}.json`), "utf8"));
+  for (const file of await readdir(baselines())) {
+    const baseline = JSON.parse(
+      await readFile(join(baselines(), file), "utf8")
+    );
+    if (`${baseline.server}.${baseline.tool}` === tool) return baseline;
+  }
+  throw new Error(`no Baseline of ${tool}`);
 }
 
 describe("Baselines", () => {
@@ -34,8 +41,8 @@ describe("Baselines", () => {
 
     expect(result).toMatchObject({ ok: true, value: ["web", "api"] });
     expect((await readdir(baselines())).sort()).toEqual([
-      "sentry.listIssues.json",
-      "sentry.listProjects.json",
+      expect.stringMatching(/^sentry\.listIssues\.[0-9a-f]{8}\.json$/),
+      expect.stringMatching(/^sentry\.listProjects\.[0-9a-f]{8}\.json$/),
     ]);
     expect(await readBaseline("sentry.listIssues")).toMatchObject({
       server: "sentry",
@@ -361,5 +368,20 @@ describe("Declarations from unusual schemas", () => {
       "extra?: { a?: string; [key: string]: unknown }"
     );
     expect(result).toMatchObject({ ok: true });
+  });
+});
+
+describe("classifyTools", () => {
+  it("records servers and Tools named like Object members", async () => {
+    const config = join(ws.dir, "pinfold.json");
+    await writeFile(config, JSON.stringify({ servers: {} }));
+
+    await classifyTools(config, [
+      { server: "constructor", tool: "toString", kind: "read" },
+    ]);
+
+    expect(JSON.parse(await readFile(config, "utf8")).classification).toEqual({
+      constructor: { toString: "read" },
+    });
   });
 });
