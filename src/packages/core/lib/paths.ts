@@ -1,20 +1,18 @@
 // Field paths: `issues[].count` names the count of every element of issues.
 // A step is `.name`, `["any name"]` or `[]` for every element of an array;
 // the first name has no dot. Contracts and redaction rules use them.
+import { isDataKey, type JsonSchema } from "./schema.ts";
 
 type Step = { key: string } | { each: true };
 
-const stepPattern = /\.?([A-Za-z_$][\w$]*)|\[\]|\[("(?:[^"\\]|\\.)*")\]/y;
-
 /** The steps of a field path, or undefined if it is not one. */
 export function parsePath(path: string): Step[] | undefined {
+  const stepPattern = /\.?([A-Za-z_$][\w$]*)|\[\]|\[("(?:[^"\\]|\\.)*")\]/y;
   const steps: Step[] = [];
-  stepPattern.lastIndex = 0;
   while (stepPattern.lastIndex < path.length) {
-    const start = stepPattern.lastIndex;
     const match = stepPattern.exec(path);
     if (match === null) return undefined;
-    if (start === 0 && match[0].startsWith(".")) return undefined;
+    if (steps.length === 0 && match[0].startsWith(".")) return undefined;
     if (match[1] !== undefined) steps.push({ key: match[1] });
     else if (match[2] !== undefined)
       steps.push({ key: JSON.parse(match[2]) as string });
@@ -23,21 +21,35 @@ export function parsePath(path: string): Step[] | undefined {
   return steps.length > 0 ? steps : undefined;
 }
 
+/**
+ * A path up to its first key that is data, such as an email address in a
+ * map: Contracts are committed, and data must stay out of them. Empty when
+ * the path starts with one.
+ */
+export function withoutDataKeys(path: string): string {
+  let kept = "";
+  for (const step of parsePath(path) ?? []) {
+    if ("each" in step) kept += "[]";
+    else if (isDataKey(step.key)) break;
+    else if (/^[A-Za-z_$][\w$]*$/.test(step.key))
+      kept += kept === "" ? step.key : `.${step.key}`;
+    else kept += `[${JSON.stringify(step.key)}]`;
+  }
+  return kept;
+}
+
 /** Only the deepest paths: `issues` goes when `issues[].count` is there. */
 export function deepestPaths(paths: Iterable<string>): string[] {
   const all = [...new Set(paths)].sort();
   return all.filter(
     (path) =>
       !all.some(
-        (other) =>
-          other !== path &&
-          other.startsWith(path) &&
-          /^[.[]/.test(other.slice(path.length))
+        (other) => other.startsWith(`${path}.`) || other.startsWith(`${path}[`)
       )
   );
 }
 
-export const redacted = "[redacted]";
+const redacted = "[redacted]";
 
 /** A copy of a value with every field a path names replaced by `[redacted]`. */
 export function redact(value: unknown, paths: string[]): unknown {
@@ -58,8 +70,56 @@ function replaceAt(value: unknown, steps: Step[]): unknown {
       ? value.map((item) => replaceAt(item, rest))
       : value;
   }
-  if (Array.isArray(value) || !Object.hasOwn(value, step.key)) return value;
+  // A rule that names a field inside an array without [] still reaches it in
+  // every element, rather than redacting nothing.
+  if (Array.isArray(value)) return value.map((item) => replaceAt(item, steps));
+  if (!Object.hasOwn(value, step.key)) return value;
   const record = value as Record<string, unknown>;
   record[step.key] = replaceAt(record[step.key], rest);
   return record;
+}
+
+/**
+ * Whether a JSON Schema allows the field a path names, as JSON Schema reads
+ * it: an object allows fields it does not list unless its
+ * additionalProperties is false, and a part of the shape that says nothing
+ * of its type, such as `{}`, allows every field.
+ */
+export function shapeAllows(schema: JsonSchema, path: string): boolean {
+  const steps = parsePath(path);
+  return steps !== undefined && hasSteps(schema, steps);
+}
+
+function hasSteps(schema: JsonSchema, steps: Step[]): boolean {
+  if (steps.length === 0) return true;
+  // type: ["object", "null"] is a union of its types.
+  if (Array.isArray(schema.type)) {
+    return (schema.type as string[]).some((type) =>
+      hasSteps({ ...schema, type }, steps)
+    );
+  }
+  if (Array.isArray(schema.anyOf)) {
+    return (schema.anyOf as JsonSchema[]).some((option) =>
+      hasSteps(option, steps)
+    );
+  }
+  const [step, ...rest] = steps as [Step, ...Step[]];
+  if ("each" in step) {
+    if (schema.type === undefined) return true;
+    return (
+      schema.type === "array" &&
+      hasSteps((schema.items ?? {}) as JsonSchema, rest)
+    );
+  }
+  if (schema.type === undefined) return true;
+  if (schema.type !== "object") return false;
+  const properties = (schema.properties ?? {}) as Record<string, JsonSchema>;
+  if (Object.hasOwn(properties, step.key)) {
+    return hasSteps(properties[step.key]!, rest);
+  }
+  const additional = schema.additionalProperties;
+  if (additional === false) return false;
+  return typeof additional === "object" && additional !== null
+    ? hasSteps(additional as JsonSchema, rest)
+    : true;
 }

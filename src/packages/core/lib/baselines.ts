@@ -10,6 +10,7 @@ import {
   mergeSchemas,
   type JsonSchema,
 } from "./schema.ts";
+import { shortHash } from "./plan.ts";
 import type { SdkTool } from "./sdk.ts";
 
 const baselineSchema = z.object({
@@ -21,7 +22,7 @@ const baselineSchema = z.object({
 });
 
 /** A pinned Tool: unlike a live listing, its response shape is always known. */
-export type Baseline = SdkTool & { outputSchema: JsonSchema };
+type Baseline = SdkTool & { outputSchema: JsonSchema };
 
 export type Baselines = {
   get(server: string, tool: string): Baseline | undefined;
@@ -66,7 +67,9 @@ export async function openBaselines(root: string): Promise<Baselines> {
     observed.delete(id);
     await mkdir(dir, { recursive: true });
     // Tool names come from Downstream Servers, so keep them out of the path.
-    const file = `${baseline.server}.${encodeURIComponent(baseline.tool)}.json`;
+    // Names that differ only in case would share a file on a file system
+    // that ignores case, so a hash of the exact names keeps them apart.
+    const file = `${baseline.server}.${encodeURIComponent(baseline.tool)}.${shortHash(id).slice(0, 8)}.json`;
     await writeFile(join(dir, file), `${JSON.stringify(baseline, null, 2)}\n`);
   }
 

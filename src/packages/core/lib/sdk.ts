@@ -44,8 +44,8 @@ export function declarations(tools: SdkTool[]): string {
   for (const tool of tools) {
     servers.set(tool.server, [...(servers.get(tool.server) ?? []), tool]);
   }
-  const members = [...servers].map(([server, tools]) => {
-    const methods = tools.map(
+  const members = [...servers].map(([server, serverTools]) => {
+    const methods = serverTools.map(
       (tool) => `    ${doc(tool)}${propertyKey(tool.tool)}${method(tool)};`
     );
     return `  ${server}: {\n${methods.join("\n")}\n  };`;
@@ -111,7 +111,8 @@ function objectType(schema: JsonSchema): string {
   if (properties === undefined) {
     const values = schema.additionalProperties as
       JsonSchema | boolean | undefined;
-    return `Record<string, ${values === undefined ? "unknown" : typeOf(values)}>`;
+    const valueType = values === undefined ? "unknown" : typeOf(values);
+    return `Record<string, ${valueType}>`;
   }
   const required = new Set((schema.required as string[] | undefined) ?? []);
   const fields = Object.entries(properties).map(

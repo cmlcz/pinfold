@@ -13,6 +13,7 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 import { decodeValue, encodeValue, type Clock } from "../../sandbox/index.ts";
+import { openJournal } from "./journal.ts";
 import type { WritePlan } from "./plan.ts";
 
 export type PlanStatus =
@@ -47,13 +48,22 @@ export type PlanStore = Plans & {
   latest(id: string): Promise<PlanRecord | undefined>;
   /** The record with that ID, which is also its run's ID. */
   get(record: string): Promise<PlanRecord | undefined>;
-  /** The latest approved plan built by a run of the same code and input. */
+  /**
+   * The approved plan built by a run of the same code and input, if it is
+   * the newest decided record of that code and input.
+   */
   approvedFor(run: string): Promise<PlanRecord | undefined>;
   /**
-   * Adds a pending record of a Write Plan, unless a run adding one at the
-   * same time, in this process or another, got there first.
+   * Adds a record of a Write Plan, pending or approved without the developer
+   * for a run that needs no Approval. Returns it, or undefined if a run
+   * adding one at the same time, in this process or another, got there first.
    */
-  addPending(plan: WritePlan, run: string, clock: Clock): Promise<void>;
+  add(
+    plan: WritePlan,
+    run: string,
+    clock: Clock,
+    status: "pending" | "approved"
+  ): Promise<PlanRecord | undefined>;
   /**
    * Takes an approved record for one Apply. Only the first claim of a record
    * ever succeeds, across processes too.
@@ -73,18 +83,36 @@ export function openPlanStore(root: string): PlanStore {
   // Files that do not parse are left out, so one damaged record cannot stop
   // every run. Leaving a record out never sends anything: at worst a plan
   // asks for Approval again.
+  async function planFiles(): Promise<string[]> {
+    try {
+      return await readdir(dir);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }
+  }
+
   async function scan(): Promise<{
     records: PlanRecord[];
     unreadable: string[];
   }> {
-    const files = (await readOrNone(() => readdir(dir))) ?? [];
+    const files = await planFiles();
+    const declined = new Set(
+      files.filter((file) => file.endsWith(".declined"))
+    );
     const records: PlanRecord[] = [];
     const unreadable: string[] = [];
     for (const name of files.filter((file) => file.endsWith(".json"))) {
       try {
-        records.push(
-          decodeValue(await readFile(join(dir, name), "utf8")) as PlanRecord
-        );
+        const record = decodeValue(
+          await readFile(join(dir, name), "utf8")
+        ) as PlanRecord;
+        // A decline is final: its marker outranks whatever an Apply that was
+        // running wrote to the record afterwards.
+        if (declined.has(`${record.record}.declined`)) {
+          record.status = "declined";
+        }
+        records.push(record);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
         unreadable.push(join(dir, name));
@@ -115,7 +143,10 @@ export function openPlanStore(root: string): PlanStore {
 
   // Creates a marker file only if it does not exist yet: the atomic step that
   // makes a decision or a claim happen once, across processes too.
-  async function mark(record: PlanRecord, kind: "decided" | "claim") {
+  async function mark(
+    record: PlanRecord,
+    kind: "decided" | "claim" | "declined"
+  ) {
     await mkdir(dir, { recursive: true });
     try {
       await writeFile(join(dir, `${record.record}.${kind}`), "", {
@@ -145,10 +176,14 @@ export function openPlanStore(root: string): PlanStore {
     pending: async () =>
       (await all()).filter((record) => record.status === "pending"),
     unreadable: async () => (await scan()).unreadable,
-    approvedFor: async (run) =>
-      (await all())
-        .filter((record) => record.run === run && record.status === "approved")
-        .at(-1),
+    async approvedFor(run) {
+      // Only the newest decided record counts: an approved plan that a later
+      // plan replaced, applied or not, says nothing about the next run.
+      const newest = (await all())
+        .filter((record) => record.run === run && record.status !== "pending")
+        .at(-1);
+      return newest?.status === "approved" ? newest : undefined;
+    },
     async approve(id) {
       const record = await find(id);
       if (record.status !== "pending" || !(await mark(record, "decided"))) {
@@ -169,17 +204,25 @@ export function openPlanStore(root: string): PlanStore {
         );
       }
       // Declining wins over any approval: the decision and the claim are
-      // taken so that no run can start applying the plan afterwards.
+      // taken so that no run can start applying the plan afterwards, and an
+      // Apply already running stops before its next write.
       await mark(record, "decided");
       await mark(record, "claim");
+      await mark(record, "declined");
+      const journal = openJournal(root);
+      try {
+        journal.run(record.record).decline();
+      } finally {
+        journal.close();
+      }
       const declined = { ...record, status: "declined" as const };
       await save(declined);
       return { ...declined, previous: record.status };
     },
-    async addPending(plan, run, clock) {
+    async add(plan, run, clock, status) {
       // Records of a plan are numbered, so two runs adding the next record at
       // once pick the same name and only one of them creates it.
-      const files = (await readOrNone(() => readdir(dir))) ?? [];
+      const files = await planFiles();
       const ordinal =
         files.filter(
           (file) => file.startsWith(`${plan.id}-`) && file.endsWith(".json")
@@ -187,7 +230,7 @@ export function openPlanStore(root: string): PlanStore {
       const record: PlanRecord = {
         ...plan,
         record: `${plan.id}-${ordinal}`,
-        status: "pending",
+        status,
         run,
         clock,
         createdAt: new Date().toISOString(),
@@ -196,7 +239,9 @@ export function openPlanStore(root: string): PlanStore {
         await save(record, { new: true });
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        return undefined;
       }
+      return record;
     },
     async claim(record) {
       if (!(await mark(record, "claim"))) return false;
@@ -205,13 +250,4 @@ export function openPlanStore(root: string): PlanStore {
     },
     finish: (record, status) => save({ ...record, status }),
   };
-}
-
-async function readOrNone<T>(read: () => Promise<T>): Promise<T | undefined> {
-  try {
-    return await read();
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw error;
-  }
 }

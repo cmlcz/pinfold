@@ -31,9 +31,16 @@ import {
   type Failed,
   type PlanOutcome,
   type ResumeResult,
+  type WorkflowRunResult,
 } from "./lib/outcome.ts";
 import {
+  checkInput,
+  inputFromCommandLine,
+  loadWorkflow,
+  recordRun,
+  runHistory,
   saveWorkflow,
+  type CommandLineInput,
   type Exploration,
   type RecordedCall,
   type SaveResult,
@@ -57,13 +64,16 @@ export {
   formatOutcome,
   formatPlan,
   formatResume,
+  formatWorkflowRun,
   type ExploreResult,
   type ResumeResult,
+  type WorkflowRunResult,
 } from "./lib/outcome.ts";
 export {
   formatWorkflows,
   listWorkflows,
   type SaveCheck,
+  type CommandLineInput,
   type SaveResult,
   type WorkflowSummary,
 } from "./lib/workflows.ts";
@@ -100,6 +110,18 @@ export type Core = {
     name: string;
     confirmed: boolean;
   }): Promise<SaveResult>;
+  /**
+   * Runs a saved Workflow, with no LLM: a Plan, then an Apply that runs
+   * unattended unless Approval is required. Each run is kept in the run
+   * history.
+   */
+  runWorkflow(
+    request: { name: string } & (
+      | { input: unknown }
+      /** Read against main's input type as the code is now. */
+      | { commandLine: CommandLineInput }
+    )
+  ): Promise<WorkflowRunResult>;
   close(): Promise<void>;
 };
 
@@ -154,15 +176,15 @@ export async function openCore(
     downstream.tools.map((tool) => {
       const known = baselines.get(tool.server, tool.tool) ?? tool;
       if (isRead(tool)) return known;
-      const description = [known.description, writeToolNote].filter(Boolean);
-      return { ...known, description: description.join(" ") };
+      const parts = [known.description, writeToolNote].filter(Boolean);
+      return { ...known, description: parts.join(" ") };
     });
   const plans = openPlanStore(options.root);
-  const tools = new Map(
+  const toolsByName = new Map(
     downstream.tools.map((tool) => [`${tool.server}.${tool.tool}`, tool])
   );
   function toolOf(write: PlannedWrite): DownstreamTool {
-    const tool = tools.get(write.tool);
+    const tool = toolsByName.get(write.tool);
     if (tool === undefined) throw new Error(`${write.tool} is not offered`);
     return tool;
   }
@@ -175,6 +197,15 @@ export async function openCore(
   async function sendRest(
     record: PlanRecord
   ): Promise<{ results: unknown[]; before: number }> {
+    // Every write's Tool is found first: a Tool no longer offered stops the
+    // Apply before it takes a write, so a resume can send it later.
+    for (const write of record.writes) {
+      if (!toolsByName.has(write.tool)) {
+        throw new Error(
+          `${write.tool} is not offered, so nothing was sent. Once it is offered again, \`pinfold resume ${record.record}\` sends the writes not sent.`
+        );
+      }
+    }
     const run = journal.run(record.record);
     const before = run.sent().length;
     let results: unknown[];
@@ -208,12 +239,10 @@ export async function openCore(
     plan: WritePlan,
     value: unknown
   ): Promise<PlanOutcome | Failed> {
-    if (!(await plans.claim(record))) {
-      return busy(plan, record);
-    }
+    if (!(await plans.claim(record))) return busy(plan, record);
     let results: unknown[];
     try {
-      ({ results } = await sendRest(record));
+      results = (await sendRest(record)).results;
     } catch (error) {
       return { ok: false, error: (error as Error).message };
     }
@@ -236,24 +265,30 @@ export async function openCore(
   // The latest successful Exploration Runs, which save_workflow can save.
   // Kept in memory only, so no unredacted response reaches the disk.
   const explorations = new Map<string, Exploration>();
+  const maxExplorations = 20;
   function remember(exploration: Exploration) {
     explorations.set(exploration.run, exploration);
     for (const run of explorations.keys()) {
-      if (explorations.size <= 20) break;
+      if (explorations.size <= maxExplorations) break;
       explorations.delete(run);
     }
   }
 
   // What becomes of a run's Write Plan, given the plan approved for the same
-  // code and input, if any.
+  // code and input, if any. A new plan waits for Approval unless the run
+  // needs none, in which case it is applied now.
   async function planOutcome(
     plan: WritePlan,
     value: unknown,
-    run: { key: string; clock: Clock; approved: PlanRecord | undefined }
+    run: {
+      key: string;
+      clock: Clock;
+      approved: PlanRecord | undefined;
+      needsApproval: boolean;
+    }
   ): Promise<PlanOutcome | Failed> {
     if (plan.writes.length === 0)
       return { ok: true, status: "complete", value, plan };
-    const { approved } = run;
     const record = await plans.latest(plan.id);
     switch (record?.status) {
       case "declined":
@@ -269,13 +304,111 @@ export async function openCore(
         };
       case "pending":
         break;
-      default:
+      default: {
         // New, or applied before: the developer approves this run afresh.
-        await plans.addPending(plan, run.key, run.clock);
+        const status = run.needsApproval ? "pending" : "approved";
+        const added = await plans.add(plan, run.key, run.clock, status);
+        if (status === "approved") {
+          if (added === undefined) {
+            return {
+              ok: false,
+              error: `Another run added Write Plan ${plan.id} at the same time; nothing was sent.`,
+            };
+          }
+          return apply(added, plan, value);
+        }
+      }
     }
-    return approved === undefined
+    return run.approved === undefined
       ? { ok: true, status: "pending", value, plan }
-      : { ok: true, status: "changed", value, plan, approved };
+      : { ok: true, status: "changed", value, plan, approved: run.approved };
+  }
+
+  // Runs code as a Plan. A run after Approval sees the clock the approved
+  // run saw, so a plan built from the time or Math.random is rebuilt as it
+  // was approved.
+  async function planRun(code: string, input: unknown) {
+    const key = runKey(code, input);
+    const approved = await plans.approvedFor(key);
+    const clock = approved?.clock ?? {
+      now: Date.now(),
+      seed: randomInt(2 ** 32),
+    };
+    const writes: PlannedWrite[] = [];
+    const calls: RecordedCall[] = [];
+    const result = await quickJsSandbox.run({
+      source: code,
+      declarations: declarations(sdkTools()),
+      input,
+      sdk: planSdk(writes, calls),
+      limits,
+      clock,
+    });
+    return { key, approved, clock, writes, calls, result };
+  }
+
+  // A Workflow Run: the Workflow's checks, then a Plan that needs Approval if
+  // the Workflow was never applied or its Write Plan exceeds its Write
+  // Budget, and otherwise is applied unattended.
+  async function runWorkflow(
+    name: string,
+    given: { input: unknown } | { commandLine: CommandLineInput },
+    /** Receives which save of the Workflow ran, for the run history. */
+    ran: { saved?: string }
+  ): Promise<WorkflowRunResult> {
+    const loaded = await loadWorkflow(options.root, name, {
+      declarations: declarations(sdkTools()),
+      tools: new Set(toolsByName.keys()),
+      outputSchema: (tool) => {
+        const offered = toolsByName.get(tool);
+        return (
+          offered && baselines.get(offered.server, offered.tool)?.outputSchema
+        );
+      },
+    });
+    if (!loaded.ok) return loaded;
+    const { workflow } = loaded;
+    ran.saved = workflow.saved;
+    const input =
+      "commandLine" in given
+        ? inputFromCommandLine(workflow.input, given.commandLine)
+        : given.input;
+    const checked = checkInput(workflow.input, input);
+    if (!checked.ok)
+      return { ok: false, error: `Workflow ${name} not run. ${checked.error}` };
+
+    const { key, approved, clock, writes, result } = await planRun(
+      workflow.source,
+      input
+    );
+    if (!result.ok) return result;
+    const plan = writePlan(writes);
+    const history = await runHistory(options.root);
+    // Applied before means this very save: a Workflow saved again under the
+    // name of a deleted one is approved afresh.
+    const appliedBefore = history.some(
+      (entry) =>
+        entry.workflow === name &&
+        entry.saved === workflow.saved &&
+        entry.status === "applied"
+    );
+    let approvalReason: string | undefined;
+    if (!appliedBefore) {
+      approvalReason = `Workflow ${name} has never been applied`;
+    } else if (plan.writes.length > workflow.writeBudget) {
+      approvalReason = `the Write Plan has ${writeCount(plan)}, over the Write Budget of ${workflow.writeBudget}`;
+    }
+    const outcome = await planOutcome(plan, result.value, {
+      key,
+      clock,
+      approved,
+      needsApproval: approvalReason !== undefined,
+    });
+    if (!outcome.ok) return outcome;
+    const paused = outcome.status === "pending" || outcome.status === "changed";
+    return paused && approvalReason !== undefined
+      ? { ...outcome, workflow: name, approvalReason }
+      : { ...outcome, workflow: name };
   }
 
   const limits = resolveLimits(config);
@@ -290,42 +423,41 @@ export async function openCore(
       })),
     searchSdk: (query) => searchTools(sdkTools(), query),
     async explore({ code, input = {} }) {
-      const key = runKey(code, input);
-      // A run after Approval sees the clock the approved run saw, so a plan
-      // built from the time or Math.random is rebuilt as it was approved.
-      const approved = await plans.approvedFor(key);
-      const clock = approved?.clock ?? {
-        now: Date.now(),
-        seed: randomInt(2 ** 32),
-      };
-      const writes: PlannedWrite[] = [];
-      const calls: RecordedCall[] = [];
-      const result = await quickJsSandbox.run({
-        source: code,
-        declarations: declarations(sdkTools()),
-        input,
-        sdk: planSdk(writes, calls),
-        limits,
-        clock,
-      });
+      const { key, approved, clock, writes, calls, result } = await planRun(
+        code,
+        input
+      );
       if (!result.ok) return result;
       const plan = writePlan(writes);
       const outcome = await planOutcome(plan, result.value, {
         key,
         clock,
         approved,
+        needsApproval: true,
       });
       if (!outcome.ok) return outcome;
-      const exploration = randomUUID().slice(0, 8);
+      const run = randomUUID().slice(0, 8);
       remember({
-        run: exploration,
+        run,
         code,
         input,
         calls,
         tools: [...new Set([...calls, ...writes].map((call) => call.tool))],
         reads: result.reads,
       });
-      return { ...outcome, exploration };
+      return { ...outcome, exploration: run };
+    },
+    async runWorkflow({ name, ...given }) {
+      const ran: { saved?: string } = {};
+      const result = await runWorkflow(name, given, ran);
+      await recordRun(options.root, {
+        workflow: name,
+        ...ran,
+        at: new Date().toISOString(),
+        status: result.ok ? result.status : "failed",
+        ...(result.ok ? { plan: result.plan.id } : { error: result.error }),
+      });
+      return result;
     },
     async resume(run) {
       const record = await plans.get(run);
@@ -365,9 +497,10 @@ export async function openCore(
   };
 }
 
-// The same code and input give the same run key.
+// The same code and input give the same run key, whatever the order of the
+// input's fields.
 function runKey(code: string, input: unknown): string {
-  return shortHash(JSON.stringify([code, input]));
+  return shortHash(JSON.stringify([code, canonicalize(input)]));
 }
 
 function busy(plan: WritePlan, record: PlanRecord): Failed {

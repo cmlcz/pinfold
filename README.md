@@ -61,11 +61,12 @@ Start pinfold as an MCP server over stdio. Add this command to your agent's MCP 
 node src/packages/gateway/bin.ts --config pinfold.json
 ```
 
-The agent gets four tools:
+The agent gets five tools:
 
 - **`search_sdk`** finds the TypeScript signatures of the tools that match a keyword query.
 - **`run_sandbox`** runs a program that exports `main(input)` and calls tools with `await sdk.<server>.<tool>(args)`.
 - **`save_workflow`** saves a successful run as a workflow, after you confirm its result.
+- **`run_workflow`** runs a saved workflow with an input.
 - **`list_workflows`** lists the saved workflows.
 
 ## Mark read tools
@@ -116,11 +117,24 @@ List the saved workflows with their inputs, tools, last run, and status:
 node src/packages/cli/bin.ts list
 ```
 
-Running a saved workflow is not available yet.
+## Run a workflow
+
+A saved workflow runs from the terminal, cron or CI, or from the agent with `run_workflow`. No LLM is called. Pass the input as one flag per field. A value is read as JSON where that fits the field, so `50` is a number for a number field, and as text otherwise. A flag without a value is `true`, and a value that starts with `--` is written `--field=--value`. A workflow whose `main` takes a string, a number or an array takes one value instead of flags.
+
+```sh
+node src/packages/cli/bin.ts run triage_sentry --project web --minEvents 50
+node src/packages/cli/bin.ts run search_issues "deadlock"
+```
+
+pinfold checks the workflow before each run, since you may have edited it. The code must still export a typed `main(input)`, type-check against the SDK, and set a whole-number `writeBudget`. Every tool it calls must still be offered, and every field in its contract must still be allowed by the tool's baseline. The input must fit `main`'s input type. If a check fails, the run is refused with the reason, and the command exits with 1.
+
+Each run builds a plan. Its writes are sent without asking you, unless the workflow has never been applied or the plan has more writes than `writeBudget`. Then the run pauses: nothing is sent, the command prints the plan and its ID, and exits with 3. Approve the plan with `approve <plan-id>`, then run the workflow again with the same input to apply it.
+
+Every run is recorded in `.pinfold/runs.jsonl`, and `list` shows each workflow's last run.
 
 ## Where pinfold keeps its state
 
-- **`.pinfold/`** holds the write plans and a journal of the writes already sent. It is git-ignored.
+- **`.pinfold/`** holds the write plans, a journal of the writes already sent, and the run history. It is git-ignored.
 - **`.workflows/baselines/`** holds the recorded response shape of each tool.
 - **`.workflows/`** also holds the saved workflows. **`.workflows/fixtures/`** is git-ignored.
 

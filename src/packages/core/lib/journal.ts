@@ -8,7 +8,6 @@ import { DatabaseSync } from "node:sqlite";
 
 /** The Apply Journal's entries for one run's Write Plan, by position from 0. */
 export type RunJournal = {
-  /** The run's ID. */
   readonly run: string;
   /**
    * The results of the writes already sent, in order. Throws when a write
@@ -16,11 +15,16 @@ export type RunJournal = {
    * sending it.
    */
   sent(): unknown[];
-  /** Takes a write for sending; false when another Apply took it first. */
-  take(position: number): boolean;
+  /**
+   * Takes a write for sending. Fails when another Apply took it first, or
+   * when the run was declined.
+   */
+  take(position: number): "taken" | "busy" | "declined";
   settle(position: number, result: unknown): void;
   /** Gives back a write its server refused, so that a resume sends it. */
   release(position: number): void;
+  /** Stops every Apply of the run before its next write. */
+  decline(): void;
 };
 
 export type Journal = {
@@ -47,6 +51,7 @@ export function openJournal(root: string): Journal {
         result TEXT,
         PRIMARY KEY (run, position)
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS declined (run TEXT PRIMARY KEY) STRICT;
     `);
     return db;
   }
@@ -71,12 +76,19 @@ export function openJournal(root: string): Journal {
           });
         },
         take(position) {
+          // One statement, so a decline lands either before the write is
+          // taken or after it, never in between.
           const { changes } = open()
             .prepare(
-              "INSERT OR IGNORE INTO writes (run, position) VALUES (?, ?)"
+              `INSERT OR IGNORE INTO writes (run, position)
+               SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM declined WHERE run = ?)`
             )
-            .run(run, position);
-          return changes === 1;
+            .run(run, position, run);
+          if (changes === 1) return "taken";
+          const declined = open()
+            .prepare("SELECT 1 FROM declined WHERE run = ?")
+            .get(run);
+          return declined === undefined ? "busy" : "declined";
         },
         settle(position, result) {
           open()
@@ -89,6 +101,11 @@ export function openJournal(root: string): Journal {
           open()
             .prepare("DELETE FROM writes WHERE run = ? AND position = ?")
             .run(run, position);
+        },
+        decline() {
+          open()
+            .prepare("INSERT OR IGNORE INTO declined (run) VALUES (?)")
+            .run(run);
         },
       };
     },

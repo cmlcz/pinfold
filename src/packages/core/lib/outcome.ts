@@ -1,4 +1,4 @@
-// The outcome of an Exploration Run and its readable form.
+// The outcome of an Exploration Run or a Workflow Run, and its readable form.
 import { Placeholder } from "../../sandbox/index.ts";
 import type { WritePlan } from "./plan.ts";
 
@@ -13,6 +13,14 @@ export type ExploreResult =
       /** Identifies the run, which save_workflow can save as a Workflow. */
       exploration: string;
     });
+
+/**
+ * A Workflow Run ran as a Plan. Its Write Plan was applied unattended, or
+ * the run paused for Approval (`pending` or `changed`) for the reason given;
+ * once approved, the same input running again applies it.
+ */
+export type WorkflowRunResult =
+  Failed | (PlanOutcome & { workflow: string; approvalReason?: string });
 
 export type Failed = { ok: false; error: string };
 
@@ -46,13 +54,27 @@ export function formatOutcome(
   result: Extract<ExploreResult, { ok: true }>
 ): string {
   return [
-    describePlanOutcome(result),
+    describePlanOutcome(
+      result,
+      "Then call run_sandbox again with the same code and input to apply it."
+    ),
     "",
     `Exploration Run ${result.exploration}. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run.`,
   ].join("\n");
 }
 
-function describePlanOutcome(result: PlanOutcome): string {
+/** What the developer or the agent reads after a Workflow Run. */
+export function formatWorkflowRun(
+  result: Extract<WorkflowRunResult, { ok: true }>
+): string {
+  const again = `Then run Workflow ${result.workflow} again with the same input to apply it.`;
+  const text = describePlanOutcome(result, again);
+  if (result.status !== "pending" && result.status !== "changed") return text;
+  const reason = result.approvalReason ?? "the Write Plan waits for Approval";
+  return `Paused for Approval: ${reason}.\n\n${text}`;
+}
+
+function describePlanOutcome(result: PlanOutcome, again: string): string {
   const value = formatValue(result.value);
   const { plan } = result;
   switch (result.status) {
@@ -63,7 +85,9 @@ function describePlanOutcome(result: PlanOutcome): string {
     case "declined":
       return `${value}\n\nThe developer declined Write Plan ${plan.id}; nothing was sent.`;
     case "pending":
-      return [value, "", formatPlan(plan), "", approval(plan)].join("\n");
+      return [value, "", formatPlan(plan), "", approval(plan, again)].join(
+        "\n"
+      );
     case "changed":
       return [
         value,
@@ -74,7 +98,7 @@ function describePlanOutcome(result: PlanOutcome): string {
         "Now:",
         formatPlan(plan),
         "",
-        approval(plan),
+        approval(plan, again),
       ].join("\n");
   }
 }
@@ -86,11 +110,11 @@ export function formatPlan(plan: WritePlan): string {
   ].join("\n");
 }
 
-function approval(plan: WritePlan): string {
+function approval(plan: WritePlan, again: string): string {
   return [
     "To send these writes, ask the developer to approve the plan in a terminal:",
     `  pinfold approve ${plan.id}`,
-    "Then call run_sandbox again with the same code and input to apply it.",
+    again,
   ].join("\n");
 }
 

@@ -5,11 +5,20 @@ export type JsonSchema = Record<string, unknown>;
 export function inferSchema(value: unknown): JsonSchema {
   if (value === null) return { type: "null" };
   if (Array.isArray(value)) {
-    const items = value.map(inferSchema).reduce(mergeSchemas, undefined);
-    return { type: "array", items: items ?? {} };
+    return { type: "array", items: mergeAll(value.map(inferSchema)) };
   }
   if (typeof value === "object") {
     const entries = Object.entries(value);
+    // An object keyed by data, such as email addresses or IDs, is a map: its
+    // keys stay out of the committed Baseline.
+    if (entries.length > 0 && entries.every(([key]) => isDataKey(key))) {
+      return {
+        type: "object",
+        additionalProperties: mergeAll(
+          entries.map(([, field]) => inferSchema(field))
+        ),
+      };
+    }
     return {
       type: "object",
       properties: Object.fromEntries(
@@ -47,6 +56,14 @@ export function forPinning(schema: JsonSchema): JsonSchema {
     return { ...schema, items: forPinning(schema.items as JsonSchema) };
   }
   if (schema.type === "object") {
+    if (isMap(schema)) {
+      return {
+        ...schema,
+        additionalProperties: forPinning(
+          schema.additionalProperties as JsonSchema
+        ),
+      };
+    }
     const properties = schema.properties as Record<string, JsonSchema>;
     return {
       ...schema,
@@ -72,25 +89,32 @@ export function mergeSchemas(
   a: JsonSchema | undefined,
   b: JsonSchema
 ): JsonSchema {
-  // Fields every observation has stay required.
   if (a === undefined || isUnobserved(a)) return b;
   if (isUnobserved(b) || JSON.stringify(a) === JSON.stringify(b)) return a;
   if (a.type === "object" && b.type === "object") {
-    const pa = a.properties as Record<string, JsonSchema>;
-    const pb = b.properties as Record<string, JsonSchema>;
-    const keys = [...new Set([...Object.keys(pa), ...Object.keys(pb)])];
-    const rb = b.required as string[];
+    if (isMap(a) || isMap(b)) {
+      return {
+        type: "object",
+        additionalProperties: mergeAll([a, b].flatMap(valuesOf)),
+      };
+    }
+    const propsA = a.properties as Record<string, JsonSchema>;
+    const propsB = b.properties as Record<string, JsonSchema>;
+    const keys = [...new Set([...Object.keys(propsA), ...Object.keys(propsB)])];
+    // Fields every observation has stay required.
+    const requiredA = a.required as string[];
+    const requiredB = b.required as string[];
     return {
       type: "object",
       properties: Object.fromEntries(
         keys.map((key) => [
           key,
-          pa[key] && pb[key]
-            ? mergeSchemas(pa[key], pb[key])
-            : (pa[key] ?? pb[key]),
+          propsA[key] && propsB[key]
+            ? mergeSchemas(propsA[key], propsB[key])
+            : (propsA[key] ?? propsB[key]),
         ])
       ),
-      required: (a.required as string[]).filter((key) => rb.includes(key)),
+      required: requiredA.filter((key) => requiredB.includes(key)),
     };
   }
   if (a.type === "array" && b.type === "array") {
@@ -109,6 +133,29 @@ export function mergeSchemas(
     else options[same] = mergeSchemas(options[same], option);
   }
   return options.length === 1 ? options[0]! : { anyOf: options };
+}
+
+/** One shape covering every observation; `{}` when there are none. */
+function mergeAll(schemas: JsonSchema[]): JsonSchema {
+  return schemas.reduce<JsonSchema | undefined>(mergeSchemas, undefined) ?? {};
+}
+
+/**
+ * Whether an object key is data rather than a field name: an email address,
+ * a number or an ID, say. Field names may hold hyphens, as in content-type.
+ */
+export function isDataKey(key: string): boolean {
+  return !/^[A-Za-z_$][\w$-]*$/.test(key);
+}
+
+function isMap(schema: JsonSchema): boolean {
+  return schema.type === "object" && schema.properties === undefined;
+}
+
+// The shapes of the values an object holds, whether a map or a record.
+function valuesOf(schema: JsonSchema): JsonSchema[] {
+  if (isMap(schema)) return [schema.additionalProperties as JsonSchema];
+  return Object.values(schema.properties as Record<string, JsonSchema>);
 }
 
 function optionsOf(schema: JsonSchema): JsonSchema[] {

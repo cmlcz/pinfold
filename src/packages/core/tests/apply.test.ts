@@ -1,5 +1,8 @@
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openPlans, type Core, type ExploreResult } from "../index.ts";
 import { createWorkspace, sentryReads, type Workspace } from "./workspace.ts";
@@ -210,10 +213,11 @@ describe("Approval and Apply", () => {
     expect(results.filter((r) => r.ok && r.status === "applied")).toHaveLength(
       1
     );
-    const loser = results.find((r) => !r.ok);
-    expect(loser && !loser.ok && loser.error).toMatch(
-      /is being applied by another run/
-    );
+    // The other run either found the plan being applied, or ran after the
+    // Apply and found nothing left to write; it never sends the plan again.
+    const other = results.find((r) => !r.ok || r.status !== "applied")!;
+    if (other.ok) expect(other.status).toBe("complete");
+    else expect(other.error).toMatch(/is being applied by another run/);
     expect(await ws.control("linear").receivedWrites()).toHaveLength(2);
   });
 
@@ -546,5 +550,94 @@ describe("Apply Journal and resume", () => {
       new RegExp(`Write Plan ${id} is pending; there is nothing to resume`)
     );
     expect(await sentTitles()).toEqual([]);
+  });
+});
+
+describe("Run keys and resume", () => {
+  it("applies an approved plan when the input's fields come in another order", async () => {
+    const core = await openTriage();
+    const code = `export async function main(input: { a: number; b: number }) {
+      await sdk.linear.createIssue({ title: "at " + Date.now() + " " + input.a });
+    }`;
+    const id = planId(await core.explore({ code, input: { a: 1, b: 2 } }));
+    await openPlans(ws.dir).approve(id);
+
+    const again = await core.explore({ code, input: { b: 2, a: 1 } });
+
+    expect(again).toMatchObject({ ok: true, status: "applied" });
+  });
+
+  it("stops a resume before any write when a Tool is no longer offered", async () => {
+    const core = await openTriage();
+    const id = planId(await core.explore(fourWrites));
+    await openPlans(ws.dir).approve(id);
+    await ws.control("linear").failWrite(3);
+    const run = stoppedRun(await core.explore(fourWrites));
+    const withoutLinear = await ws.open({
+      servers: { sentry: ws.sentry("other") },
+      classification: sentryReads,
+    });
+
+    await expect(withoutLinear.resume(run)).rejects.toThrow(
+      `linear.createIssue is not offered, so nothing was sent. Once it is offered again, \`pinfold resume ${run}\` sends the writes not sent.`
+    );
+    const resumed = await core.resume(run);
+
+    expect(resumed.sent).toEqual([3, 4]);
+    expect(await sentTitles()).toEqual(["One", "Two", "Three", "Four"]);
+  });
+});
+
+describe("Declining a Write Plan that is being applied", () => {
+  it("stops the Apply before its next write, for good", async () => {
+    const gate = join(ws.dir, "gate");
+    await mkdir(gate);
+    const core = await ws.open({
+      servers: {
+        gated: {
+          command: process.execPath,
+          args: [
+            fileURLToPath(new URL("gated-server.ts", import.meta.url)),
+            gate,
+          ],
+        },
+      },
+      classification: {},
+    });
+    const code = {
+      code: `export async function main() {
+        for (let n = 1; n <= 3; n++) await sdk.gated.send({ n });
+      }`,
+    };
+    const plans = openPlans(ws.dir);
+    const id = planId(await core.explore(code));
+    await plans.approve(id);
+    const release = (n: number) => writeFile(join(gate, `release-${n}`), "");
+    const until = async (file: string) => {
+      while (!existsSync(join(gate, file))) await sleep(10);
+    };
+
+    const applying = core.explore(code);
+    await release(1);
+    await until("started-2");
+    const declined = await plans.decline(id);
+    await release(2);
+    await release(3);
+    const result = await applying;
+
+    expect(declined.previous).toBe("applying");
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(
+        /^The developer declined this Write Plan, so the Apply stopped before write 3 of 3\. Sent: writes 1–2\. Not sent: write 3\.$/
+      ),
+    });
+    expect(existsSync(join(gate, "sent-3"))).toBe(false);
+    expect((await plans.pending()).map((plan) => plan.id)).not.toContain(id);
+    await expect(core.resume(`${id}-1`)).rejects.toThrow(
+      `Write Plan ${id} is declined; there is nothing to resume.`
+    );
+    expect(await core.explore(code)).toMatchObject({ status: "declined" });
+    expect(existsSync(join(gate, "sent-3"))).toBe(false);
   });
 });

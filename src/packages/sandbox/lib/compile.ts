@@ -2,7 +2,7 @@
 // back into messages that point at lines of the agent's source.
 import { SourceMap } from "node:module";
 import { transformSync, type TransformFailure } from "esbuild";
-import { typecheck } from "./typecheck.ts";
+import { typecheck } from "./checker.ts";
 
 const sourceFile = "program.ts";
 const scriptFile = "program.js";
@@ -17,10 +17,10 @@ export type Compiled = {
   describe(error: unknown): string;
 };
 
-export function compile(
+export async function compile(
   source: string,
   declarations: string
-): Compiled | { ok: false; error: string } {
+): Promise<Compiled | { ok: false; error: string }> {
   let output;
   try {
     output = transformSync(source, {
@@ -37,10 +37,15 @@ export function compile(
       error: describeCompileError(error as TransformFailure),
     };
   }
-  const typeErrors = typecheck(source, declarations);
+  const typeErrors = await typecheck(source, declarations);
   if (typeErrors.length > 0) return { ok: false, error: typeErrors.join("\n") };
 
   const map = new SourceMap(JSON.parse(output.map));
+  const toSourcePosition = (whole: string, line: string, column: string) => {
+    const origin = map.findOrigin(Number(line), Number(column));
+    if (!("lineNumber" in origin)) return whole;
+    return `${sourceFile}:${origin.lineNumber}:${origin.columnNumber}`;
+  };
 
   return {
     ok: true,
@@ -52,31 +57,23 @@ export function compile(
       const frames = String(stack ?? "")
         .split("\n")
         .filter((frame) => frame.includes(`(${scriptFile}:`))
-        .map((frame) =>
-          frame.replace(
-            scriptPosition,
-            (whole, line: string, column: string) => {
-              const origin = map.findOrigin(Number(line), Number(column));
-              return "lineNumber" in origin
-                ? `${sourceFile}:${origin.lineNumber}:${origin.columnNumber}`
-                : whole;
-            }
-          )
-        );
-      return [`${String(name ?? "Error")}: ${String(message)}`, ...frames].join(
-        "\n"
-      );
+        .map((frame) => frame.replace(scriptPosition, toSourcePosition));
+      const header =
+        message === undefined
+          ? "Error: the program threw a value that is not an Error"
+          : `${String(name ?? "Error")}: ${String(message)}`;
+      return [header, ...frames].join("\n");
     },
   };
 }
 
 function describeCompileError(failure: TransformFailure): string {
   return failure.errors
-    .map(({ text, location }) =>
-      location
-        ? `SyntaxError: ${text}\n    at ${sourceFile}:${location.line}:${characterColumn(location.lineText, location.column) + 1}`
-        : `SyntaxError: ${text}`
-    )
+    .map(({ text, location }) => {
+      if (!location) return `SyntaxError: ${text}`;
+      const column = characterColumn(location.lineText, location.column) + 1;
+      return `SyntaxError: ${text}\n    at ${sourceFile}:${location.line}:${column}`;
+    })
     .join("\n");
 }
 
