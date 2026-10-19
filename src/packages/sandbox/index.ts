@@ -15,5 +15,6 @@ export {
   Placeholder,
   PlaceholderError,
 } from "./lib/placeholder.ts";
+export { exportedLiteral } from "./lib/literal.ts";
 export { mainInputSchema, type JsonSchema } from "./lib/signature.ts";
 export { typecheck } from "./lib/typecheck.ts";
