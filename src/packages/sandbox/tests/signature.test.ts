@@ -105,3 +105,31 @@ describe("mainInputSchema", () => {
     });
   });
 });
+
+describe("mainInputSchema, odd fields", () => {
+  it("takes the keys that spell numbers for a number index", async () => {
+    const result = await schemaOf(
+      `export function main(input: { byId: Record<number, string> }) {}`
+    );
+
+    expect(result.ok && result.schema.properties).toEqual({
+      byId: {
+        type: "object",
+        properties: {},
+        required: [],
+        patternProperties: { "^-?\\d+(\\.\\d+)?$": { type: "string" } },
+        additionalProperties: false,
+      },
+    });
+  });
+
+  it("refuses a field named __proto__", async () => {
+    expect(
+      await schemaOf(`export function main(input: { __proto__: string }) {}`)
+    ).toEqual({
+      ok: false,
+      error:
+        "main's input has a field named __proto__, which cannot be checked",
+    });
+  });
+});

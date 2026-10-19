@@ -17,4 +17,4 @@ export {
 } from "./lib/placeholder.ts";
 export { exportedLiteral } from "./lib/literal.ts";
 export { mainInputSchema, typecheck } from "./lib/checker.ts";
-export type { JsonSchema } from "./lib/signature.ts";
+export { numberKeyPattern, type JsonSchema } from "./lib/signature.ts";

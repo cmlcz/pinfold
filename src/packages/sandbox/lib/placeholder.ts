@@ -38,9 +38,13 @@ export function decodeValue(json: string): unknown {
       return value;
     }
     if (Object.hasOwn(value, placeholderMarker)) {
-      const [write, ...path] = (value as Record<string, unknown>)[
-        placeholderMarker
-      ] as [number, ...string[]];
+      const ref = (value as Record<string, unknown>)[placeholderMarker];
+      if (!isPlaceholderRef(ref)) {
+        throw new TypeError(
+          `a Placeholder is malformed: ${JSON.stringify(ref)}`
+        );
+      }
+      const [write, ...path] = ref;
       return new Placeholder(write, path);
     }
     return Object.fromEntries(
@@ -66,4 +70,11 @@ function toWire(value: unknown): unknown {
       toWire(field),
     ])
   );
+}
+
+function isPlaceholderRef(ref: unknown): ref is [number, ...string[]] {
+  if (!Array.isArray(ref) || !Number.isSafeInteger(ref[0]) || ref[0] < 1) {
+    return false;
+  }
+  return ref.slice(1).every((step) => typeof step === "string");
 }

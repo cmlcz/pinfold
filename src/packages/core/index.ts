@@ -35,10 +35,12 @@ import {
 } from "./lib/outcome.ts";
 import {
   checkInput,
+  inputFromCommandLine,
   loadWorkflow,
   recordRun,
   runHistory,
   saveWorkflow,
+  type CommandLineInput,
   type Exploration,
   type RecordedCall,
   type SaveResult,
@@ -69,9 +71,9 @@ export {
 } from "./lib/outcome.ts";
 export {
   formatWorkflows,
-  inputFromFlags,
   listWorkflows,
   type SaveCheck,
+  type CommandLineInput,
   type SaveResult,
   type WorkflowSummary,
 } from "./lib/workflows.ts";
@@ -113,10 +115,13 @@ export type Core = {
    * unattended unless Approval is required. Each run is kept in the run
    * history.
    */
-  runWorkflow(request: {
-    name: string;
-    input: unknown;
-  }): Promise<WorkflowRunResult>;
+  runWorkflow(
+    request: { name: string } & (
+      | { input: unknown }
+      /** Read against main's input type as the code is now. */
+      | { commandLine: CommandLineInput }
+    )
+  ): Promise<WorkflowRunResult>;
   close(): Promise<void>;
 };
 
@@ -192,6 +197,15 @@ export async function openCore(
   async function sendRest(
     record: PlanRecord
   ): Promise<{ results: unknown[]; before: number }> {
+    // Every write's Tool is found first: a Tool no longer offered stops the
+    // Apply before it takes a write, so a resume can send it later.
+    for (const write of record.writes) {
+      if (!toolsByName.has(write.tool)) {
+        throw new Error(
+          `${write.tool} is not offered, so nothing was sent. Once it is offered again, \`pinfold resume ${record.record}\` sends the writes not sent.`
+        );
+      }
+    }
     const run = journal.run(record.record);
     const before = run.sent().length;
     let results: unknown[];
@@ -338,7 +352,7 @@ export async function openCore(
   // Budget, and otherwise is applied unattended.
   async function runWorkflow(
     name: string,
-    input: unknown,
+    given: { input: unknown } | { commandLine: CommandLineInput },
     /** Receives which save of the Workflow ran, for the run history. */
     ran: { saved?: string }
   ): Promise<WorkflowRunResult> {
@@ -355,6 +369,10 @@ export async function openCore(
     if (!loaded.ok) return loaded;
     const { workflow } = loaded;
     ran.saved = workflow.saved;
+    const input =
+      "commandLine" in given
+        ? inputFromCommandLine(workflow.input, given.commandLine)
+        : given.input;
     const checked = checkInput(workflow.input, input);
     if (!checked.ok)
       return { ok: false, error: `Workflow ${name} not run. ${checked.error}` };
@@ -429,9 +447,9 @@ export async function openCore(
       });
       return { ...outcome, exploration: run };
     },
-    async runWorkflow({ name, input }) {
+    async runWorkflow({ name, ...given }) {
       const ran: { saved?: string } = {};
-      const result = await runWorkflow(name, input, ran);
+      const result = await runWorkflow(name, given, ran);
       await recordRun(options.root, {
         workflow: name,
         ...ran,
@@ -479,9 +497,10 @@ export async function openCore(
   };
 }
 
-// The same code and input give the same run key.
+// The same code and input give the same run key, whatever the order of the
+// input's fields.
 function runKey(code: string, input: unknown): string {
-  return shortHash(JSON.stringify([code, input]));
+  return shortHash(JSON.stringify([code, canonicalize(input)]));
 }
 
 function busy(plan: WritePlan, record: PlanRecord): Failed {

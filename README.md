@@ -119,13 +119,14 @@ node src/packages/cli/bin.ts list
 
 ## Run a workflow
 
-A saved workflow runs from the terminal, cron or CI, or from the agent with `run_workflow`. No LLM is called. Pass the input as flags. A value is read as JSON, so `50` is a number, unless the field takes a string. A flag without a value is `true`.
+A saved workflow runs from the terminal, cron or CI, or from the agent with `run_workflow`. No LLM is called. Pass the input as one flag per field. A value is read as JSON where that fits the field, so `50` is a number for a number field, and as text otherwise. A flag without a value is `true`, and a value that starts with `--` is written `--field=--value`. A workflow whose `main` takes a string, a number or an array takes one value instead of flags.
 
 ```sh
 node src/packages/cli/bin.ts run triage_sentry --project web --minEvents 50
+node src/packages/cli/bin.ts run search_issues "deadlock"
 ```
 
-pinfold checks the workflow before each run, since you may have edited it. The code must still export a typed `main(input)`, type-check against the SDK, and set a whole-number `writeBudget`. Every tool it calls must still be offered, and every field in its contract must still be in the tool's baseline. The input must fit `main`'s input type. If a check fails, the run is refused with the reason, and the command exits with 1.
+pinfold checks the workflow before each run, since you may have edited it. The code must still export a typed `main(input)`, type-check against the SDK, and set a whole-number `writeBudget`. Every tool it calls must still be offered, and every field in its contract must still be allowed by the tool's baseline. The input must fit `main`'s input type. If a check fails, the run is refused with the reason, and the command exits with 1.
 
 Each run builds a plan. Its writes are sent without asking you, unless the workflow has never been applied or the plan has more writes than `writeBudget`. Then the run pauses: nothing is sent, the command prints the plan and its ID, and exits with 3. Approve the plan with `approve <plan-id>`, then run the workflow again with the same input to apply it.
 

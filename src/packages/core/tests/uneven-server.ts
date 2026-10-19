@@ -1,7 +1,8 @@
 // A Downstream Server for tests whose Read Tool declares no output schema and
 // whose responses differ in shape: get({ n }) returns an issue that has an
 // assignee only when n is above 1. Get, a Tool named like it but for case,
-// returns something else. `node uneven-server.ts`.
+// returns something else, and users returns a map keyed by email address.
+// `node uneven-server.ts`.
 import { McpServer } from "@modelcontextprotocol/server";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod";
@@ -29,6 +30,25 @@ server.registerTool(
   },
   async () => ({
     content: [{ type: "text", text: JSON.stringify({ project: "web" }) }],
+  })
+);
+server.registerTool(
+  "users",
+  {
+    description: "Lists users by email address",
+    inputSchema: z.object({}),
+    annotations: { readOnlyHint: true },
+  },
+  async () => ({
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify({
+          byEmail: { "alice@corp.com": { name: "Alice" } },
+          headers: { "content-type": "json" },
+        }),
+      },
+    ],
   })
 );
 await server.connect(new StdioServerTransport());

@@ -14,13 +14,14 @@ import * as z from "zod";
 import {
   exportedLiteral,
   mainInputSchema,
+  numberKeyPattern,
   typecheck,
   type FieldReads,
   type JsonSchema,
 } from "../../sandbox/index.ts";
-import { deepestPaths, redact, shapeAllows } from "./paths.ts";
+import { deepestPaths, redact, shapeAllows, withoutDataKeys } from "./paths.ts";
 
-export const defaultWriteBudget = 10;
+const defaultWriteBudget = 10;
 
 /** A Tool call an Exploration Run made live, as a Fixture records it. */
 export type RecordedCall = {
@@ -71,6 +72,10 @@ export type WorkflowSummary = {
 };
 
 const namePattern = /^[a-z][a-z0-9_]{0,63}$/;
+
+// For reading main's input type without the SDK, which the type does not
+// depend on.
+const anySdk = "declare const sdk: any;\n";
 
 /**
  * Saves an Exploration Run as a Workflow if every check passes, and writes
@@ -140,7 +145,7 @@ export async function saveWorkflow(
     contract: Object.fromEntries(
       Object.entries(exploration.reads).map(([tool, paths]) => [
         tool,
-        deepestPaths(paths),
+        deepestPaths(paths.map(withoutDataKeys).filter((path) => path !== "")),
       ])
     ),
     savedFrom: exploration.run,
@@ -223,6 +228,11 @@ export async function listWorkflows(root: string): Promise<WorkflowSummary[]> {
     if (!parsed.success) continue;
     const source = await readOrNone(join(dir, `${parsed.data.name}.ts`));
     const workflow = summary(parsed.data, source !== undefined);
+    // The developer may have edited main's input type since the save.
+    if (source !== undefined) {
+      const current = await mainInputSchema(source, anySdk);
+      if (current.ok) workflow.input = current.schema;
+    }
     const lastRun = lastRuns.get(workflow.name);
     workflows.push(lastRun === undefined ? workflow : { ...workflow, lastRun });
   }
@@ -335,21 +345,56 @@ export function checkInput(
 }
 
 /**
- * An input from command-line flags: a value is read as JSON, so `50` is a
- * number, unless the field takes a string; a flag without a value is true.
+ * A Workflow's input as given on the command line: one value for a main
+ * whose input is not an object, or else one `--<field> <value>` flag per
+ * field.
  */
-export function inputFromFlags(
+export type CommandLineInput = {
+  value?: string;
+  flags: Record<string, string | true>;
+};
+
+/**
+ * The input a command line gives, read against the schema of main's input:
+ * a value is read as JSON where that fits, so `50` is a number for a number
+ * field, and as text otherwise. A flag without a value is true.
+ */
+export function inputFromCommandLine(
   schema: JsonSchema,
-  flags: Record<string, string | true>
-): Record<string, unknown> {
-  const properties = (schema.properties ?? {}) as Record<string, JsonSchema>;
-  const input: Record<string, unknown> = {};
+  { value, flags }: CommandLineInput
+): unknown {
+  if (value !== undefined) return fromText(schema, value);
+  // No prototype, so a flag named __proto__ is a field the check refuses.
+  const input: Record<string, unknown> = Object.create(null);
   for (const [name, text] of Object.entries(flags)) {
-    const field = Object.hasOwn(properties, name) ? properties[name] : {};
-    if (text === true || field?.type === "string") input[name] = text;
-    else input[name] = safeJson(text) ?? text;
+    input[name] = text === true ? true : fromText(fieldOf(schema, name), text);
   }
   return input;
+}
+
+// The schema of an object's field, as JSON Schema finds it: a property, else
+// a matching pattern, else additionalProperties.
+function fieldOf(schema: JsonSchema, name: string): JsonSchema {
+  const properties = (schema.properties ?? {}) as Record<string, JsonSchema>;
+  if (Object.hasOwn(properties, name)) return properties[name]!;
+  const patterns = (schema.patternProperties ?? {}) as Record<
+    string,
+    JsonSchema
+  >;
+  for (const [pattern, field] of Object.entries(patterns)) {
+    if (new RegExp(pattern).test(name)) return field;
+  }
+  const additional = schema.additionalProperties;
+  return typeof additional === "object" && additional !== null
+    ? (additional as JsonSchema)
+    : {};
+}
+
+function fromText(schema: JsonSchema, text: string): unknown {
+  const parsed = safeJson(text);
+  const fits =
+    parsed !== undefined && z.fromJSONSchema(schema).safeParse(parsed).success;
+  return fits ? parsed : text;
 }
 
 /** One Workflow Run, as the run history records it. */
@@ -427,6 +472,19 @@ function describeInput(schema: JsonSchema): string {
     ([name, field]) =>
       `${name}${required.has(name) ? "" : "?"}: ${describeType(field)}`
   );
+  // Index signatures: keys that spell numbers, then any other key.
+  const patterns = (schema.patternProperties ?? {}) as Record<
+    string,
+    JsonSchema
+  >;
+  for (const [pattern, values] of Object.entries(patterns)) {
+    const key = pattern === numberKeyPattern ? "number" : `/${pattern}/`;
+    fields.push(`[key: ${key}]: ${describeType(values)}`);
+  }
+  const additional = schema.additionalProperties;
+  if (typeof additional === "object" && additional !== null) {
+    fields.push(`[key: string]: ${describeType(additional as JsonSchema)}`);
+  }
   return fields.length > 0 ? fields.join(", ") : "none";
 }
 

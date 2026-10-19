@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { Placeholder, quickJsSandbox, type Sdk } from "../index.ts";
+import {
+  decodeValue,
+  Placeholder,
+  quickJsSandbox,
+  type Sdk,
+} from "../index.ts";
 
 const declarations = "declare const sdk: any;\n";
 
@@ -72,8 +77,6 @@ describe("Built-ins", () => {
     });
   });
 
-  // The built-in cannot be interrupted, so the test waits it out; under a
-  // loaded machine that takes longer than the default test timeout.
   it("reports the time limit when one built-in call overruns it", async () => {
     const result = await run(
       `export async function main() {
@@ -87,7 +90,7 @@ describe("Built-ins", () => {
       ok: false,
       error: "LimitError: the run exceeded its time limit of 50 ms",
     });
-  }, 30_000);
+  });
 });
 
 describe("The sdk object", () => {
@@ -293,5 +296,92 @@ describe("Field reads", () => {
       'issues[]["weird key"]',
     ]);
     expect([...result.reads["sentry.other"]!].sort()).toEqual(["[]", "[].a"]);
+  });
+});
+
+describe("Field reads the program hides", () => {
+  const sdk = {
+    s: { read: async () => ({ a: 1, b: 2, "x.y": 3, c: 4 }) },
+  };
+
+  it("counts reads through descriptors and presence checks", async () => {
+    const result = await run(
+      `export async function main() {
+        const r = await sdk.s.read();
+        const a = Object.getOwnPropertyDescriptor(r, "a")!.value;
+        return [a, "b" in r];
+      }`,
+      sdk
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      value: [1, true],
+      reads: { "s.read": ["a", "b"] },
+    });
+  });
+
+  it("cannot add traps or change how paths are written", async () => {
+    const result = await run(
+      `export async function main() {
+        let raw: unknown;
+        (Object.prototype as any).has = (target: unknown) => {
+          raw = target;
+          return true;
+        };
+        RegExp.prototype.exec = () => [] as any;
+        const r = await sdk.s.read();
+        const present = "c" in r;
+        return [present, raw === undefined, (r as any)["x.y"]];
+      }`,
+      sdk
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      value: [true, true, 3],
+      reads: { "s.read": ["c", '["x.y"]'] },
+    });
+  });
+});
+
+describe("Odd programs", () => {
+  it("fails a run whose program throws a promise", async () => {
+    const result = await run(`export async function main() {
+      throw Promise.resolve(1);
+    }`);
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Error: the program threw a value that is not an Error",
+    });
+  });
+
+  it("keeps local time in UTC, whatever the host's time zone", async () => {
+    const result = await run(`export async function main() {
+      const d = new Date();
+      return [
+        d.getHours() === d.getUTCHours(),
+        d.getTimezoneOffset(),
+        new Date(2024, 0, 1).getTime() === Date.UTC(2024, 0, 1),
+        Date.parse("2024-01-01T10:00") === Date.parse("2024-01-01T10:00Z"),
+      ];
+    }`);
+
+    expect(result).toMatchObject({ ok: true, value: [true, 0, true, true] });
+  });
+});
+
+describe("Placeholders on the wire", () => {
+  it("refuses a malformed Placeholder instead of reading it", () => {
+    expect(() => decodeValue('{"$placeholder":"7"}')).toThrow(
+      'a Placeholder is malformed: "7"'
+    );
+    expect(() => decodeValue('{"$placeholder":[0,"id"]}')).toThrow(
+      "a Placeholder is malformed"
+    );
+    expect(decodeValue('{"$placeholder":[2,"id"]}')).toEqual(
+      new Placeholder(2, ["id"])
+    );
   });
 });

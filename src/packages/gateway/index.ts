@@ -126,9 +126,11 @@ export function createGateway(
       inputSchema: z.object({
         name: z.string().describe("The Workflow's name"),
         input: z
-          .record(z.string(), z.unknown())
+          .unknown()
           .optional()
-          .describe("The argument passed to the Workflow's main"),
+          .describe(
+            "The argument passed to the Workflow's main; an empty object when left out"
+          ),
       }),
     },
     async ({ name, input }) => {

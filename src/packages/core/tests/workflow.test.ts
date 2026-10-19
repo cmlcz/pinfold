@@ -157,6 +157,19 @@ describe("save_workflow", () => {
     expect(disk).not.toContain("sync-worker.ts in flushQueue");
   });
 
+  it("redacts a field inside an array even when the rule leaves out []", async () => {
+    const core = await openTriage({
+      redact: { sentry: { listIssues: ["response.issues.culprit"] } },
+    });
+    const run = explorationOf(await core.explore(triage));
+
+    await core.saveWorkflow({ run, name: "triage_sentry", confirmed: true });
+
+    const disk = Object.values(await workflowFiles()).join("\n");
+    expect(disk).not.toContain("checkout.ts in computeTotal");
+    expect(disk).toContain('"culprit": "[redacted]"');
+  });
+
   it("refuses a run the developer has not confirmed, and writes nothing", async () => {
     const core = await openTriage();
     const run = explorationOf(await core.explore(triage));

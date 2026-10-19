@@ -2,9 +2,10 @@
 // kept apart from the MCP Tools so the agent under test cannot reach it.
 import { rmSync } from "node:fs";
 import { createServer, request, type Server } from "node:http";
+import { connect } from "node:net";
 import type { ReceivedWrite, World } from "./world.ts";
 
-export function serveControl(
+export async function serveControl(
   path: string,
   world: World<unknown>
 ): Promise<Server> {
@@ -15,7 +16,11 @@ export function serveControl(
     if (route === "POST /reset") {
       world.reset();
       res.writeHead(204).end();
-    } else if (route === "POST /fail-write" && Number.isSafeInteger(call)) {
+    } else if (route === "POST /fail-write") {
+      if (!isCall(call)) {
+        res.writeHead(400).end("call must be a whole number from 1");
+        return;
+      }
       world.failWrite(call);
       res.writeHead(204).end();
     } else if (route === "GET /writes") {
@@ -26,11 +31,47 @@ export function serveControl(
       res.writeHead(404).end();
     }
   });
-  // A crashed earlier run can leave the socket file behind.
-  rmSync(path, { force: true });
+  try {
+    await listen(server, path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
+    if (await answers(path)) {
+      throw new Error(
+        `The control socket ${path} belongs to another running Drift Kit server.`,
+        { cause: error }
+      );
+    }
+    // A crashed earlier run left its socket file behind.
+    rmSync(path, { force: true });
+    await listen(server, path);
+  }
+  return server;
+}
+
+// A write counted from the next one, which is 1.
+function isCall(call: number): boolean {
+  return Number.isSafeInteger(call) && call >= 1;
+}
+
+function listen(server: Server, path: string): Promise<void> {
   return new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(path, () => resolve(server));
+    server.listen(path, () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+}
+
+// Whether a server is listening on the socket.
+function answers(path: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = connect(path);
+    socket.once("connect", () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once("error", () => resolve(false));
   });
 }
 
@@ -55,6 +96,9 @@ export function connectControl(path: string): ControlClient {
       return JSON.parse(await send(path, "GET", "/writes")) as ReceivedWrite[];
     },
     async failWrite(call) {
+      if (!isCall(call)) {
+        throw new Error(`failWrite takes a call from 1, not ${call}`);
+      }
       await send(path, "POST", `/fail-write?call=${call}`);
     },
   };

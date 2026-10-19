@@ -553,6 +553,41 @@ describe("Apply Journal and resume", () => {
   });
 });
 
+describe("Run keys and resume", () => {
+  it("applies an approved plan when the input's fields come in another order", async () => {
+    const core = await openTriage();
+    const code = `export async function main(input: { a: number; b: number }) {
+      await sdk.linear.createIssue({ title: "at " + Date.now() + " " + input.a });
+    }`;
+    const id = planId(await core.explore({ code, input: { a: 1, b: 2 } }));
+    await openPlans(ws.dir).approve(id);
+
+    const again = await core.explore({ code, input: { b: 2, a: 1 } });
+
+    expect(again).toMatchObject({ ok: true, status: "applied" });
+  });
+
+  it("stops a resume before any write when a Tool is no longer offered", async () => {
+    const core = await openTriage();
+    const id = planId(await core.explore(fourWrites));
+    await openPlans(ws.dir).approve(id);
+    await ws.control("linear").failWrite(3);
+    const run = stoppedRun(await core.explore(fourWrites));
+    const withoutLinear = await ws.open({
+      servers: { sentry: ws.sentry("other") },
+      classification: sentryReads,
+    });
+
+    await expect(withoutLinear.resume(run)).rejects.toThrow(
+      `linear.createIssue is not offered, so nothing was sent. Once it is offered again, \`pinfold resume ${run}\` sends the writes not sent.`
+    );
+    const resumed = await core.resume(run);
+
+    expect(resumed.sent).toEqual([3, 4]);
+    expect(await sentTitles()).toEqual(["One", "Two", "Three", "Four"]);
+  });
+});
+
 describe("Declining a Write Plan that is being applied", () => {
   it("stops the Apply before its next write, for good", async () => {
     const gate = join(ws.dir, "gate");

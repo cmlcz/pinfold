@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Core } from "../index.ts";
+import { classifyTools, type Core } from "../index.ts";
 import { createWorkspace, sentryReads, type Workspace } from "./workspace.ts";
 
 let ws: Workspace;
@@ -368,5 +368,20 @@ describe("Declarations from unusual schemas", () => {
       "extra?: { a?: string; [key: string]: unknown }"
     );
     expect(result).toMatchObject({ ok: true });
+  });
+});
+
+describe("classifyTools", () => {
+  it("records servers and Tools named like Object members", async () => {
+    const config = join(ws.dir, "pinfold.json");
+    await writeFile(config, JSON.stringify({ servers: {} }));
+
+    await classifyTools(config, [
+      { server: "constructor", tool: "toString", kind: "read" },
+    ]);
+
+    expect(JSON.parse(await readFile(config, "utf8")).classification).toEqual({
+      constructor: { toString: "read" },
+    });
   });
 });

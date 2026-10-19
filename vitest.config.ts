@@ -1,7 +1,5 @@
 import { defineConfig } from "vitest/config";
 
-export default defineConfig({
-  test: {
-    include: ["src/**/*.test.ts"],
-  },
-});
+// Many tests start Downstream Servers or the CLI as processes of their own,
+// and CI runners are slower than a developer's machine.
+export default defineConfig({ test: { testTimeout: 30_000 } });

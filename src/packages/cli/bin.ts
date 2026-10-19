@@ -4,20 +4,19 @@
 //   node bin.ts approve|decline <plan-id> [--config pinfold.json]
 //   node bin.ts resume <run-id> [--config pinfold.json]
 //   node bin.ts list [--config pinfold.json]
-//   node bin.ts run <workflow> [--<input> <value>...] [--config pinfold.json]
+//   node bin.ts run <workflow> [<value> | --<field> <value>...] [--config pinfold.json]
 import { dirname, resolve } from "node:path";
-import { parseArgs } from "node:util";
 import {
   classifyTools,
   formatPlan,
   formatResume,
   formatWorkflowRun,
   formatWorkflows,
-  inputFromFlags,
   listWorkflows,
   loadConfig,
   openCore,
   openPlans,
+  type CommandLineInput,
   type Core,
   type ToolKind,
 } from "../core/index.ts";
@@ -28,27 +27,26 @@ const usage = `usage:
   pinfold approve|decline <plan-id> [--config <path>]
   pinfold resume <run-id> [--config <path>]
   pinfold list [--config <path>]
-  pinfold run <workflow> [--<input> <value>...] [--config <path>]
+  pinfold run <workflow> [<value> | --<field> <value>...] [--config <path>]
 
-pinfold run exits with 3 when the run pauses for Approval.`;
+pinfold run takes one value for a Workflow whose input is not an object, or
+else a flag per input field; a value starting with -- is given as
+--<field>=<value>. It exits with 3 when the run pauses for Approval.`;
 
 // A Workflow Run that pauses for Approval exits with this code, so that cron
 // or CI can tell it from a failure.
 const pausedExitCode = 3;
 
-// \`run\` takes the Workflow's input as flags of its own, so they are set
-// aside before the options are parsed.
-const args = process.argv.slice(2);
-const [options, inputFlags] =
-  args[0] === "run" ? splitRunFlags(args) : [args, {}];
-
-const { positionals, values } = parseArgs({
-  args: options,
-  allowPositionals: true,
-  options: { config: { type: "string", default: "pinfold.json" } },
-});
+let parsed: ReturnType<typeof parseCommandLine>;
+try {
+  parsed = parseCommandLine(process.argv.slice(2));
+} catch (error) {
+  console.error(`${(error as Error).message}\n${usage}`);
+  process.exit(2);
+}
+const { positionals, config, input } = parsed;
 const [command, ...rest] = positionals;
-const root = dirname(resolve(values.config));
+const root = dirname(resolve(config));
 
 try {
   process.exitCode = await main();
@@ -109,14 +107,13 @@ async function main(): Promise<number> {
       console.log(formatWorkflows(await listWorkflows(root)));
       return 0;
     case "run": {
+      // One value or flags, not both.
       const [name] = rest;
-      if (name === undefined || rest.length > 1) return fail();
+      const flagged = Object.keys(input.flags).length > 0;
+      if (name === undefined || rest.length > 2) return fail();
+      if (input.value !== undefined && flagged) return fail();
       return withCore(await openProjectCore(), async (core) => {
-        const saved = (await listWorkflows(root)).find(
-          (workflow) => workflow.name === name
-        );
-        const input = inputFromFlags(saved?.input ?? {}, inputFlags);
-        const result = await core.runWorkflow({ name, input });
+        const result = await core.runWorkflow({ name, commandLine: input });
         if (!result.ok) {
           console.error(result.error);
           return 1;
@@ -138,36 +135,50 @@ async function main(): Promise<number> {
   }
 }
 
-// Splits `run`'s arguments into the CLI's own, the command, the Workflow
-// and --config, and the input flags: `--name value`, `--name=value`, or a
-// bare `--name` for true.
-function splitRunFlags(
-  args: string[]
-): [string[], Record<string, string | true>] {
-  const own: string[] = [];
-  const flags: Record<string, string | true> = {};
+// Throws on arguments that make no sense. Only `run` takes options other
+// than --config: the Workflow's input, one flag per field, or one value.
+function parseCommandLine(args: string[]): {
+  positionals: string[];
+  config: string;
+  input: CommandLineInput;
+} {
+  const positionals: string[] = [];
+  let config = "pinfold.json";
+  const flags: Record<string, string | true> = Object.create(null);
   for (let index = 0; index < args.length; index++) {
     const arg = args[index]!;
-    if (!arg.startsWith("--")) {
-      own.push(arg);
+    // A negative number is a value, not an option.
+    if (!arg.startsWith("-") || /^-\d/.test(arg)) {
+      positionals.push(arg);
       continue;
+    }
+    if (!arg.startsWith("--") || arg === "--") {
+      throw new Error(`unknown option ${arg}`);
     }
     const [name, inline] = splitOnce(arg.slice(2), "=");
-    if (name === "config") {
-      own.push(arg);
-      if (inline === undefined && index + 1 < args.length) {
-        own.push(args[++index]!);
-      }
-      continue;
-    }
+    let value: string | true = inline ?? true;
     const next = args[index + 1];
-    if (inline !== undefined) flags[name] = inline;
-    else if (next !== undefined && !next.startsWith("--")) {
-      flags[name] = next;
+    if (inline === undefined && next !== undefined && !next.startsWith("--")) {
+      value = next;
       index++;
-    } else flags[name] = true;
+    }
+    if (name === "config") {
+      if (value === true) throw new Error("--config needs a path");
+      config = value;
+    } else if (Object.hasOwn(flags, name)) {
+      throw new Error(`--${name} is given more than once`);
+    } else {
+      flags[name] = value;
+    }
   }
-  return [own, flags];
+  const [command, , value] = positionals;
+  const [flag] = Object.keys(flags);
+  if (command !== "run" && flag !== undefined) {
+    throw new Error(`unknown option --${flag}`);
+  }
+  const input: CommandLineInput = { flags };
+  if (command === "run" && value !== undefined) input.value = value;
+  return { positionals, config, input };
 }
 
 function splitOnce(text: string, separator: string): [string, string?] {
@@ -180,23 +191,22 @@ async function classify([kind, ...names]: string[]): Promise<number> {
   if (kind !== undefined && names.length === 0) return fail();
   const choice = kind as ToolKind | undefined;
 
-  return withCore(await openProjectCore(), async (core) => {
-    if (choice === undefined) return show(core);
-    const tools = core.toolClassifications();
-    const choices = [];
-    for (const name of names) {
-      const match = tools.find(
-        (tool) => `${tool.server}.${tool.tool}` === name
-      );
-      if (match === undefined) {
-        console.error(`no Downstream Server offers ${name}`);
-        return 1;
-      }
-      choices.push({ server: match.server, tool: match.tool, kind: choice });
+  if (choice === undefined) return withCore(await openProjectCore(), show);
+  const tools = await withCore(await openProjectCore(), (core) =>
+    core.toolClassifications()
+  );
+  const choices = [];
+  for (const name of names) {
+    const match = tools.find((tool) => `${tool.server}.${tool.tool}` === name);
+    if (match === undefined) {
+      console.error(`no Downstream Server offers ${name}`);
+      return 1;
     }
-    await classifyTools(values.config, choices);
-    return withCore(await openProjectCore(), show);
-  });
+    choices.push({ server: match.server, tool: match.tool, kind: choice });
+  }
+  await classifyTools(config, choices);
+  // Opened once the first core has closed: its servers are started afresh.
+  return withCore(await openProjectCore(), show);
 }
 
 function fail(): number {
@@ -205,13 +215,13 @@ function fail(): number {
 }
 
 async function openProjectCore(): Promise<Core> {
-  return openCore(await loadConfig(values.config), { root });
+  return openCore(await loadConfig(config), { root });
 }
 
-async function withCore(
+async function withCore<T>(
   core: Core,
-  use: (core: Core) => Promise<number> | number
-): Promise<number> {
+  use: (core: Core) => Promise<T> | T
+): Promise<T> {
   try {
     return await use(core);
   } finally {

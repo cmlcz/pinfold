@@ -20,6 +20,78 @@ import type { FieldReads, Program, Sandbox } from "./types.ts";
 // unbounded guest recursion would otherwise overflow.
 const stackBytes = 256 * 1024;
 
+// The run's clock, set up in a block of its own: `Date` without arguments
+// and `Date.now()` give the clock's time, local time is UTC so that a run
+// computes the same values on a host in any time zone, and `Math.random` is
+// a seeded generator (mulberry32). It reads `now` and `seed` from the
+// prelude below.
+const clockSetup = `{
+  const { apply, construct } = Reflect;
+  const { imul } = Math;
+  const DateType = Date;
+  const { parse: parseDate, UTC } = DateType;
+  // A date and time without an offset, which JavaScript reads as local time.
+  const localDateTime = /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?)?$/;
+  const testPattern = RegExp.prototype.test;
+  const asUTC = (text) =>
+    typeof text === "string" && apply(testPattern, localDateTime, [text])
+      ? text + "Z"
+      : text;
+  function FrozenDate(...args) {
+    if (new.target === undefined) return new DateType(now).toString();
+    let time = [now];
+    if (args.length === 1) time = [asUTC(args[0])];
+    else if (args.length > 1) time = [apply(UTC, DateType, args)];
+    return construct(DateType, time, new.target);
+  }
+  FrozenDate.prototype = DateType.prototype;
+  FrozenDate.parse = (text) => parseDate(asUTC(text));
+  FrozenDate.UTC = UTC;
+  FrozenDate.now = () => now;
+  // Local time is UTC, so a run computes the same values on a host in any
+  // time zone.
+  const dates = DateType.prototype;
+  const parts = [
+    "FullYear", "Month", "Date", "Day",
+    "Hours", "Minutes", "Seconds", "Milliseconds",
+  ];
+  for (let i = 0; i < parts.length; i++) {
+    dates["get" + parts[i]] = dates["getUTC" + parts[i]];
+    if (parts[i] !== "Day") dates["set" + parts[i]] = dates["setUTC" + parts[i]];
+  }
+  dates.getTimezoneOffset = () => 0;
+  // The usual formats, in UTC: toUTCString gives "Tue, 14 Nov 2023 22:13:20
+  // GMT", and toString "Tue Nov 14 2023 22:13:20 GMT+0000 (...)".
+  const toUTCString = dates.toUTCString;
+  const split = String.prototype.split;
+  const sliceText = String.prototype.slice;
+  const partsOf = (date) => apply(split, apply(toUTCString, date, []), [" "]);
+  function toDateString() {
+    const [weekday, day, month, year] = partsOf(this);
+    const shortWeekday = apply(sliceText, weekday, [0, 3]);
+    return shortWeekday + " " + month + " " + day + " " + year;
+  }
+  function toTimeString() {
+    return partsOf(this)[4] + " GMT+0000 (Coordinated Universal Time)";
+  }
+  function toString() {
+    return apply(toDateString, this, []) + " " + apply(toTimeString, this, []);
+  }
+  dates.toDateString = dates.toLocaleDateString = toDateString;
+  dates.toTimeString = dates.toLocaleTimeString = toTimeString;
+  dates.toString = dates.toLocaleString = toString;
+  dates.constructor = FrozenDate;
+  globalThis.Date = FrozenDate;
+  let state = seed >>> 0;
+  Math.random = () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = imul(t ^ (t >>> 15), t | 1);
+    t ^= t + imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}`;
+
 // Installs `globalThis.sdk` around the host's `call` and `misuse`, which stay
 // out of the guest's reach, and returns the function that runs `main`.
 //
@@ -37,31 +109,17 @@ const stackBytes = 256 * 1024;
 // read when the program gets it, including when a value holding it is passed
 // to a Tool or returned.
 //
-// It also sets the run's clock: `Date` without arguments and `Date.now()`
-// give the clock's time, and `Math.random` is a seeded generator (mulberry32).
+// It also sets the run's clock, with clockSetup.
+
 const prelude = `(call, misuse, names, clock) => {
   const { now, seed } = JSON.parse(clock);
-  const { apply, construct, get: reflectGet } = Reflect;
-  const { imul } = Math;
-  const DateType = Date;
-  function FrozenDate(...args) {
-    if (new.target === undefined) return new DateType(now).toString();
-    return construct(DateType, args.length > 0 ? args : [now], new.target);
-  }
-  FrozenDate.prototype = DateType.prototype;
-  FrozenDate.parse = DateType.parse;
-  FrozenDate.UTC = DateType.UTC;
-  FrozenDate.now = () => now;
-  DateType.prototype.constructor = FrozenDate;
-  globalThis.Date = FrozenDate;
-  let state = seed >>> 0;
-  Math.random = () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let t = state;
-    t = imul(t ^ (t >>> 15), t | 1);
-    t ^= t + imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+  const {
+    apply,
+    get: reflectGet,
+    getOwnPropertyDescriptor: reflectDescriptor,
+    has: reflectHas,
+  } = Reflect;
+  ${clockSetup}
 
   const { create, defineProperty, hasOwn, keys } = Object;
   const { parse, stringify } = JSON;
@@ -94,8 +152,19 @@ const prelude = `(call, misuse, names, clock) => {
   const inspect = () => fail("inspected");
   const change = () => fail("changed");
 
+  // Proxy handlers without a prototype, so the program cannot add a trap to
+  // one through Object.prototype.
+  const handler = (traps) => {
+    const bare = create(null);
+    const names = keys(traps);
+    for (let i = 0; i < names.length; i++) {
+      define(bare, names[i], traps[names[i]]);
+    }
+    return bare;
+  };
+
   function placeholder(ref) {
-    const proxy = new ProxyType(function () {}, {
+    const proxy = new ProxyType(function () {}, handler({
       get(_, property) {
         if (property === "then") return undefined;
         if (typeof property === "symbol") fail("read, compared or formatted");
@@ -114,7 +183,9 @@ const prelude = `(call, misuse, names, clock) => {
       defineProperty: change,
       deleteProperty: change,
       setPrototypeOf: change,
-    });
+      isExtensible: inspect,
+      preventExtensions: change,
+    }));
     apply(weakSet, refs, [proxy, ref]);
     return proxy;
   }
@@ -177,8 +248,19 @@ const prelude = `(call, misuse, names, clock) => {
       return copy;
     });
 
-  const identifier = /^[A-Za-z_$][\\w$]*$/;
-  const test = RegExp.prototype.test;
+  const charCodeAt = String.prototype.charCodeAt;
+  // Whether a key is written .key in a path. Checked by hand: a RegExp
+  // would call an exec the program can replace.
+  const isIdentifier = (key) => {
+    if (key.length === 0) return false;
+    for (let i = 0; i < key.length; i++) {
+      const c = apply(charCodeAt, key, [i]);
+      const letter =
+        (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95 || c === 36;
+      if (!letter && (i === 0 || c < 48 || c > 57)) return false;
+    }
+    return true;
+  };
   const reads = create(null);
   const tracked = new WeakMap();
   const note = (tool, path) => {
@@ -186,7 +268,7 @@ const prelude = `(call, misuse, names, clock) => {
     define(reads[tool], path, true);
   };
   const step = (path, key) => {
-    if (!apply(test, identifier, [key])) {
+    if (!isIdentifier(key)) {
       return path + "[" + stringify(key) + "]";
     }
     return path === "" ? key : path + "." + key;
@@ -198,16 +280,37 @@ const prelude = `(call, misuse, names, clock) => {
     const known = apply(weakGet, tracked, [value]);
     if (known !== undefined) return known;
     const list = isArray(value);
-    const proxy = new ProxyType(value, {
+    // The path a read of an own field reaches, noted as read; undefined
+    // for anything else.
+    const read = (target, property) => {
+      if (typeof property !== "string" || !hasOwn(target, property)) {
+        return undefined;
+      }
+      if (list && property === "length") return undefined;
+      const at = list ? path + "[]" : step(path, property);
+      note(tool, at);
+      return at;
+    };
+    const proxy = new ProxyType(value, handler({
       get(target, property, receiver) {
         const field = reflectGet(target, property, receiver);
-        if (typeof property !== "string" || !hasOwn(target, property)) return field;
-        if (list && property === "length") return field;
-        const at = list ? path + "[]" : step(path, property);
-        note(tool, at);
-        return track(field, tool, at);
+        const at = read(target, property);
+        return at === undefined ? field : track(field, tool, at);
       },
-    });
+      getOwnPropertyDescriptor(target, property) {
+        const descriptor = reflectDescriptor(target, property);
+        const at = read(target, property);
+        if (at !== undefined && hasOwn(descriptor, "value")) {
+          define(descriptor, "value", track(descriptor.value, tool, at));
+        }
+        return descriptor;
+      },
+      // Whether a field is there depends on the field, so it counts as read.
+      has(target, property) {
+        read(target, property);
+        return reflectHas(target, property);
+      },
+    }));
     apply(weakSet, tracked, [value, proxy]);
     return proxy;
   }
@@ -383,7 +486,8 @@ export const quickJsSandbox: Sandbox = {
     ): QuickJSHandle {
       if (result.error) {
         const error = vm.dump(result.error);
-        result.error.dispose();
+        // Dumping a thrown promise can dispose of its handle already.
+        if (result.error.alive) result.error.dispose();
         throw new GuestError(error);
       }
       return track(result.value);
@@ -432,9 +536,11 @@ export const quickJsSandbox: Sandbox = {
       if (error instanceof GuestError) {
         return { ok: false, error: compiled.describe(error.value) };
       }
-      const overflow = builtInOverflow(error);
-      if (overflow !== undefined) return { ok: false, error: overflow };
-      throw error;
+      // Whatever else went wrong fails this run, never the host's caller.
+      return {
+        ok: false,
+        error: builtInOverflow(error) ?? `InternalError: ${messageOf(error)}`,
+      };
     } finally {
       finished = true;
       clearTimeout(timer);
