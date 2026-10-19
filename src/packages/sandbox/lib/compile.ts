@@ -2,7 +2,7 @@
 // back into messages that point at lines of the agent's source.
 import { SourceMap } from "node:module";
 import { transformSync, type TransformFailure } from "esbuild";
-import { typecheck } from "./typecheck.ts";
+import { typecheck } from "./checker.ts";
 
 const sourceFile = "program.ts";
 const scriptFile = "program.js";
@@ -17,10 +17,10 @@ export type Compiled = {
   describe(error: unknown): string;
 };
 
-export function compile(
+export async function compile(
   source: string,
   declarations: string
-): Compiled | { ok: false; error: string } {
+): Promise<Compiled | { ok: false; error: string }> {
   let output;
   try {
     output = transformSync(source, {
@@ -37,7 +37,7 @@ export function compile(
       error: describeCompileError(error as TransformFailure),
     };
   }
-  const typeErrors = typecheck(source, declarations);
+  const typeErrors = await typecheck(source, declarations);
   if (typeErrors.length > 0) return { ok: false, error: typeErrors.join("\n") };
 
   const map = new SourceMap(JSON.parse(output.map));

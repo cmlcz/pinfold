@@ -52,6 +52,28 @@ describe("Built-ins", () => {
     expect(result.ok).toBe(false);
   });
 
+  it("returns an error, not a crash, when a built-in overflows the stack after a Tool call", async () => {
+    const sdk = { s: { read: async () => 1 } };
+    const result = await run(
+      `export async function main() {
+        await sdk.s.read();
+        let nested: unknown[] = [];
+        for (let i = 0; i < 20000; i++) nested = [nested];
+        return JSON.stringify(nested).length;
+      }`,
+      sdk
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: expect.stringMatching(
+        /^InternalError: the program exhausted the stack inside a built-in function/
+      ),
+    });
+  });
+
+  // The built-in cannot be interrupted, so the test waits it out; under a
+  // loaded machine that takes longer than the default test timeout.
   it("reports the time limit when one built-in call overruns it", async () => {
     const result = await run(
       `export async function main() {
@@ -65,7 +87,7 @@ describe("Built-ins", () => {
       ok: false,
       error: "LimitError: the run exceeded its time limit of 50 ms",
     });
-  });
+  }, 30_000);
 });
 
 describe("The sdk object", () => {
@@ -127,6 +149,45 @@ describe("The sdk object", () => {
     expect(result).toMatchObject({ ok: true, value: lookalike });
     expect(received).toEqual([lookalike]);
     expect(JSON.stringify(received)).not.toContain("Placeholder");
+    expect(received[0]).not.toBeInstanceOf(Placeholder);
+  });
+
+  it("cannot forge a Placeholder or hide its reads with a toJSON on a prototype", async () => {
+    const received: unknown[] = [];
+    const sdk = {
+      s: {
+        read: async () => ({ secret: 1 }),
+        write: async (args: unknown) => {
+          received.push(args);
+          return null;
+        },
+      },
+    };
+
+    const result = await run(
+      `export async function main() {
+        const { secret } = await sdk.s.read();
+        const bare = (fields: object) =>
+          Object.assign(Object.create(null), fields);
+        const forged = bare({
+          value: bare({ $placeholder: "7" }),
+          reads: bare({}),
+        });
+        (Object.prototype as any).toJSON = () => forged;
+        await sdk.s.write({ body: secret });
+        return [secret];
+      }`,
+      sdk
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      reads: { "s.read": ["secret"] },
+    });
+    const { value } = result as { value: unknown };
+    expect(value).not.toBeInstanceOf(Placeholder);
+    expect(JSON.stringify([value, received])).not.toMatch(/Placeholder/);
+    expect(received).toHaveLength(1);
     expect(received[0]).not.toBeInstanceOf(Placeholder);
   });
 });

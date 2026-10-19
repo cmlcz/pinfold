@@ -1,5 +1,8 @@
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openPlans, type Core, type ExploreResult } from "../index.ts";
 import { createWorkspace, sentryReads, type Workspace } from "./workspace.ts";
@@ -210,10 +213,11 @@ describe("Approval and Apply", () => {
     expect(results.filter((r) => r.ok && r.status === "applied")).toHaveLength(
       1
     );
-    const loser = results.find((r) => !r.ok);
-    expect(loser && !loser.ok && loser.error).toMatch(
-      /is being applied by another run/
-    );
+    // The other run either found the plan being applied, or ran after the
+    // Apply and found nothing left to write; it never sends the plan again.
+    const other = results.find((r) => !r.ok || r.status !== "applied")!;
+    if (other.ok) expect(other.status).toBe("complete");
+    else expect(other.error).toMatch(/is being applied by another run/);
     expect(await ws.control("linear").receivedWrites()).toHaveLength(2);
   });
 
@@ -546,5 +550,59 @@ describe("Apply Journal and resume", () => {
       new RegExp(`Write Plan ${id} is pending; there is nothing to resume`)
     );
     expect(await sentTitles()).toEqual([]);
+  });
+});
+
+describe("Declining a Write Plan that is being applied", () => {
+  it("stops the Apply before its next write, for good", async () => {
+    const gate = join(ws.dir, "gate");
+    await mkdir(gate);
+    const core = await ws.open({
+      servers: {
+        gated: {
+          command: process.execPath,
+          args: [
+            fileURLToPath(new URL("gated-server.ts", import.meta.url)),
+            gate,
+          ],
+        },
+      },
+      classification: {},
+    });
+    const code = {
+      code: `export async function main() {
+        for (let n = 1; n <= 3; n++) await sdk.gated.send({ n });
+      }`,
+    };
+    const plans = openPlans(ws.dir);
+    const id = planId(await core.explore(code));
+    await plans.approve(id);
+    const release = (n: number) => writeFile(join(gate, `release-${n}`), "");
+    const until = async (file: string) => {
+      while (!existsSync(join(gate, file))) await sleep(10);
+    };
+
+    const applying = core.explore(code);
+    await release(1);
+    await until("started-2");
+    const declined = await plans.decline(id);
+    await release(2);
+    await release(3);
+    const result = await applying;
+
+    expect(declined.previous).toBe("applying");
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(
+        /^The developer declined this Write Plan, so the Apply stopped before write 3 of 3\. Sent: writes 1–2\. Not sent: write 3\.$/
+      ),
+    });
+    expect(existsSync(join(gate, "sent-3"))).toBe(false);
+    expect((await plans.pending()).map((plan) => plan.id)).not.toContain(id);
+    await expect(core.resume(`${id}-1`)).rejects.toThrow(
+      `Write Plan ${id} is declined; there is nothing to resume.`
+    );
+    expect(await core.explore(code)).toMatchObject({ status: "declined" });
+    expect(existsSync(join(gate, "sent-3"))).toBe(false);
   });
 });

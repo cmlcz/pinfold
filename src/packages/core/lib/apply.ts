@@ -39,8 +39,13 @@ export async function sendWrites(
     } catch (error) {
       throw stopped(error, false);
     }
-    if (!journal.take(index)) {
-      throw new Error(`Write ${position} is being sent by another Apply.`);
+    switch (journal.take(index)) {
+      case "busy":
+        throw new Error(`Write ${position} is being sent by another Apply.`);
+      case "declined":
+        throw new ApplyStopped(
+          `The developer declined this Write Plan, so the Apply stopped before write ${position} of ${writes.length}. Sent: ${span(1, index)}. Not sent: ${span(position, writes.length)}.`
+        );
     }
     try {
       results.push(await send(write, args));

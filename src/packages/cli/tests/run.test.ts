@@ -4,11 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadConfig, openCore } from "../../core/index.ts";
 import { driftKitCommand } from "../../drift-kit/index.ts";
 
 const bin = fileURLToPath(new URL("../bin.ts", import.meta.url));
+
+// Each test runs the CLI in processes of its own, given up to 30 s each.
+vi.setConfig({ testTimeout: 30_000 });
 let dir: string;
 let config: string;
 
@@ -103,7 +106,7 @@ describe("pinfold run", () => {
     expect(applied.code).toBe(0);
     expect(applied.stdout).toContain(`Applied Write Plan ${id}: 1 write sent.`);
     expect((await pinfold("list")).stdout).not.toContain("last run: never");
-  }, 30_000);
+  });
 
   it("fails with the reason when the input does not fit", async () => {
     await saveWorkflow();

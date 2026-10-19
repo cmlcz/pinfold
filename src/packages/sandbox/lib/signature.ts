@@ -50,74 +50,137 @@ export function mainInputSchema(
   if (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) {
     return { ok: false, error: "main's input is typed any or unknown" };
   }
-  return { ok: true, schema: schemaOf(checker, type, 0) };
+  try {
+    const walk = { checker, expanding: new Set<ts.Type>(), nodes: 0 };
+    return { ok: true, schema: schemaOf(walk, type) };
+  } catch (error) {
+    if (!(error instanceof UncheckableType)) throw error;
+    return { ok: false, error: error.message };
+  }
 }
 
 // Covers the types an input is written with: primitives, literals, unions,
-// arrays and object types. Anything else, or anything nested too deeply,
-// accepts any value.
-const maxDepth = 16;
+// intersections, arrays, tuples and object types. `any` and `unknown` accept
+// any value, and so does a type where it refers back to itself. Any other
+// type cannot be checked, and the input is refused rather than accepted
+// unchecked.
+const maxNodes = 10_000;
 
-function schemaOf(
-  checker: ts.TypeChecker,
-  type: ts.Type,
-  depth: number
-): JsonSchema {
-  if (depth > maxDepth) return {};
+class UncheckableType extends Error {}
+
+type Walk = {
+  checker: ts.TypeChecker;
+  /** The object types being expanded, outermost first. */
+  expanding: Set<ts.Type>;
+  nodes: number;
+};
+
+function schemaOf(walk: Walk, type: ts.Type): JsonSchema {
+  const { checker } = walk;
+  if (++walk.nodes > maxNodes) {
+    throw new UncheckableType("main's input type is too large to check");
+  }
   const { flags } = type;
+  if (flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) return {};
   if (flags & ts.TypeFlags.StringLiteral)
     return { const: (type as ts.StringLiteralType).value };
   if (flags & ts.TypeFlags.NumberLiteral)
     return { const: (type as ts.NumberLiteralType).value };
   if (flags & ts.TypeFlags.BooleanLiteral)
     return { const: checker.typeToString(type) === "true" };
-  if (flags & ts.TypeFlags.String) return { type: "string" };
+  if (flags & (ts.TypeFlags.String | ts.TypeFlags.TemplateLiteral)) {
+    return { type: "string" };
+  }
   if (flags & ts.TypeFlags.Number) return { type: "number" };
   if (flags & ts.TypeFlags.Boolean) return { type: "boolean" };
   if (flags & ts.TypeFlags.Null) return { type: "null" };
-  if (type.isUnion()) return unionSchema(checker, type, depth);
-  if (checker.isArrayType(type)) {
-    const [item] = checker.getTypeArguments(type as ts.TypeReference);
-    return {
-      type: "array",
-      items: item ? schemaOf(checker, item, depth + 1) : {},
-    };
+  if (flags & ts.TypeFlags.NonPrimitive) return { type: "object" };
+  if (type.isUnion()) return unionSchema(walk, type);
+  if (!(flags & (ts.TypeFlags.Object | ts.TypeFlags.Intersection))) {
+    throw new UncheckableType(
+      `main's input uses the type ${checker.typeToString(type)}, which cannot be checked`
+    );
   }
-  if (flags & ts.TypeFlags.Object) {
-    const properties: Record<string, JsonSchema> = {};
-    const required: string[] = [];
-    for (const property of checker.getPropertiesOfType(type)) {
-      properties[property.name] = schemaOf(
-        checker,
-        checker.getTypeOfSymbol(property),
-        depth + 1
-      );
-      if (!(property.flags & ts.SymbolFlags.Optional))
-        required.push(property.name);
-    }
-    const values = checker.getIndexTypeOfType(type, ts.IndexKind.String);
-    return {
-      type: "object",
-      properties,
-      required,
-      additionalProperties: values
-        ? schemaOf(checker, values, depth + 1)
-        : false,
-    };
+  // A type met again inside itself, as in a tree, accepts any value there.
+  if (walk.expanding.has(type)) return {};
+  walk.expanding.add(type);
+  try {
+    return objectSchema(walk, type);
+  } finally {
+    walk.expanding.delete(type);
   }
-  return {};
 }
 
-function unionSchema(
-  checker: ts.TypeChecker,
-  union: ts.UnionType,
-  depth: number
-): JsonSchema {
+function objectSchema(walk: Walk, type: ts.Type): JsonSchema {
+  const { checker } = walk;
+  if (checker.isTupleType(type))
+    return tupleSchema(walk, type as ts.TupleTypeReference);
+  if (checker.isArrayType(type)) {
+    const [item] = checker.getTypeArguments(type as ts.TypeReference);
+    return { type: "array", items: item ? schemaOf(walk, item) : {} };
+  }
+  if (type.getCallSignatures().length > 0) {
+    throw new UncheckableType(
+      `main's input uses the function type ${checker.typeToString(type)}, which JSON cannot hold`
+    );
+  }
+  const properties: Record<string, JsonSchema> = {};
+  const required: string[] = [];
+  for (const property of checker.getPropertiesOfType(type)) {
+    // Defined, so a field named __proto__ is a field like any other.
+    Object.defineProperty(properties, property.name, {
+      value: schemaOf(walk, checker.getTypeOfSymbol(property)),
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+    if (!(property.flags & ts.SymbolFlags.Optional))
+      required.push(property.name);
+  }
+  const values = checker.getIndexTypeOfType(type, ts.IndexKind.String);
+  return {
+    type: "object",
+    properties,
+    required,
+    additionalProperties: values ? schemaOf(walk, values) : false,
+  };
+}
+
+function tupleSchema(walk: Walk, tuple: ts.TupleTypeReference): JsonSchema {
+  const elements = walk.checker.getTypeArguments(tuple);
+  const { elementFlags } = tuple.target;
+  const prefixItems: JsonSchema[] = [];
+  let rest: JsonSchema | false = false;
+  let minItems = 0;
+  for (const [index, element] of elements.entries()) {
+    const flags = elementFlags[index]!;
+    if (flags & ts.ElementFlags.Variable) {
+      rest = schemaOf(walk, element);
+      continue;
+    }
+    if (rest !== false) {
+      throw new UncheckableType(
+        "main's input uses a tuple with elements after its rest element, which cannot be checked"
+      );
+    }
+    prefixItems.push(schemaOf(walk, element));
+    if (flags & ts.ElementFlags.Required) minItems = prefixItems.length;
+  }
+  return {
+    type: "array",
+    prefixItems,
+    items: rest,
+    minItems,
+    ...(rest === false ? { maxItems: prefixItems.length } : {}),
+  };
+}
+
+function unionSchema(walk: Walk, union: ts.UnionType): JsonSchema {
   // An optional field's type includes undefined, which JSON cannot hold.
   const options = union.types.filter(
     (option) => !(option.flags & ts.TypeFlags.Undefined)
   );
-  if (options.length === 1) return schemaOf(checker, options[0]!, depth + 1);
+  if (options.length === 1) return schemaOf(walk, options[0]!);
   // TypeScript spells boolean as true | false.
   const booleans = options.filter(
     (option) => option.flags & ts.TypeFlags.BooleanLiteral
@@ -126,7 +189,7 @@ function unionSchema(
     booleans.length === 2
       ? options.filter((option) => !booleans.includes(option))
       : options;
-  const schemas = others.map((option) => schemaOf(checker, option, depth + 1));
+  const schemas = others.map((option) => schemaOf(walk, option));
   if (booleans.length === 2) schemas.push({ type: "boolean" });
   if (schemas.length === 1) return schemas[0]!;
   if (schemas.every((schema) => "const" in schema)) {
