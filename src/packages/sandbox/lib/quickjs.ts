@@ -119,25 +119,46 @@ const prelude = `(call, misuse, names, clock) => {
     return proxy;
   }
 
-  function encode(value) {
+  // JSON text built by hand: JSON.stringify would look up toJSON on every
+  // object it meets, and the program can change their prototypes. Only the
+  // program's own values have their toJSON called, as JSON.stringify would.
+  function wire(value) {
     const ref = apply(weakGet, refs, [value]);
-    if (ref !== undefined) return { [marker]: ref };
-    if (typeof value !== "object" || value === null) return value;
+    if (ref !== undefined) {
+      return "{" + stringify(marker) + ":" + wireList(ref) + "}";
+    }
+    if (typeof value === "bigint") {
+      throw new TypeErrorType("a BigInt cannot be passed as JSON");
+    }
+    if (typeof value !== "object" || value === null) return stringify(value);
     const toJSON = value.toJSON;
-    if (typeof toJSON === "function") return encode(apply(toJSON, value, []));
+    if (typeof toJSON === "function") return wire(apply(toJSON, value, []));
     if (isArray(value)) {
-      const copy = [];
-      for (let i = 0; i < value.length; i++) define(copy, i, encode(value[i]));
-      return copy;
+      let items = "";
+      for (let i = 0; i < value.length; i++) {
+        const item = wire(value[i]);
+        items += (i > 0 ? "," : "") + (item === undefined ? "null" : item);
+      }
+      return "[" + items + "]";
     }
-    const copy = {};
-    const fields = keys(value);
-    for (let i = 0; i < fields.length; i++) {
-      const field = fields[i];
-      const key = begins(field, "$") ? "$" + field : field;
-      define(copy, key, encode(value[field]));
+    let fields = "";
+    const fieldNames = keys(value);
+    for (let i = 0; i < fieldNames.length; i++) {
+      const field = wire(value[fieldNames[i]]);
+      if (field === undefined) continue;
+      fields += (fields === "" ? "" : ",") + wireKey(fieldNames[i]) + ":" + field;
     }
-    return copy;
+    return "{" + fields + "}";
+  }
+  const wireKey = (name) => stringify(begins(name, "$") ? "$" + name : name);
+  // A list of strings and numbers, which JSON.stringify writes without
+  // looking up any toJSON.
+  function wireList(items) {
+    let text = "";
+    for (let i = 0; i < items.length; i++) {
+      text += (i > 0 ? "," : "") + stringify(items[i]);
+    }
+    return "[" + text + "]";
   }
 
   const decode = (json) =>
@@ -199,7 +220,7 @@ const prelude = `(call, misuse, names, clock) => {
     if (!hasOwn(sdk, namespace)) define(sdk, namespace, create(null));
     const tool = namespace + "." + name;
     define(sdk[namespace], name, (args) =>
-      apply(then, call(namespace, name, stringify(encode(args ?? {})), stack()), [
+      apply(then, call(namespace, name, wire(args ?? {}), stack()), [
         (json) => track(decode(json), tool, ""),
       ])
     );
@@ -210,19 +231,24 @@ const prelude = `(call, misuse, names, clock) => {
     if (typeof globalThis.__program?.main !== "function") {
       throw new TypeErrorType("the program must export a main(input) function");
     }
-    const value = encode(await globalThis.__program.main(parse(input)));
-    const readPaths = create(null);
+    const value = wire(await globalThis.__program.main(parse(input)));
+    let readPaths = "";
     const tools = keys(reads);
     for (let i = 0; i < tools.length; i++) {
-      define(readPaths, tools[i], keys(reads[tools[i]]));
+      const paths = wireList(keys(reads[tools[i]]));
+      readPaths += (i > 0 ? "," : "") + wireKey(tools[i]) + ":" + paths;
     }
-    return stringify({ value, reads: readPaths });
+    return (
+      "{" +
+      (value === undefined ? "" : '"value":' + value + ",") +
+      '"reads":{' + readPaths + "}}"
+    );
   };
 }`;
 
 export const quickJsSandbox: Sandbox = {
   async run(program) {
-    const compiled = compile(program.source, program.declarations);
+    const compiled = await compile(program.source, program.declarations);
     if (!compiled.ok) return compiled;
 
     // A fresh module per run, so a fault inside one run cannot outlive it.
@@ -282,10 +308,16 @@ export const quickJsSandbox: Sandbox = {
       outcome: (vm: QuickJSContext) => void
     ) => {
       if (finished) return;
-      outcome(vm);
-      pending.delete(deferred);
-      deferred.dispose();
-      runtime.executePendingJobs().dispose();
+      try {
+        outcome(vm);
+        pending.delete(deferred);
+        deferred.dispose();
+        runtime.executePendingJobs().dispose();
+      } catch (error) {
+        // Thrown here, in a callback of the host's promise, the error would
+        // reject nothing and crash the host, so it fails the run instead.
+        fail(builtInOverflow(error) ?? `InternalError: ${messageOf(error)}`);
+      }
     };
 
     const call = track(
@@ -400,18 +432,8 @@ export const quickJsSandbox: Sandbox = {
       if (error instanceof GuestError) {
         return { ok: false, error: compiled.describe(error.value) };
       }
-      // Deep recursion inside a QuickJS built-in (JSON.stringify of a deeply
-      // nested value, say) exhausts the WebAssembly stack before QuickJS's own
-      // stack limit sees it.
-      if (
-        error instanceof Error &&
-        (error instanceof RangeError || error.name === "RuntimeError")
-      ) {
-        return {
-          ok: false,
-          error: `InternalError: the program exhausted the stack inside a built-in function (${error.message})`,
-        };
-      }
+      const overflow = builtInOverflow(error);
+      if (overflow !== undefined) return { ok: false, error: overflow };
       throw error;
     } finally {
       finished = true;
@@ -457,6 +479,19 @@ function withHandle(handle: QuickJSHandle, use: (h: QuickJSHandle) => void) {
   } finally {
     handle.dispose();
   }
+}
+
+// Deep recursion inside a QuickJS built-in (JSON.stringify of a deeply
+// nested value, say) exhausts the WebAssembly stack before QuickJS's own
+// stack limit sees it.
+function builtInOverflow(error: unknown): string | undefined {
+  if (
+    error instanceof Error &&
+    (error instanceof RangeError || error.name === "RuntimeError")
+  ) {
+    return `InternalError: the program exhausted the stack inside a built-in function (${error.message})`;
+  }
+  return undefined;
 }
 
 function messageOf(error: unknown): string {

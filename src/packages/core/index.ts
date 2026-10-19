@@ -338,7 +338,9 @@ export async function openCore(
   // Budget, and otherwise is applied unattended.
   async function runWorkflow(
     name: string,
-    input: unknown
+    input: unknown,
+    /** Receives which save of the Workflow ran, for the run history. */
+    ran: { saved?: string }
   ): Promise<WorkflowRunResult> {
     const loaded = await loadWorkflow(options.root, name, {
       declarations: declarations(sdkTools()),
@@ -352,6 +354,7 @@ export async function openCore(
     });
     if (!loaded.ok) return loaded;
     const { workflow } = loaded;
+    ran.saved = workflow.saved;
     const checked = checkInput(workflow.input, input);
     if (!checked.ok)
       return { ok: false, error: `Workflow ${name} not run. ${checked.error}` };
@@ -363,8 +366,13 @@ export async function openCore(
     if (!result.ok) return result;
     const plan = writePlan(writes);
     const history = await runHistory(options.root);
+    // Applied before means this very save: a Workflow saved again under the
+    // name of a deleted one is approved afresh.
     const appliedBefore = history.some(
-      (entry) => entry.workflow === name && entry.status === "applied"
+      (entry) =>
+        entry.workflow === name &&
+        entry.saved === workflow.saved &&
+        entry.status === "applied"
     );
     let approvalReason: string | undefined;
     if (!appliedBefore) {
@@ -422,9 +430,11 @@ export async function openCore(
       return { ...outcome, exploration: run };
     },
     async runWorkflow({ name, input }) {
-      const result = await runWorkflow(name, input);
+      const ran: { saved?: string } = {};
+      const result = await runWorkflow(name, input, ran);
       await recordRun(options.root, {
         workflow: name,
+        ...ran,
         at: new Date().toISOString(),
         status: result.ok ? result.status : "failed",
         ...(result.ok ? { plan: result.plan.id } : { error: result.error }),

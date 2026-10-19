@@ -4,10 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { driftKitCommand } from "../../drift-kit/index.ts";
 
 const bin = fileURLToPath(new URL("../bin.ts", import.meta.url));
+
+// Each test runs the CLI in processes of its own, given up to 30 s each.
+vi.setConfig({ testTimeout: 30_000 });
 let dir: string;
 let config: string;
 

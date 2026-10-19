@@ -14,8 +14,15 @@ afterEach(() => ws.close());
 
 const baselines = () => join(ws.dir, ".workflows", "baselines");
 
+/** The pinned Baseline of a Tool, named `server.tool`. */
 async function readBaseline(tool: string) {
-  return JSON.parse(await readFile(join(baselines(), `${tool}.json`), "utf8"));
+  for (const file of await readdir(baselines())) {
+    const baseline = JSON.parse(
+      await readFile(join(baselines(), file), "utf8")
+    );
+    if (`${baseline.server}.${baseline.tool}` === tool) return baseline;
+  }
+  throw new Error(`no Baseline of ${tool}`);
 }
 
 describe("Baselines", () => {
@@ -34,8 +41,8 @@ describe("Baselines", () => {
 
     expect(result).toMatchObject({ ok: true, value: ["web", "api"] });
     expect((await readdir(baselines())).sort()).toEqual([
-      "sentry.listIssues.json",
-      "sentry.listProjects.json",
+      expect.stringMatching(/^sentry\.listIssues\.[0-9a-f]{8}\.json$/),
+      expect.stringMatching(/^sentry\.listProjects\.[0-9a-f]{8}\.json$/),
     ]);
     expect(await readBaseline("sentry.listIssues")).toMatchObject({
       server: "sentry",

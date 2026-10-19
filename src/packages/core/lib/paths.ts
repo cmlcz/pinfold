@@ -60,10 +60,12 @@ function replaceAt(value: unknown, steps: Step[]): unknown {
 }
 
 /**
- * Whether a JSON Schema has the field a path names. A part of the shape that
- * says nothing of its type, such as `{}`, has every field.
+ * Whether a JSON Schema allows the field a path names, as JSON Schema reads
+ * it: an object allows fields it does not list unless its
+ * additionalProperties is false, and a part of the shape that says nothing
+ * of its type, such as `{}`, allows every field.
  */
-export function shapeHas(schema: JsonSchema, path: string): boolean {
+export function shapeAllows(schema: JsonSchema, path: string): boolean {
   const steps = parsePath(path);
   return steps !== undefined && hasSteps(schema, steps);
 }
@@ -89,7 +91,9 @@ function hasSteps(schema: JsonSchema, steps: Step[]): boolean {
   if (Object.hasOwn(properties, step.key)) {
     return hasSteps(properties[step.key]!, rest);
   }
-  return (
-    schema.properties === undefined && schema.additionalProperties !== false
-  );
+  const additional = schema.additionalProperties;
+  if (additional === false) return false;
+  return typeof additional === "object" && additional !== null
+    ? hasSteps(additional as JsonSchema, rest)
+    : true;
 }

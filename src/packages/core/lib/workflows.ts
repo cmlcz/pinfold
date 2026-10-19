@@ -18,7 +18,7 @@ import {
   type FieldReads,
   type JsonSchema,
 } from "../../sandbox/index.ts";
-import { deepestPaths, redact, shapeHas } from "./paths.ts";
+import { deepestPaths, redact, shapeAllows } from "./paths.ts";
 
 export const defaultWriteBudget = 10;
 
@@ -118,14 +118,14 @@ export async function saveWorkflow(
     );
   }
   const source = workflowSource(name, exploration);
-  const mainInput = mainInputSchema(source, request.declarations);
+  const mainInput = await mainInputSchema(source, request.declarations);
   if (!mainInput.ok) {
     return refuse(
       "main",
       `${mainInput.error}; a Workflow exports a typed main(input)`
     );
   }
-  const errors = typecheck(source, request.declarations);
+  const errors = await typecheck(source, request.declarations);
   if (errors.length > 0) {
     return refuse(
       "types",
@@ -236,6 +236,8 @@ export type LoadedWorkflow = {
   /** The JSON Schema of main's input, from the code as it is now. */
   input: JsonSchema;
   writeBudget: number;
+  /** Identifies this save of the Workflow, apart from any earlier one. */
+  saved: string;
 };
 
 const settingsSchema = z.object({ writeBudget: z.int().nonnegative() });
@@ -273,11 +275,11 @@ export async function loadWorkflow(
   const source = await readOrNone(join(dir, `${name}.ts`));
   if (source === undefined) return refuse(`.workflows/${name}.ts is missing`);
 
-  const mainInput = mainInputSchema(source, sdk.declarations);
+  const mainInput = await mainInputSchema(source, sdk.declarations);
   if (!mainInput.ok) {
     return refuse(`${mainInput.error}; a Workflow exports a typed main(input)`);
   }
-  const errors = typecheck(source, sdk.declarations);
+  const errors = await typecheck(source, sdk.declarations);
   if (errors.length > 0) {
     return refuse(
       `it does not type-check against the SDK:\n${errors.join("\n")}`
@@ -300,7 +302,7 @@ export async function loadWorkflow(
   for (const [tool, paths] of Object.entries(record.contract)) {
     const shape = sdk.outputSchema(tool);
     if (shape === undefined) continue;
-    const missing = paths.filter((path) => !shapeHas(shape, path));
+    const missing = paths.filter((path) => !shapeAllows(shape, path));
     if (missing.length > 0) {
       return refuse(
         `its Contract reads ${missing.map((path) => `${tool} ${path}`).join(", ")}, which the Baseline of ${tool} does not have`
@@ -314,6 +316,7 @@ export async function loadWorkflow(
       source,
       input: mainInput.schema,
       writeBudget: parsedSettings.data.writeBudget,
+      saved: `${record.savedFrom}@${record.savedAt}`,
     },
   };
 }
@@ -352,6 +355,8 @@ export function inputFromFlags(
 /** One Workflow Run, as the run history records it. */
 export type RunEntry = {
   workflow: string;
+  /** Which save of the Workflow ran, once it was loaded. */
+  saved?: string;
   at: string;
   /** What became of the run's Write Plan, or `failed`. */
   status: string;

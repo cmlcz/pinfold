@@ -89,7 +89,7 @@ async function main(): Promise<number> {
       const { previous } = await plans.decline(id);
       if (previous === "applying") {
         console.log(
-          `Declined Write Plan ${id}. No run will send it again; writes a stopped run already sent stay sent.`
+          `Declined Write Plan ${id}. A run applying it stops before its next write, and no run sends it again; writes already sent stay sent.`
         );
       } else {
         console.log(`Declined Write Plan ${id}. It will never be sent.`);
