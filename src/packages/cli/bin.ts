@@ -4,13 +4,16 @@
 //   node bin.ts approve|decline <plan-id> [--config pinfold.json]
 //   node bin.ts resume <run-id> [--config pinfold.json]
 //   node bin.ts list [--config pinfold.json]
+//   node bin.ts run <workflow> [--<input> <value>...] [--config pinfold.json]
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import {
   classifyTools,
   formatPlan,
   formatResume,
+  formatWorkflowRun,
   formatWorkflows,
+  inputFromFlags,
   listWorkflows,
   loadConfig,
   openCore,
@@ -24,9 +27,23 @@ const usage = `usage:
   pinfold plans [--config <path>]
   pinfold approve|decline <plan-id> [--config <path>]
   pinfold resume <run-id> [--config <path>]
-  pinfold list [--config <path>]`;
+  pinfold list [--config <path>]
+  pinfold run <workflow> [--<input> <value>...] [--config <path>]
+
+pinfold run exits with 3 when the run pauses for Approval.`;
+
+// A Workflow Run that pauses for Approval exits with this code, so that cron
+// or CI can tell it from a failure.
+const pausedExitCode = 3;
+
+// \`run\` takes the Workflow's input as flags of its own, so they are set
+// aside before the options are parsed.
+const args = process.argv.slice(2);
+const [options, inputFlags] =
+  args[0] === "run" ? splitRunFlags(args) : [args, {}];
 
 const { positionals, values } = parseArgs({
+  args: options,
   allowPositionals: true,
   options: { config: { type: "string", default: "pinfold.json" } },
 });
@@ -54,32 +71,35 @@ async function main(): Promise<number> {
       for (const plan of pending) console.log(formatPlan(plan));
       return 0;
     }
-    case "approve":
+    case "approve": {
+      const [id] = rest;
+      if (id === undefined || rest.length > 1) return fail();
+      const plans = openPlans(root);
+      const plan = await plans.approve(id);
+      console.log(formatPlan(plan));
+      console.log(
+        `Approved Write Plan ${id}. It is sent when the same code runs again and rebuilds the same plan.`
+      );
+      return 0;
+    }
     case "decline": {
       const [id] = rest;
       if (id === undefined || rest.length > 1) return fail();
       const plans = openPlans(root);
-      if (command === "approve") {
-        const plan = await plans.approve(id);
-        console.log(formatPlan(plan));
+      const { previous } = await plans.decline(id);
+      if (previous === "applying") {
         console.log(
-          `Approved Write Plan ${id}. It is sent when the same code runs again and rebuilds the same plan.`
+          `Declined Write Plan ${id}. No run will send it again; writes a stopped run already sent stay sent.`
         );
       } else {
-        const { previous } = await plans.decline(id);
-        console.log(
-          previous === "applying"
-            ? `Declined Write Plan ${id}. No run will send it again; writes a stopped run already sent stay sent.`
-            : `Declined Write Plan ${id}. It will never be sent.`
-        );
+        console.log(`Declined Write Plan ${id}. It will never be sent.`);
       }
       return 0;
     }
     case "resume": {
       const [run] = rest;
       if (run === undefined || rest.length > 1) return fail();
-      const core = await openCore(await loadConfig(values.config), { root });
-      return withCore(core, async () => {
+      return withCore(await openProjectCore(), async (core) => {
         console.log(formatResume(await core.resume(run)));
         return 0;
       });
@@ -88,37 +108,104 @@ async function main(): Promise<number> {
       if (rest.length > 0) return fail();
       console.log(formatWorkflows(await listWorkflows(root)));
       return 0;
+    case "run": {
+      const [name] = rest;
+      if (name === undefined || rest.length > 1) return fail();
+      return withCore(await openProjectCore(), async (core) => {
+        const saved = (await listWorkflows(root)).find(
+          (workflow) => workflow.name === name
+        );
+        const input = inputFromFlags(saved?.input ?? {}, inputFlags);
+        const result = await core.runWorkflow({ name, input });
+        if (!result.ok) {
+          console.error(result.error);
+          return 1;
+        }
+        console.log(formatWorkflowRun(result));
+        switch (result.status) {
+          case "pending":
+          case "changed":
+            return pausedExitCode;
+          case "declined":
+            return 1;
+          default:
+            return 0;
+        }
+      });
+    }
     default:
       return fail();
   }
+}
+
+// Splits `run`'s arguments into the CLI's own, the command, the Workflow
+// and --config, and the input flags: `--name value`, `--name=value`, or a
+// bare `--name` for true.
+function splitRunFlags(
+  args: string[]
+): [string[], Record<string, string | true>] {
+  const own: string[] = [];
+  const flags: Record<string, string | true> = {};
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index]!;
+    if (!arg.startsWith("--")) {
+      own.push(arg);
+      continue;
+    }
+    const [name, inline] = splitOnce(arg.slice(2), "=");
+    if (name === "config") {
+      own.push(arg);
+      if (inline === undefined && index + 1 < args.length) {
+        own.push(args[++index]!);
+      }
+      continue;
+    }
+    const next = args[index + 1];
+    if (inline !== undefined) flags[name] = inline;
+    else if (next !== undefined && !next.startsWith("--")) {
+      flags[name] = next;
+      index++;
+    } else flags[name] = true;
+  }
+  return [own, flags];
+}
+
+function splitOnce(text: string, separator: string): [string, string?] {
+  const at = text.indexOf(separator);
+  return at === -1 ? [text] : [text.slice(0, at), text.slice(at + 1)];
 }
 
 async function classify([kind, ...names]: string[]): Promise<number> {
   if (kind !== undefined && kind !== "read" && kind !== "write") return fail();
   if (kind !== undefined && names.length === 0) return fail();
   const choice = kind as ToolKind | undefined;
-  const open = async () => openCore(await loadConfig(values.config), { root });
 
-  return withCore(await open(), async (core) => {
+  return withCore(await openProjectCore(), async (core) => {
     if (choice === undefined) return show(core);
     const tools = core.toolClassifications();
     const choices = [];
     for (const name of names) {
-      const tool = tools.find((t) => `${t.server}.${t.tool}` === name);
-      if (tool === undefined) {
+      const match = tools.find(
+        (tool) => `${tool.server}.${tool.tool}` === name
+      );
+      if (match === undefined) {
         console.error(`no Downstream Server offers ${name}`);
         return 1;
       }
-      choices.push({ server: tool.server, tool: tool.tool, kind: choice });
+      choices.push({ server: match.server, tool: match.tool, kind: choice });
     }
     await classifyTools(values.config, choices);
-    return withCore(await open(), show);
+    return withCore(await openProjectCore(), show);
   });
 }
 
 function fail(): number {
   console.error(usage);
   return 2;
+}
+
+async function openProjectCore(): Promise<Core> {
+  return openCore(await loadConfig(values.config), { root });
 }
 
 async function withCore(

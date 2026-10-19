@@ -51,6 +51,7 @@ describe("Gateway", () => {
     expect(tools.map((tool) => tool.name).sort()).toEqual([
       "list_workflows",
       "run_sandbox",
+      "run_workflow",
       "save_workflow",
       "search_sdk",
     ]);
@@ -218,6 +219,49 @@ describe("Gateway", () => {
         ].join("\n"),
       },
     ]);
+  });
+
+  it("runs a saved Workflow through run_workflow", async () => {
+    const run = await client.callTool({
+      name: "run_sandbox",
+      arguments: {
+        code: `export async function main(input: { project: string }) {
+          const { issues } = await sdk.sentry.listIssues(input);
+          return issues.length;
+        }`,
+        input: { project: "web" },
+      },
+    });
+    const [content] = run.content as [{ type: "text"; text: string }];
+    const exploration = /Exploration Run ([0-9a-f]{8})/.exec(content.text)![1]!;
+    await client.callTool({
+      name: "save_workflow",
+      arguments: { run: exploration, name: "count_issues", confirmed: true },
+    });
+
+    const ran = await client.callTool({
+      name: "run_workflow",
+      arguments: { name: "count_issues", input: { project: "web" } },
+    });
+    const refused = await client.callTool({
+      name: "run_workflow",
+      arguments: { name: "count_issues", input: {} },
+    });
+
+    expect(ran.isError).toBeFalsy();
+    expect(ran.content).toEqual([
+      { type: "text", text: content.text.split("\n")[0] },
+    ]);
+    expect(refused).toMatchObject({
+      isError: true,
+      content: [
+        {
+          text: expect.stringMatching(
+            /^Workflow count_issues not run\. The input does not fit/
+          ),
+        },
+      ],
+    });
   });
 
   it("reports a failed run as a tool error", async () => {

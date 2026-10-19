@@ -2,16 +2,23 @@
 // TypeScript file the developer owns, beside a JSON file that records its
 // input schema, Tools and Contract. Its Fixtures go to the git-ignored
 // .workflows/fixtures/.
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  readdir,
+  readFile,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import * as z from "zod";
 import {
+  exportedLiteral,
   mainInputSchema,
   typecheck,
   type FieldReads,
   type JsonSchema,
 } from "../../sandbox/index.ts";
-import { deepestPaths, redact } from "./paths.ts";
+import { deepestPaths, redact, shapeHas } from "./paths.ts";
 
 export const defaultWriteBudget = 10;
 
@@ -111,11 +118,11 @@ export async function saveWorkflow(
     );
   }
   const source = workflowSource(name, exploration);
-  const input = mainInputSchema(source, request.declarations);
-  if (!input.ok) {
+  const mainInput = mainInputSchema(source, request.declarations);
+  if (!mainInput.ok) {
     return refuse(
       "main",
-      `${input.error}; a Workflow exports a typed main(input)`
+      `${mainInput.error}; a Workflow exports a typed main(input)`
     );
   }
   const errors = typecheck(source, request.declarations);
@@ -128,7 +135,7 @@ export async function saveWorkflow(
 
   const record: WorkflowRecord = {
     name,
-    input: input.schema,
+    input: mainInput.schema,
     tools: exploration.tools,
     contract: Object.fromEntries(
       Object.entries(exploration.reads).map(([tool, paths]) => [
@@ -206,15 +213,179 @@ export async function listWorkflows(root: string): Promise<WorkflowSummary[]> {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
   }
+  const lastRuns = new Map(
+    (await runHistory(root)).map((entry) => [entry.workflow, entry.at])
+  );
   const workflows: WorkflowSummary[] = [];
   for (const file of files.filter((name) => name.endsWith(".json")).sort()) {
     const text = await readOrNone(join(dir, file));
     const parsed = recordSchema.safeParse(text && safeJson(text));
     if (!parsed.success) continue;
     const source = await readOrNone(join(dir, `${parsed.data.name}.ts`));
-    workflows.push(summary(parsed.data, source !== undefined));
+    const workflow = summary(parsed.data, source !== undefined);
+    const lastRun = lastRuns.get(workflow.name);
+    workflows.push(lastRun === undefined ? workflow : { ...workflow, lastRun });
   }
   return workflows;
+}
+
+/** A saved Workflow that passed the checks made before each of its runs. */
+export type LoadedWorkflow = {
+  name: string;
+  source: string;
+  /** The JSON Schema of main's input, from the code as it is now. */
+  input: JsonSchema;
+  writeBudget: number;
+};
+
+const settingsSchema = z.object({ writeBudget: z.int().nonnegative() });
+
+/**
+ * Loads a Workflow for a run, re-checking it since the developer may have
+ * edited it: it must still export a typed main(input), type-check against
+ * the SDK, set a Write Budget, and call only Tools that are offered, whose
+ * Baselines still have every field its Contract reads.
+ */
+export async function loadWorkflow(
+  root: string,
+  name: string,
+  sdk: {
+    declarations: string;
+    /** Every offered Tool, as `server.tool`. */
+    tools: Set<string>;
+    /** The pinned response shape of a Tool, if it has one yet. */
+    outputSchema(tool: string): JsonSchema | undefined;
+  }
+): Promise<
+  { ok: true; workflow: LoadedWorkflow } | { ok: false; error: string }
+> {
+  const refuse = (error: string) => ({
+    ok: false as const,
+    error: `Workflow ${name} not run: ${error}.`,
+  });
+  const dir = join(root, ".workflows");
+  const text = namePattern.test(name)
+    ? await readOrNone(join(dir, `${name}.json`))
+    : undefined;
+  const parsed = recordSchema.safeParse(text && safeJson(text));
+  if (!parsed.success) return refuse("there is no saved Workflow by that name");
+  const record = parsed.data;
+  const source = await readOrNone(join(dir, `${name}.ts`));
+  if (source === undefined) return refuse(`.workflows/${name}.ts is missing`);
+
+  const mainInput = mainInputSchema(source, sdk.declarations);
+  if (!mainInput.ok) {
+    return refuse(`${mainInput.error}; a Workflow exports a typed main(input)`);
+  }
+  const errors = typecheck(source, sdk.declarations);
+  if (errors.length > 0) {
+    return refuse(
+      `it does not type-check against the SDK:\n${errors.join("\n")}`
+    );
+  }
+  const settings = exportedLiteral(source, "settings");
+  const parsedSettings = settings.ok
+    ? settingsSchema.safeParse(settings.value)
+    : undefined;
+  if (!parsedSettings?.success) {
+    return refuse(
+      "it must export const settings = { writeBudget: <n> }, with n a whole number of writes"
+    );
+  }
+  for (const tool of record.tools) {
+    if (!sdk.tools.has(tool)) {
+      return refuse(`it calls ${tool}, which no Downstream Server offers`);
+    }
+  }
+  for (const [tool, paths] of Object.entries(record.contract)) {
+    const shape = sdk.outputSchema(tool);
+    if (shape === undefined) continue;
+    const missing = paths.filter((path) => !shapeHas(shape, path));
+    if (missing.length > 0) {
+      return refuse(
+        `its Contract reads ${missing.map((path) => `${tool} ${path}`).join(", ")}, which the Baseline of ${tool} does not have`
+      );
+    }
+  }
+  return {
+    ok: true,
+    workflow: {
+      name,
+      source,
+      input: mainInput.schema,
+      writeBudget: parsedSettings.data.writeBudget,
+    },
+  };
+}
+
+/** Checks a Workflow's input against the schema of main's input. */
+export function checkInput(
+  schema: JsonSchema,
+  input: unknown
+): { ok: true } | { ok: false; error: string } {
+  const result = z.fromJSONSchema(schema).safeParse(input);
+  if (result.success) return { ok: true };
+  return {
+    ok: false,
+    error: `The input does not fit main(input):\n${z.prettifyError(result.error)}`,
+  };
+}
+
+/**
+ * An input from command-line flags: a value is read as JSON, so `50` is a
+ * number, unless the field takes a string; a flag without a value is true.
+ */
+export function inputFromFlags(
+  schema: JsonSchema,
+  flags: Record<string, string | true>
+): Record<string, unknown> {
+  const properties = (schema.properties ?? {}) as Record<string, JsonSchema>;
+  const input: Record<string, unknown> = {};
+  for (const [name, text] of Object.entries(flags)) {
+    const field = Object.hasOwn(properties, name) ? properties[name] : {};
+    if (text === true || field?.type === "string") input[name] = text;
+    else input[name] = safeJson(text) ?? text;
+  }
+  return input;
+}
+
+/** One Workflow Run, as the run history records it. */
+export type RunEntry = {
+  workflow: string;
+  at: string;
+  /** What became of the run's Write Plan, or `failed`. */
+  status: string;
+  plan?: string;
+  error?: string;
+};
+
+// The run history is the git-ignored state directory's runs.jsonl, one line
+// per run. Lines are appended whole, so runs of several processes can share
+// it.
+function historyFile(root: string): string {
+  return join(root, ".pinfold", "runs.jsonl");
+}
+
+export async function recordRun(root: string, entry: RunEntry): Promise<void> {
+  const state = join(root, ".pinfold");
+  await mkdir(state, { recursive: true });
+  await writeFile(join(state, ".gitignore"), "*\n");
+  await appendFile(historyFile(root), `${JSON.stringify(entry)}\n`);
+}
+
+/** Every recorded Workflow Run, oldest first. Damaged lines are skipped. */
+export async function runHistory(root: string): Promise<RunEntry[]> {
+  const text = (await readOrNone(historyFile(root))) ?? "";
+  return text
+    .split("\n")
+    .map(safeJson)
+    .filter(
+      (entry): entry is RunEntry =>
+        typeof entry === "object" &&
+        entry !== null &&
+        typeof (entry as RunEntry).workflow === "string" &&
+        typeof (entry as RunEntry).at === "string"
+    );
 }
 
 function summary(record: WorkflowRecord, present: boolean): WorkflowSummary {
