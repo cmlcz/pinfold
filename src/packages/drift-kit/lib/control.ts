@@ -65,7 +65,9 @@ function send(path: string, method: string, url: string): Promise<string> {
     const req = request({ socketPath: path, method, path: url }, (res) => {
       let body = "";
       res.setEncoding("utf8");
-      res.on("data", (chunk: string) => (body += chunk));
+      res.on("data", (chunk: string) => {
+        body += chunk;
+      });
       res.on("end", () => {
         if (res.statusCode !== undefined && res.statusCode < 300) {
           resolve(body);

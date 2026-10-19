@@ -16,8 +16,9 @@ export function mainInputSchema(
   const program = checkedProgram(source, declarations);
   const checker = program.getTypeChecker();
   const file = program.getSourceFile(program.programFile)!;
-  const module = checker.getSymbolAtLocation(file);
-  const main = module && checker.tryGetMemberInModuleExports("main", module);
+  const moduleSymbol = checker.getSymbolAtLocation(file);
+  const main =
+    moduleSymbol && checker.tryGetMemberInModuleExports("main", moduleSymbol);
   if (main === undefined) {
     return { ok: false, error: "the program does not export main" };
   }
@@ -55,12 +56,14 @@ export function mainInputSchema(
 // Covers the types an input is written with: primitives, literals, unions,
 // arrays and object types. Anything else, or anything nested too deeply,
 // accepts any value.
+const maxDepth = 16;
+
 function schemaOf(
   checker: ts.TypeChecker,
   type: ts.Type,
   depth: number
 ): JsonSchema {
-  if (depth > 16) return {};
+  if (depth > maxDepth) return {};
   const { flags } = type;
   if (flags & ts.TypeFlags.StringLiteral)
     return { const: (type as ts.StringLiteralType).value };
@@ -72,26 +75,7 @@ function schemaOf(
   if (flags & ts.TypeFlags.Number) return { type: "number" };
   if (flags & ts.TypeFlags.Boolean) return { type: "boolean" };
   if (flags & ts.TypeFlags.Null) return { type: "null" };
-  if (type.isUnion()) {
-    // An optional field's type includes undefined, which JSON cannot hold.
-    const options = type.types.filter(
-      (option) => !(option.flags & ts.TypeFlags.Undefined)
-    );
-    if (options.length === 1) return schemaOf(checker, options[0]!, depth + 1);
-    // TypeScript spells boolean as true | false.
-    const booleans = options.filter(
-      (option) => option.flags & ts.TypeFlags.BooleanLiteral
-    );
-    const schemas = options
-      .filter((option) => booleans.length !== 2 || !booleans.includes(option))
-      .map((option) => schemaOf(checker, option, depth + 1));
-    if (booleans.length === 2) schemas.push({ type: "boolean" });
-    if (schemas.length === 1) return schemas[0]!;
-    if (schemas.every((schema) => "const" in schema)) {
-      return { enum: schemas.map((schema) => schema.const) };
-    }
-    return { anyOf: schemas };
-  }
+  if (type.isUnion()) return unionSchema(checker, type, depth);
   if (checker.isArrayType(type)) {
     const [item] = checker.getTypeArguments(type as ts.TypeReference);
     return {
@@ -122,4 +106,31 @@ function schemaOf(
     };
   }
   return {};
+}
+
+function unionSchema(
+  checker: ts.TypeChecker,
+  union: ts.UnionType,
+  depth: number
+): JsonSchema {
+  // An optional field's type includes undefined, which JSON cannot hold.
+  const options = union.types.filter(
+    (option) => !(option.flags & ts.TypeFlags.Undefined)
+  );
+  if (options.length === 1) return schemaOf(checker, options[0]!, depth + 1);
+  // TypeScript spells boolean as true | false.
+  const booleans = options.filter(
+    (option) => option.flags & ts.TypeFlags.BooleanLiteral
+  );
+  const others =
+    booleans.length === 2
+      ? options.filter((option) => !booleans.includes(option))
+      : options;
+  const schemas = others.map((option) => schemaOf(checker, option, depth + 1));
+  if (booleans.length === 2) schemas.push({ type: "boolean" });
+  if (schemas.length === 1) return schemas[0]!;
+  if (schemas.every((schema) => "const" in schema)) {
+    return { enum: schemas.map((schema) => schema.const) };
+  }
+  return { anyOf: schemas };
 }

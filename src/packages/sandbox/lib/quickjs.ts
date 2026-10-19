@@ -14,7 +14,7 @@ import {
   placeholderMarker,
   PlaceholderError,
 } from "./placeholder.ts";
-import type { Program, Sandbox } from "./types.ts";
+import type { FieldReads, Program, Sandbox } from "./types.ts";
 
 // Deep enough for ordinary code, and well below the host's own stack, which
 // unbounded guest recursion would otherwise overflow.
@@ -41,7 +41,7 @@ const stackBytes = 256 * 1024;
 // give the clock's time, and `Math.random` is a seeded generator (mulberry32).
 const prelude = `(call, misuse, names, clock) => {
   const { now, seed } = JSON.parse(clock);
-  const { construct, get: reflectGet } = Reflect;
+  const { apply, construct, get: reflectGet } = Reflect;
   const { imul } = Math;
   const DateType = Date;
   function FrozenDate(...args) {
@@ -66,7 +66,6 @@ const prelude = `(call, misuse, names, clock) => {
   const { create, defineProperty, hasOwn, keys } = Object;
   const { parse, stringify } = JSON;
   const { isArray } = Array;
-  const { apply } = Reflect;
   const ProxyType = Proxy;
   const ErrorType = Error;
   const TypeErrorType = TypeError;
@@ -135,7 +134,8 @@ const prelude = `(call, misuse, names, clock) => {
     const fields = keys(value);
     for (let i = 0; i < fields.length; i++) {
       const field = fields[i];
-      define(copy, begins(field, "$") ? "$" + field : field, encode(value[field]));
+      const key = begins(field, "$") ? "$" + field : field;
+      define(copy, key, encode(value[field]));
     }
     return copy;
   }
@@ -150,7 +150,8 @@ const prelude = `(call, misuse, names, clock) => {
       const fields = keys(value);
       for (let i = 0; i < fields.length; i++) {
         const field = fields[i];
-        define(copy, begins(field, "$$") ? apply(slice, field, [1]) : field, value[field]);
+        const key = begins(field, "$$") ? apply(slice, field, [1]) : field;
+        define(copy, key, value[field]);
       }
       return copy;
     });
@@ -163,10 +164,12 @@ const prelude = `(call, misuse, names, clock) => {
     if (!hasOwn(reads, tool)) define(reads, tool, create(null));
     define(reads[tool], path, true);
   };
-  const step = (path, key) =>
-    apply(test, identifier, [key])
-      ? (path === "" ? key : path + "." + key)
-      : path + "[" + stringify(key) + "]";
+  const step = (path, key) => {
+    if (!apply(test, identifier, [key])) {
+      return path + "[" + stringify(key) + "]";
+    }
+    return path === "" ? key : path + "." + key;
+  };
 
   function track(value, tool, path) {
     if (typeof value !== "object" || value === null) return value;
@@ -208,10 +211,12 @@ const prelude = `(call, misuse, names, clock) => {
       throw new TypeErrorType("the program must export a main(input) function");
     }
     const value = encode(await globalThis.__program.main(parse(input)));
-    const paths = create(null);
+    const readPaths = create(null);
     const tools = keys(reads);
-    for (let i = 0; i < tools.length; i++) define(paths, tools[i], keys(reads[tools[i]]));
-    return stringify({ value, reads: paths });
+    for (let i = 0; i < tools.length; i++) {
+      define(readPaths, tools[i], keys(reads[tools[i]]));
+    }
+    return stringify({ value, reads: readPaths });
   };
 }`;
 
@@ -227,6 +232,11 @@ export const quickJsSandbox: Sandbox = {
     const handles: QuickJSHandle[] = [];
     const pending = new Set<QuickJSDeferredPromise>();
     let finished = false;
+
+    function track(handle: QuickJSHandle): QuickJSHandle {
+      handles.push(handle);
+      return handle;
+    }
 
     // A failure stops the guest at its next instruction (the interrupt cannot
     // be caught) or, if it is idle, ends the run.
@@ -336,11 +346,6 @@ export const quickJsSandbox: Sandbox = {
       })
     );
 
-    function track(handle: QuickJSHandle): QuickJSHandle {
-      handles.push(handle);
-      return handle;
-    }
-
     function unwrap(
       result: ReturnType<QuickJSContext["evalCode"]>
     ): QuickJSHandle {
@@ -356,29 +361,24 @@ export const quickJsSandbox: Sandbox = {
       const names = Object.entries(program.sdk).flatMap(([namespace, fns]) =>
         Object.keys(fns).map((name) => [namespace, name])
       );
+      const clock = program.clock ?? {
+        now: Date.now(),
+        seed: randomInt(2 ** 32),
+      };
       const install = unwrap(vm.evalCode(prelude, "pinfold:prelude"));
-      const run = unwrap(
+      const runMain = unwrap(
         vm.callFunction(
           install,
           vm.undefined,
           call,
           reportMisuse,
           track(vm.newString(JSON.stringify(names))),
-          track(
-            vm.newString(
-              JSON.stringify(
-                program.clock ?? {
-                  now: Date.now(),
-                  seed: randomInt(2 ** 32),
-                }
-              )
-            )
-          )
+          track(vm.newString(JSON.stringify(clock)))
         )
       );
       unwrap(vm.evalCode(compiled.code, compiled.filename));
       const input = track(vm.newString(JSON.stringify(program.input ?? null)));
-      const promise = unwrap(vm.callFunction(run, vm.undefined, input));
+      const promise = unwrap(vm.callFunction(runMain, vm.undefined, input));
 
       const settled = vm.resolvePromise(promise);
       runtime.executePendingJobs().dispose();
@@ -388,7 +388,7 @@ export const quickJsSandbox: Sandbox = {
       if (error !== undefined) return { ok: false, error };
       const { value, reads } = decodeValue(vm.getString(json)) as {
         value: unknown;
-        reads: Record<string, string[]>;
+        reads: FieldReads;
       };
       return { ok: true, value, reads };
     } catch (error) {

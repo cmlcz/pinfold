@@ -28,12 +28,12 @@ export async function connectDownstream(
   const connected = sessions.flatMap((s) =>
     s.status === "fulfilled" ? [s.value] : []
   );
-  const close = async () => {
-    await Promise.all(connected.map(({ client }) => client.close()));
-  };
   const failures = sessions.flatMap((s) =>
     s.status === "rejected" ? [s.reason as Error] : []
   );
+  const close = async () => {
+    await Promise.all(connected.map(({ client }) => client.close()));
+  };
   if (failures.length > 0) {
     await close();
     throw new Error(failures.map((error) => error.message).join("\n"));
