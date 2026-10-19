@@ -8,7 +8,6 @@ import { DatabaseSync } from "node:sqlite";
 
 /** The Apply Journal's entries for one run's Write Plan, by position from 0. */
 export type RunJournal = {
-  /** The run's ID. */
   readonly run: string;
   /**
    * The results of the writes already sent, in order. Throws when a write

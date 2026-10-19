@@ -72,25 +72,26 @@ export function mergeSchemas(
   a: JsonSchema | undefined,
   b: JsonSchema
 ): JsonSchema {
-  // Fields every observation has stay required.
   if (a === undefined || isUnobserved(a)) return b;
   if (isUnobserved(b) || JSON.stringify(a) === JSON.stringify(b)) return a;
   if (a.type === "object" && b.type === "object") {
-    const pa = a.properties as Record<string, JsonSchema>;
-    const pb = b.properties as Record<string, JsonSchema>;
-    const keys = [...new Set([...Object.keys(pa), ...Object.keys(pb)])];
-    const rb = b.required as string[];
+    const propsA = a.properties as Record<string, JsonSchema>;
+    const propsB = b.properties as Record<string, JsonSchema>;
+    const keys = [...new Set([...Object.keys(propsA), ...Object.keys(propsB)])];
+    // Fields every observation has stay required.
+    const requiredA = a.required as string[];
+    const requiredB = b.required as string[];
     return {
       type: "object",
       properties: Object.fromEntries(
         keys.map((key) => [
           key,
-          pa[key] && pb[key]
-            ? mergeSchemas(pa[key], pb[key])
-            : (pa[key] ?? pb[key]),
+          propsA[key] && propsB[key]
+            ? mergeSchemas(propsA[key], propsB[key])
+            : (propsA[key] ?? propsB[key]),
         ])
       ),
-      required: (a.required as string[]).filter((key) => rb.includes(key)),
+      required: requiredA.filter((key) => requiredB.includes(key)),
     };
   }
   if (a.type === "array" && b.type === "array") {

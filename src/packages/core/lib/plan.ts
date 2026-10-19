@@ -34,13 +34,11 @@ export function canonicalize(value: unknown): unknown {
     return value;
   }
   if (Array.isArray(value)) return value.map(canonicalize);
+  const record = value as Record<string, unknown>;
   return Object.fromEntries(
-    Object.keys(value)
+    Object.keys(record)
       .sort()
-      .map((key) => [
-        key,
-        canonicalize((value as Record<string, unknown>)[key]),
-      ])
+      .map((key) => [key, canonicalize(record[key])])
   );
 }
 

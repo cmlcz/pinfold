@@ -21,17 +21,20 @@ export function search<T>(
   }));
   const averageLength =
     docs.reduce((sum, doc) => sum + doc.terms.length, 0) / (docs.length || 1);
-  const queryTerms = [...new Set(tokenize(query))];
+  // A term's IDF depends on the documents only, so it is computed once.
+  const queryTerms = [...new Set(tokenize(query))].map((term) => {
+    const containing = docs.filter((doc) => doc.terms.includes(term)).length;
+    const idf = Math.log(
+      1 + (docs.length - containing + 0.5) / (containing + 0.5)
+    );
+    return { term, idf };
+  });
 
   const scored = docs.map(({ item, terms }) => {
     let score = 0;
-    for (const term of queryTerms) {
+    for (const { term, idf } of queryTerms) {
       const frequency = terms.filter((t) => t === term).length;
       if (frequency === 0) continue;
-      const containing = docs.filter((doc) => doc.terms.includes(term)).length;
-      const idf = Math.log(
-        1 + (docs.length - containing + 0.5) / (containing + 0.5)
-      );
       const norm = k1 * (1 - b + (b * terms.length) / averageLength);
       score += (idf * frequency * (k1 + 1)) / (frequency + norm);
     }
