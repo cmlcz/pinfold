@@ -3,9 +3,36 @@ import * as z from "zod";
 import type { Limits } from "../../sandbox/index.ts";
 import { parsePath } from "./paths.ts";
 
-const serverSchema = z.object({
+const stdioServerSchema = z.strictObject({
   command: z.string().min(1),
   args: z.array(z.string()).optional(),
+});
+
+// A reference to an environment variable inside a header value: ${NAME}.
+const envReference = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
+
+const headerValue = z
+  .string()
+  .refine((value) => !value.replace(envReference, "").includes("${"), {
+    error: "must reference environment variables as ${NAME}",
+  });
+
+const httpServerSchema = z.strictObject({
+  url: z.url({ protocol: /^https?$/ }).refine((url) => {
+    const { username, password } = new URL(url);
+    return username === "" && password === "";
+  }, "must not hold credentials; send them in headers from environment variables"),
+  /**
+   * Static headers sent with every request. A secret is referenced by its
+   * environment variable, as in `"Bearer ${LINEAR_API_KEY}"`, so it never
+   * lives in the config file.
+   */
+  headers: z.record(z.string().min(1), headerValue).optional(),
+});
+
+const serverSchema = z.union([stdioServerSchema, httpServerSchema], {
+  error:
+    "must be a stdio server with a command or a Streamable HTTP server with a url",
 });
 
 const toolKindSchema = z.enum(["read", "write"]);
@@ -71,6 +98,34 @@ export function resolveLimits(config: PinfoldConfig): Limits {
     memoryBytes: limits.memoryBytes ?? defaultLimits.memoryBytes,
     toolCalls: limits.toolCalls ?? defaultLimits.toolCalls,
   };
+}
+
+/**
+ * A server's headers with each environment variable reference filled in,
+ * and the filled-in values, which are secrets.
+ */
+export function resolveHeaders(
+  server: string,
+  headers: Record<string, string>,
+  env: NodeJS.ProcessEnv
+): { headers: Record<string, string>; secrets: string[] } {
+  const secrets: string[] = [];
+  const resolved = Object.fromEntries(
+    Object.entries(headers).map(([name, value]) => [
+      name,
+      value.replace(envReference, (_, variable: string) => {
+        const secret = env[variable];
+        if (secret === undefined || secret === "") {
+          throw new Error(
+            `Downstream Server "${server}" needs the environment variable ${variable}, which is not set.`
+          );
+        }
+        secrets.push(secret);
+        return secret;
+      }),
+    ])
+  );
+  return { headers: resolved, secrets };
 }
 
 /** Records the developer's Tool classification in the config file. */

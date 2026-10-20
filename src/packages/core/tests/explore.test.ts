@@ -77,7 +77,7 @@ describe("Configuration", () => {
     );
 
     await expect(loadConfig(path)).rejects.toThrow(
-      /pinfold\.json.*servers\.sentry\.command/s
+      /pinfold\.json.*a stdio server with a command.*servers\.sentry/s
     );
   });
 
