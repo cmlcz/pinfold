@@ -22,4 +22,4 @@ const { world, server } = servers[name as keyof typeof servers]();
 const control = await serveControl(values.control, world);
 const transport = new StdioServerTransport();
 transport.onclose = () => control.close();
-await server.connect(transport);
+await server().connect(transport);

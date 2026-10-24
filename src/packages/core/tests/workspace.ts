@@ -4,8 +4,10 @@ import { join } from "node:path";
 import {
   connectControl,
   driftKitCommand,
+  serveDriftKitHttp,
   type ControlClient,
   type DriftKitServerName,
+  type HttpDriftKitServer,
 } from "../../drift-kit/index.ts";
 import {
   openCore,
@@ -32,6 +34,14 @@ export type Workspace = {
   sentry(name?: string): ServerConfig;
   /** A Linear-shaped Drift Kit server, distinct per name. */
   linear(name?: string): ServerConfig;
+  /**
+   * Starts a Drift Kit server over Streamable HTTP, distinct per name, that
+   * asks for the token when given one. Returns its URL.
+   */
+  serveHttp(
+    kind: DriftKitServerName,
+    options?: { name?: string; token?: string }
+  ): Promise<string>;
   /** The control channel of the server started under that name. */
   control(name: string): ControlClient;
   /**
@@ -45,6 +55,7 @@ export type Workspace = {
 export async function createWorkspace(): Promise<Workspace> {
   const dir = await mkdtemp(join(tmpdir(), "pinfold-core-"));
   const cores: Core[] = [];
+  const httpServers: HttpDriftKitServer[] = [];
   const socket = (name: string) => join(dir, `${name}.sock`);
   const server = (kind: DriftKitServerName) => (name: string) =>
     driftKitCommand(kind, { control: socket(name) });
@@ -53,6 +64,14 @@ export async function createWorkspace(): Promise<Workspace> {
     dir,
     sentry,
     linear: (name = "linear") => server("linear")(name),
+    async serveHttp(kind, { name = kind, token } = {}) {
+      const server = await serveDriftKitHttp(kind, {
+        control: socket(name),
+        ...(token !== undefined && { token }),
+      });
+      httpServers.push(server);
+      return server.url;
+    },
     control: (name) => connectControl(socket(name)),
     async open(config = {}) {
       const core = await openCore(
@@ -69,6 +88,7 @@ export async function createWorkspace(): Promise<Workspace> {
     async close() {
       try {
         await Promise.allSettled(cores.map((core) => core.close()));
+        await Promise.allSettled(httpServers.map((server) => server.close()));
       } finally {
         await rm(dir, { recursive: true, force: true });
       }

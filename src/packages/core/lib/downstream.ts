@@ -1,7 +1,11 @@
 // MCP client sessions to the configured Downstream Servers.
-import { Client } from "@modelcontextprotocol/client";
+import {
+  Client,
+  SdkHttpError,
+  StreamableHTTPClientTransport,
+} from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
-import type { ServerConfig } from "./config.ts";
+import { resolveHeaders, type ServerConfig } from "./config.ts";
 import type { SdkTool } from "./sdk.ts";
 
 /** A Tool as its Downstream Server lists it now, before any Baseline. */
@@ -43,13 +47,28 @@ export async function connectDownstream(
 
 async function connect(server: string, config: ServerConfig) {
   const client = new Client({ name: "pinfold", version: "0.0.0" });
+  const secrets = keepSecrets();
   try {
-    await client.connect(
-      new StdioClientTransport({
-        command: config.command,
-        args: config.args ?? [],
-      })
-    );
+    if ("command" in config) {
+      await client.connect(
+        new StdioClientTransport({
+          command: config.command,
+          args: config.args ?? [],
+        })
+      );
+    } else {
+      const resolved = resolveHeaders(
+        server,
+        config.headers ?? {},
+        process.env
+      );
+      secrets.values.push(...resolved.secrets);
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(config.url), {
+          requestInit: { headers: resolved.headers },
+        })
+      );
+    }
     const tools = [];
     let cursor: string | undefined;
     do {
@@ -70,32 +89,72 @@ async function connect(server: string, config: ServerConfig) {
           outputSchema: tool.outputSchema,
         }),
         readOnlyHint: tool.annotations?.readOnlyHint === true,
-        call: (args) => callTool(client, server, tool.name, args),
+        call: (args) => callTool(client, server, tool.name, args, secrets),
       })),
     };
   } catch (error) {
     await client.close().catch(() => {});
-    throw new Error(
-      `Downstream Server "${server}" could not be started: ${(error as Error).message}`,
-      { cause: error }
+    const verb = "command" in config ? "be started" : "connect";
+    throw secrets.error(
+      `Downstream Server "${server}" could not ${verb}: ${reason(error)}`,
+      error
     );
   }
+}
+
+type Secrets = ReturnType<typeof keepSecrets>;
+
+// Header values filled in from the environment, kept out of every message.
+function keepSecrets() {
+  const values: string[] = [];
+  const scrub = (message: string) =>
+    values.reduce(
+      (text, secret) => text.replaceAll(secret, "[secret]"),
+      message
+    );
+  return {
+    values,
+    scrub,
+    // The cause would carry the secrets the message leaves out.
+    error: (message: string, cause: unknown) =>
+      new Error(scrub(message), values.length === 0 ? { cause } : undefined),
+  };
+}
+
+// Why connecting failed, in words that hold up without the stack.
+function reason(error: unknown): string {
+  if (error instanceof SdkHttpError && [401, 403].includes(error.status)) {
+    return `the server rejected its credentials (HTTP ${error.status})`;
+  }
+  const { message, cause } = error as Error;
+  return cause instanceof Error ? `${message} (${cause.message})` : message;
 }
 
 async function callTool(
   client: Client,
   server: string,
   name: string,
-  args: unknown
+  args: unknown,
+  secrets: Secrets
 ): Promise<unknown> {
-  const result = await client.callTool({
-    name,
-    arguments: args as Record<string, unknown>,
-  });
+  let result;
+  try {
+    result = await client.callTool({
+      name,
+      arguments: args as Record<string, unknown>,
+    });
+  } catch (error) {
+    throw secrets.error(
+      `${server}.${name} failed: ${(error as Error).message}`,
+      error
+    );
+  }
   const text = result.content
     .flatMap((part) => (part.type === "text" ? [part.text] : []))
     .join("\n");
-  if (result.isError) throw new ToolError(`${server}.${name} failed: ${text}`);
+  if (result.isError) {
+    throw new ToolError(secrets.scrub(`${server}.${name} failed: ${text}`));
+  }
   return result.structuredContent ?? parseJsonText(text);
 }
 
