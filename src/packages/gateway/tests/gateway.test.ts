@@ -1,7 +1,9 @@
+import { execFile } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -307,5 +309,24 @@ describe("Gateway", () => {
         },
       ],
     });
+  });
+});
+
+describe("Gateway startup", () => {
+  it("says in one line that the config file does not exist", async () => {
+    const missing = join(dir, "missing.json");
+    const failed = await promisify(execFile)(process.execPath, [
+      fileURLToPath(new URL("../bin.ts", import.meta.url)),
+      "--config",
+      missing,
+    ]).then(
+      () => expect.fail("started"),
+      (error: unknown) => error as { code: number; stderr: string }
+    );
+
+    expect(failed.code).toBe(1);
+    expect(failed.stderr).toBe(
+      `pinfold: ${missing} does not exist; create a pinfold config there, or pass --config <path>\n`
+    );
   });
 });
