@@ -361,12 +361,10 @@ export async function openCore(
     const drift: Drift[] = [];
     const check = (tool: DownstreamTool, response: unknown) => {
       const name = `${tool.server}.${tool.tool}`;
-      const reads =
-        contract && Object.hasOwn(contract, name) ? contract[name]! : [];
       const baseline = baselines.get(tool.server, tool.tool);
-      if (reads.length === 0 || baseline === undefined) return;
+      if (contract === undefined || baseline === undefined) return;
       const found = mismatches(baseline.outputSchema, response);
-      if (!touchesContract(found, reads)) return;
+      if (!touchesContract(found, contract, name)) return;
       drift.push({ tool: name, mismatches: found });
       throw new Error(`${name} drifted from its Baseline`);
     };
@@ -402,10 +400,7 @@ export async function openCore(
   async function driftReport(workflow: string, drift: Drift): Promise<string> {
     const affected = (await savedContracts(options.root))
       .filter(({ contract }) =>
-        touchesContract(
-          drift.mismatches,
-          Object.hasOwn(contract, drift.tool) ? contract[drift.tool]! : []
-        )
+        touchesContract(drift.mismatches, contract, drift.tool)
       )
       .map(({ name }) => name);
     return [
@@ -455,12 +450,7 @@ export async function openCore(
       return { ok: false, error: await driftReport(name, drift) };
     }
     if (!result.ok) return result;
-    const digests = Object.fromEntries(
-      workflow.tools.flatMap((tool) => {
-        const adapter = adapters!.get(tool);
-        return adapter === undefined ? [] : [[tool, adapter.digest]];
-      })
-    );
+    const digests = adapters!.digests(workflow.tools);
     ran.adapters = digests;
     const plan = writePlan(writes);
     const history = await runHistory(options.root);

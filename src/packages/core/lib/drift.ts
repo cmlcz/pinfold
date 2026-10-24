@@ -37,9 +37,11 @@ function check(
     if (results.some((result) => result.length === 0)) return;
     // The option for the value's kind, if any, says best what is wrong.
     const kind = options.findIndex((option) => allows(option.type, value));
-    if (kind === -1)
+    if (kind === -1) {
       report(path, `is ${kindOf(value)}, not ${describe(options)}`);
-    else for (const [inner, problem] of results[kind]!) report(inner, problem);
+    } else {
+      for (const [inner, problem] of results[kind]!) report(inner, problem);
+    }
     return;
   }
   if (schema.type !== undefined && !allows(schema.type, value)) {
@@ -88,13 +90,18 @@ function check(
   }
 }
 
-/** Whether any mismatch touches a field a Contract reads. */
-export function touchesContract(found: Mismatch[], reads: string[]): boolean {
+/** Whether any mismatch touches a field a Contract reads of the Tool. */
+export function touchesContract(
+  found: Mismatch[],
+  contract: Record<string, string[]>,
+  tool: string
+): boolean {
+  const reads = Object.hasOwn(contract, tool) ? contract[tool]! : [];
   return found.some(({ path }) => reads.some((read) => touches(path, read)));
 }
 
-/** Whether Drift at one path touches a field read at another. */
-export function touches(drifted: string, read: string): boolean {
+// Whether Drift at one path touches a field read at another.
+function touches(drifted: string, read: string): boolean {
   return within(drifted, read) || within(read, drifted);
 }
 
@@ -144,12 +151,12 @@ function kindOf(value: unknown): string {
   if (value === null) return "null";
   if (Array.isArray(value)) return "an array";
   if (typeof value === "object") return "an object";
-  return `${typeof value === "string" ? "a string" : `a ${typeof value}`} ${JSON.stringify(value)}`;
+  return `a ${typeof value} ${JSON.stringify(value)}`;
 }
 
 function describe(options: JsonSchema[]): string {
   const types = options.flatMap((option) => [option.type ?? "any"].flat());
-  return [...new Set(types)].map((type) => `${type}`).join(" or ");
+  return [...new Set(types)].join(" or ");
 }
 
 function equal(a: unknown, b: unknown): boolean {

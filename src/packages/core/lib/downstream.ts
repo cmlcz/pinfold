@@ -72,7 +72,8 @@ async function connect(server: string, config: ServerConfig, root: string) {
       secrets.values.push(...env.secrets);
       const cwd = resolve(root, config.cwd ?? ".");
       // Spawning in a missing directory fails as if the command were missing.
-      if (!(await stat(cwd).catch(() => undefined))?.isDirectory()) {
+      const directory = await stat(cwd).catch(() => undefined);
+      if (!directory?.isDirectory()) {
         throw new Error(`its cwd ${cwd} is not a directory`);
       }
       await client.connect(

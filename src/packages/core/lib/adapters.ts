@@ -72,13 +72,14 @@ const adapterSchema = z.strictObject({
 
 type Op = z.infer<typeof opSchema>;
 
-export type ResponseAdapter = z.infer<typeof adapterSchema> & {
+type ResponseAdapter = z.infer<typeof adapterSchema> & {
   /** Changes whenever the Adapter does, by its version or its ops. */
   digest: string;
 };
 
 export type Adapters = {
-  get(tool: string): ResponseAdapter | undefined;
+  /** The digest of the Adapter of each of these Tools that has one. */
+  digests(tools: string[]): Record<string, string>;
   /** The response mapped by the Tool's Adapter; as it is, for a Tool without one. */
   adapt(tool: string, response: unknown): unknown;
 };
@@ -107,7 +108,13 @@ export async function loadAdapters(root: string): Promise<Adapters> {
     adapters.set(name, { ...parsed.data, digest });
   }
   return {
-    get: (tool) => adapters.get(tool),
+    digests: (tools) =>
+      Object.fromEntries(
+        tools.flatMap((tool) => {
+          const adapter = adapters.get(tool);
+          return adapter === undefined ? [] : [[tool, adapter.digest]];
+        })
+      ),
     adapt(tool, response) {
       const adapter = adapters.get(tool);
       if (adapter === undefined) return response;
