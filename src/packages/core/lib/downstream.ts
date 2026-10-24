@@ -49,8 +49,22 @@ export async function connectDownstream(
   return { tools: connected.flatMap(({ tools }) => tools), close };
 }
 
+// Responses are taken as they come, even when they no longer fit the Tool's
+// listed output schema: telling them from the Tool's Baseline is Drift
+// detection's job, and a Response Adapter may map them back.
+const takeAsTheyCome = {
+  getValidator: () => (input: unknown) => ({
+    valid: true as const,
+    data: input as never,
+    errorMessage: undefined,
+  }),
+};
+
 async function connect(server: string, config: ServerConfig, root: string) {
-  const client = new Client({ name: "pinfold", version: "0.0.0" });
+  const client = new Client(
+    { name: "pinfold", version: "0.0.0" },
+    { jsonSchemaValidator: takeAsTheyCome }
+  );
   const secrets = keepSecrets();
   try {
     if ("command" in config) {

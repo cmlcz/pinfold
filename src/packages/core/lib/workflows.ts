@@ -210,24 +210,15 @@ function redactCall(
 
 /** The saved Workflows, by name. A record that does not parse is skipped. */
 export async function listWorkflows(root: string): Promise<WorkflowSummary[]> {
-  const dir = join(root, ".workflows");
-  let files: string[];
-  try {
-    files = await readdir(dir);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
-  }
   const lastRuns = new Map(
     (await runHistory(root)).map((entry) => [entry.workflow, entry.at])
   );
   const workflows: WorkflowSummary[] = [];
-  for (const file of files.filter((name) => name.endsWith(".json")).sort()) {
-    const text = await readOrNone(join(dir, file));
-    const parsed = recordSchema.safeParse(text && safeJson(text));
-    if (!parsed.success) continue;
-    const source = await readOrNone(join(dir, `${parsed.data.name}.ts`));
-    const workflow = summary(parsed.data, source !== undefined);
+  for (const record of await readRecords(root)) {
+    const source = await readOrNone(
+      join(root, ".workflows", `${record.name}.ts`)
+    );
+    const workflow = summary(record, source !== undefined);
     // The developer may have edited main's input type since the save.
     if (source !== undefined) {
       const current = await mainInputSchema(source, anySdk);
@@ -239,6 +230,36 @@ export async function listWorkflows(root: string): Promise<WorkflowSummary[]> {
   return workflows;
 }
 
+/** The Contract of every saved Workflow, by name. */
+export async function savedContracts(
+  root: string
+): Promise<{ name: string; contract: Record<string, string[]> }[]> {
+  return (await readRecords(root)).map(({ name, contract }) => ({
+    name,
+    contract,
+  }));
+}
+
+// The record of every saved Workflow, by name. A record that does not parse
+// is skipped.
+async function readRecords(root: string): Promise<WorkflowRecord[]> {
+  const dir = join(root, ".workflows");
+  let files: string[];
+  try {
+    files = await readdir(dir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  const records = [];
+  for (const file of files.filter((name) => name.endsWith(".json")).sort()) {
+    const text = await readOrNone(join(dir, file));
+    const parsed = recordSchema.safeParse(text && safeJson(text));
+    if (parsed.success) records.push(parsed.data);
+  }
+  return records;
+}
+
 /** A saved Workflow that passed the checks made before each of its runs. */
 export type LoadedWorkflow = {
   name: string;
@@ -248,6 +269,10 @@ export type LoadedWorkflow = {
   writeBudget: number;
   /** Identifies this save of the Workflow, apart from any earlier one. */
   saved: string;
+  /** Every Tool the Workflow calls, as `server.tool`. */
+  tools: string[];
+  /** The Baseline field paths the code reads, by Tool. */
+  contract: Record<string, string[]>;
 };
 
 const settingsSchema = z.object({ writeBudget: z.int().nonnegative() });
@@ -327,6 +352,8 @@ export async function loadWorkflow(
       input: mainInput.schema,
       writeBudget: parsedSettings.data.writeBudget,
       saved: `${record.savedFrom}@${record.savedAt}`,
+      tools: record.tools,
+      contract: record.contract,
     },
   };
 }
@@ -405,6 +432,8 @@ export type RunEntry = {
   at: string;
   /** What became of the run's Write Plan, or `failed`. */
   status: string;
+  /** The digest of each Response Adapter the run's Tools went through. */
+  adapters?: Record<string, string>;
   plan?: string;
   error?: string;
 };

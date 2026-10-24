@@ -113,7 +113,8 @@ export async function readJson(path: string): Promise<unknown> {
   }
 }
 
-async function listJson(dir: string): Promise<string[]> {
+/** The JSON files of a directory; none when it does not exist. */
+export async function listJson(dir: string): Promise<string[]> {
   try {
     return (await readdir(dir)).filter((file) => file.endsWith(".json"));
   } catch (error) {
