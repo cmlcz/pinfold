@@ -21,6 +21,44 @@ export function parsePath(path: string): Step[] | undefined {
   return steps.length > 0 ? steps : undefined;
 }
 
+/** A field path one field further, written as Contracts write it. */
+export function childPath(path: string, key: string): string {
+  if (!/^[A-Za-z_$][\w$]*$/.test(key)) return `${path}[${JSON.stringify(key)}]`;
+  return path === "" ? key : `${path}.${key}`;
+}
+
+/** The field path of some steps; `""` for none, the whole value. */
+export function formatPath(steps: Step[]): string {
+  return steps.reduce(
+    (path, step) => ("each" in step ? `${path}[]` : childPath(path, step.key)),
+    ""
+  );
+}
+
+/**
+ * The values a path names, through every element of each array on its way;
+ * `""` names the whole value.
+ */
+export function valuesAt(value: unknown, path: string): unknown[] {
+  if (path === "") return [value];
+  const found: unknown[] = [];
+  const visit = (inner: unknown, steps: Step[]) => {
+    const [step, ...rest] = steps;
+    if (step === undefined) found.push(inner);
+    else if ("each" in step) {
+      if (Array.isArray(inner)) for (const item of inner) visit(item, rest);
+    } else if (isRecord(inner) && Object.hasOwn(inner, step.key)) {
+      visit(inner[step.key], rest);
+    }
+  };
+  visit(value, parsePath(path) ?? []);
+  return found;
+}
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /**
  * A path up to its first key that is data, such as an email address in a
  * map: Contracts are committed, and data must stay out of them. Empty when
@@ -49,7 +87,8 @@ export function deepestPaths(paths: Iterable<string>): string[] {
   );
 }
 
-const redacted = "[redacted]";
+/** What a redacted field holds instead of its value. */
+export const redacted = "[redacted]";
 
 /** A copy of a value with every field a path names replaced by `[redacted]`. */
 export function redact(value: unknown, paths: string[]): unknown {

@@ -2,7 +2,7 @@
 
 pinfold is a local MCP server for coding agents. It sits between your agent and the MCP servers you use, such as Sentry, GitHub, or Linear. It runs the code your agent writes in an isolated sandbox, and it does not send any write to those servers until you approve it.
 
-> **Early version (0.0.0).** Only the features below work today. Automatic repairs are planned but not available yet.
+> **Early version (0.0.0).** Only the features below work today. Repairs through your agent or a model are planned but not available yet.
 
 ## What works today
 
@@ -12,7 +12,8 @@ pinfold is a local MCP server for coding agents. It sits between your agent and 
 - **Resume.** If an approved plan stops partway through, `resume` sends the writes that were not sent yet. A write that may have reached the server is never sent again.
 - **Save workflows.** A successful run can be saved as a workflow: an ordinary TypeScript file in `.workflows/` that you own, with the response fields it reads and its recorded tool calls.
 - **Run workflows.** A saved workflow runs again from the terminal, cron or CI with no LLM.
-- **Drift detection and response adapters.** A run stops before any write when a tool's responses no longer fit the fields the workflow reads. A response adapter that you write maps the responses back, and every workflow that uses the tool works again without any edit.
+- **Drift detection and response adapters.** A run stops before any write when a tool's responses no longer fit the fields the workflow reads. A response adapter maps the responses back, and every workflow that uses the tool works again without any edit.
+- **Deterministic repair.** pinfold searches for that adapter itself, with no model, and proposes it only when one mapping stands out. You approve it after seeing its diff, how its values compare with the recorded ones, and the write plan.
 
 ## Requirements
 
@@ -143,7 +144,18 @@ Every run is recorded in `.pinfold/runs.jsonl`, and `list` shows each workflow's
 
 Each tool's response shape is pinned in its baseline the first time the tool is called. When a server later answers differently, say it renames `count` to `eventCount`, a run of a workflow that reads `count` stops before it makes a plan. It reports the tool, the fields that drifted and every workflow the drift affects. A workflow that does not read the drifted fields runs as before.
 
-Repair the drift with a response adapter in `.workflows/adapters/`, one file per tool. It maps the tool's live responses back to the baseline, so the workflow code never changes:
+pinfold then tries to repair the drift itself, with no model. It looks for a mapping from the live responses back to the baseline, such as a renamed field, a response now wrapped in another object, a number sent as text, or renamed enum values. It scores each candidate by how alike the field names are and by how well its values agree with those in the saved fixtures. When one candidate stands out and the mapped responses fit every workflow that uses the tool, pinfold writes it as a new version of the tool's response adapter and runs the workflow again. That run pauses for approval and shows the adapter diff, the value evidence and the write plan:
+
+```text
+pinfold repaired the Response Adapter of sentry.listIssues, now version 1:
+  + {"op":"rename","from":"issues[].eventCount","to":"issues[].count"}
+Value evidence, the live responses through this version next to the Fixtures:
+  issues[].count: now median 128, range 73–210; in the Fixtures median 128, range 73–210
+```
+
+Drift that no single mapping settles is recorded as pending, and you repair it with an adapter of your own.
+
+A response adapter lives in `.workflows/adapters/`, one file per tool. It maps the tool's live responses back to the baseline, so the workflow code never changes:
 
 ```json
 {
@@ -164,11 +176,11 @@ The ops run in order. A path such as `issues[].count` names the `count` of every
 - **`map`** replaces enum values at `path` by the `values` they map to.
 - **`default`** gives a missing field at `path` the `value`.
 
-A new or changed adapter makes the next run of every workflow that uses the tool pause for approval. Some drift, such as a response that is now paged, cannot be mapped back by an adapter and needs an edit to the workflow.
+A new or changed adapter makes the next run of every workflow that uses the tool pause for approval. Some drift, such as a response that is now paged, cannot be mapped back by an adapter: pinfold reports that it needs a manual fix, which is an edit to the workflow.
 
 ## Where pinfold keeps its state
 
-- **`.pinfold/`** holds the write plans, a journal of the writes already sent, and the run history. It is git-ignored.
+- **`.pinfold/`** holds the write plans, a journal of the writes already sent, the run history, the repairs pinfold made and the drift it could not repair. It is git-ignored.
 - **`.workflows/baselines/`** holds the recorded response shape of each tool.
 - **`.workflows/adapters/`** holds the response adapters.
 - **`.workflows/`** also holds the saved workflows. **`.workflows/fixtures/`** is git-ignored.

@@ -19,6 +19,7 @@ import {
   type FieldReads,
   type JsonSchema,
 } from "../../sandbox/index.ts";
+import { listJson } from "./baselines.ts";
 import { deepestPaths, redact, shapeAllows, withoutDataKeys } from "./paths.ts";
 
 const defaultWriteBudget = 10;
@@ -228,6 +229,31 @@ export async function listWorkflows(root: string): Promise<WorkflowSummary[]> {
     workflows.push(lastRun === undefined ? workflow : { ...workflow, lastRun });
   }
   return workflows;
+}
+
+const fixturesSchema = z.object({
+  calls: z.array(
+    z.object({ tool: z.string(), arguments: z.json(), response: z.json() })
+  ),
+});
+
+/**
+ * The calls of a Tool, as `server.tool`, that the Fixtures of the saved
+ * Workflows recorded. A Fixture file that does not parse is skipped.
+ */
+export async function fixtureCalls(
+  root: string,
+  tool: string
+): Promise<RecordedCall[]> {
+  const dir = join(root, ".workflows", "fixtures");
+  const calls: RecordedCall[] = [];
+  for (const file of await listJson(dir)) {
+    const text = await readOrNone(join(dir, file));
+    const parsed = fixturesSchema.safeParse(text && safeJson(text));
+    if (!parsed.success) continue;
+    calls.push(...parsed.data.calls.filter((call) => call.tool === tool));
+  }
+  return calls;
 }
 
 /** The Contract of every saved Workflow, by name. */
