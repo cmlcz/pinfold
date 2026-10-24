@@ -1,8 +1,21 @@
-/** A JSON Schema, as MCP Tools declare them. */
-export type JsonSchema = Record<string, unknown>;
+export type { JsonSchema } from "../../sandbox/index.ts";
 
-/** The JSON Schema of a value's shape, for Tools that declare no output schema. */
-export function inferSchema(value: unknown): JsonSchema {
+/**
+ * A value's shape, as a JSON Schema built only of types, the properties and
+ * required fields of a record, the values of a map, the items of an array,
+ * and unions. `{}` stands for a value not observed yet.
+ */
+export type Shape = {
+  type?: string;
+  properties?: Record<string, Shape>;
+  required?: string[];
+  additionalProperties?: Shape;
+  items?: Shape;
+  anyOf?: Shape[];
+};
+
+/** The shape of a value, for Tools that declare no output schema. */
+export function inferSchema(value: unknown): Shape {
   if (value === null) return { type: "null" };
   if (Array.isArray(value)) {
     return { type: "array", items: mergeAll(value.map(inferSchema)) };
@@ -31,40 +44,38 @@ export function inferSchema(value: unknown): JsonSchema {
 }
 
 /** Whether every array in a shape has shown what it holds. */
-export function isFullyObserved(schema: JsonSchema): boolean {
+export function isFullyObserved(schema: Shape): boolean {
   if (schema.type === "array") {
-    const items = schema.items as JsonSchema;
+    const items = schema.items ?? {};
     return !isUnobserved(items) && isFullyObserved(items);
   }
-  const properties = (schema.properties ?? {}) as Record<string, JsonSchema>;
-  const options = (schema.anyOf ?? []) as JsonSchema[];
+  const properties = schema.properties ?? {};
+  const options = schema.anyOf ?? [];
   return [...Object.values(properties), ...options].every(isFullyObserved);
 }
 
 /** The shape to pin: a value only ever seen as null says nothing of its type. */
-export function forPinning(schema: JsonSchema): JsonSchema {
+export function forPinning(schema: Shape): Shape {
   if (schema.type === "null") return {};
   // In a union, null is one of the observed kinds and stays.
-  if (Array.isArray(schema.anyOf)) {
+  if (schema.anyOf !== undefined) {
     return {
-      anyOf: (schema.anyOf as JsonSchema[]).map((option) =>
+      anyOf: schema.anyOf.map((option) =>
         option.type === "null" ? option : forPinning(option)
       ),
     };
   }
   if (schema.type === "array") {
-    return { ...schema, items: forPinning(schema.items as JsonSchema) };
+    return { ...schema, items: forPinning(schema.items ?? {}) };
   }
   if (schema.type === "object") {
     if (isMap(schema)) {
       return {
         ...schema,
-        additionalProperties: forPinning(
-          schema.additionalProperties as JsonSchema
-        ),
+        additionalProperties: forPinning(schema.additionalProperties ?? {}),
       };
     }
-    const properties = schema.properties as Record<string, JsonSchema>;
+    const properties = schema.properties ?? {};
     return {
       ...schema,
       properties: Object.fromEntries(
@@ -80,15 +91,12 @@ export function forPinning(schema: JsonSchema): JsonSchema {
 
 // An empty schema stands for a value not observed yet, such as the items of
 // an empty array.
-function isUnobserved(schema: JsonSchema): boolean {
+function isUnobserved(schema: Shape): boolean {
   return Object.keys(schema).length === 0;
 }
 
 /** One shape covering everything two observations showed. */
-export function mergeSchemas(
-  a: JsonSchema | undefined,
-  b: JsonSchema
-): JsonSchema {
+export function mergeSchemas(a: Shape | undefined, b: Shape): Shape {
   if (a === undefined || isUnobserved(a)) return b;
   if (isUnobserved(b) || JSON.stringify(a) === JSON.stringify(b)) return a;
   if (a.type === "object" && b.type === "object") {
@@ -98,21 +106,16 @@ export function mergeSchemas(
         additionalProperties: mergeAll([a, b].flatMap(valuesOf)),
       };
     }
-    const propsA = a.properties as Record<string, JsonSchema>;
-    const propsB = b.properties as Record<string, JsonSchema>;
+    const propsA = a.properties ?? {};
+    const propsB = b.properties ?? {};
     const keys = [...new Set([...Object.keys(propsA), ...Object.keys(propsB)])];
     // Fields every observation has stay required.
-    const requiredA = a.required as string[];
-    const requiredB = b.required as string[];
+    const requiredA = a.required ?? [];
+    const requiredB = b.required ?? [];
     return {
       type: "object",
       properties: Object.fromEntries(
-        keys.map((key) => [
-          key,
-          propsA[key] && propsB[key]
-            ? mergeSchemas(propsA[key], propsB[key])
-            : (propsA[key] ?? propsB[key]),
-        ])
+        keys.map((key) => [key, mergeSchemas(propsA[key], propsB[key] ?? {})])
       ),
       required: requiredA.filter((key) => requiredB.includes(key)),
     };
@@ -120,7 +123,7 @@ export function mergeSchemas(
   if (a.type === "array" && b.type === "array") {
     return {
       type: "array",
-      items: mergeSchemas(a.items as JsonSchema, b.items as JsonSchema),
+      items: mergeSchemas(a.items, b.items ?? {}),
     };
   }
   // A union keeps one option per kind of value, each merged across
@@ -136,8 +139,8 @@ export function mergeSchemas(
 }
 
 /** One shape covering every observation; `{}` when there are none. */
-function mergeAll(schemas: JsonSchema[]): JsonSchema {
-  return schemas.reduce<JsonSchema | undefined>(mergeSchemas, undefined) ?? {};
+function mergeAll(schemas: Shape[]): Shape {
+  return schemas.reduce<Shape | undefined>(mergeSchemas, undefined) ?? {};
 }
 
 /**
@@ -148,16 +151,16 @@ export function isDataKey(key: string): boolean {
   return !/^[A-Za-z_$][\w$-]*$/.test(key);
 }
 
-function isMap(schema: JsonSchema): boolean {
+function isMap(schema: Shape): boolean {
   return schema.type === "object" && schema.properties === undefined;
 }
 
 // The shapes of the values an object holds, whether a map or a record.
-function valuesOf(schema: JsonSchema): JsonSchema[] {
-  if (isMap(schema)) return [schema.additionalProperties as JsonSchema];
-  return Object.values(schema.properties as Record<string, JsonSchema>);
+function valuesOf(schema: Shape): Shape[] {
+  if (isMap(schema)) return [schema.additionalProperties ?? {}];
+  return Object.values(schema.properties ?? {});
 }
 
-function optionsOf(schema: JsonSchema): JsonSchema[] {
-  return [...((schema.anyOf as JsonSchema[] | undefined) ?? [schema])];
+function optionsOf(schema: Shape): Shape[] {
+  return [...(schema.anyOf ?? [schema])];
 }

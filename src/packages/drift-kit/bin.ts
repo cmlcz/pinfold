@@ -10,7 +10,11 @@ const { positionals, values } = parseArgs({
 });
 
 const name = positionals[0];
-if (name === undefined || !(name in servers) || values.control === undefined) {
+if (
+  name === undefined ||
+  !Object.hasOwn(servers, name) ||
+  values.control === undefined
+) {
   console.error(
     `usage: bin.ts <${Object.keys(servers).join("|")}> --control <socket path>`
   );

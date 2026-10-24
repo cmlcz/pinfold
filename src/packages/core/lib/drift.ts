@@ -20,13 +20,18 @@ export function mismatches(schema: JsonSchema, value: unknown): Mismatch[] {
 type Report = (path: string, problem: string) => void;
 
 function check(
-  schema: JsonSchema,
+  schema: JsonSchema | boolean,
   value: unknown,
   path: string,
   report: Report
 ): void {
+  if (schema === true) return;
+  if (schema === false) {
+    report(path, `is ${kindOf(value)}, where the Baseline allows no value`);
+    return;
+  }
   if (Array.isArray(schema.anyOf)) {
-    const options = schema.anyOf as JsonSchema[];
+    const options = schema.anyOf;
     const results = options.map((option) => {
       const found: [string, string][] = [];
       check(option, value, path, (inner, problem) =>
@@ -36,7 +41,9 @@ function check(
     });
     if (results.some((result) => result.length === 0)) return;
     // The option for the value's kind, if any, says best what is wrong.
-    const kind = options.findIndex((option) => allows(option.type, value));
+    const kind = options.findIndex(
+      (option) => typeof option === "object" && allows(option.type, value)
+    );
     if (kind === -1) {
       report(path, `is ${kindOf(value)}, not ${describe(options)}`);
     } else {
@@ -63,15 +70,18 @@ function check(
     return;
   }
   if (Array.isArray(value)) {
-    const items = schema.items as JsonSchema | undefined;
-    if (items === undefined) return;
-    for (const item of value) check(items, item, `${path}[]`, report);
+    // A tuple's elements have a schema each, and items covers the rest.
+    const prefix = Array.isArray(schema.prefixItems) ? schema.prefixItems : [];
+    for (const [index, item] of value.entries()) {
+      const items = prefix[index] ?? schema.items;
+      if (items !== undefined) check(items, item, `${path}[]`, report);
+    }
     return;
   }
   if (typeof value !== "object" || value === null) return;
   const record = value as Record<string, unknown>;
-  const properties = (schema.properties ?? {}) as Record<string, JsonSchema>;
-  const required = (schema.required ?? []) as string[];
+  const properties = schema.properties ?? {};
+  const required = schema.required ?? [];
   for (const [key, field] of Object.entries(properties)) {
     const inner = join(path, key);
     if (Object.hasOwn(record, key)) check(field, record[key], inner, report);
@@ -82,7 +92,7 @@ function check(
   if (typeof additional === "object" && additional !== null) {
     for (const [key, field] of Object.entries(record)) {
       if (Object.hasOwn(properties, key)) continue;
-      if (mismatches(additional as JsonSchema, field).length > 0) {
+      if (mismatches(additional, field).length > 0) {
         report(path, "holds values that do not fit the Baseline");
         return;
       }
@@ -154,8 +164,10 @@ function kindOf(value: unknown): string {
   return `a ${typeof value} ${JSON.stringify(value)}`;
 }
 
-function describe(options: JsonSchema[]): string {
-  const types = options.flatMap((option) => [option.type ?? "any"].flat());
+function describe(options: (JsonSchema | boolean)[]): string {
+  const types = options.flatMap((option) =>
+    typeof option === "boolean" ? [] : [option.type ?? "any"].flat()
+  );
   return [...new Set(types)].join(" or ");
 }
 
