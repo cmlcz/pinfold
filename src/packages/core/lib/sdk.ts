@@ -26,10 +26,12 @@ export function searchTools(tools: SdkTool[], query: string): string[] {
 
 // The words a Tool is found by; its name counts twice.
 function searchText(tool: SdkTool): string {
-  const properties = Object.entries(
-    (tool.inputSchema.properties as Record<string, JsonSchema> | undefined) ??
-      {}
-  ).map(([name, field]) => `${name} ${String(field.description ?? "")}`);
+  const properties = Object.entries(tool.inputSchema.properties ?? {}).map(
+    ([name, field]) =>
+      typeof field === "boolean"
+        ? name
+        : `${name} ${String(field.description ?? "")}`
+  );
   return [
     tool.server,
     tool.tool,
@@ -82,7 +84,7 @@ function typeOf(schema: JsonSchema | boolean | undefined): string {
   if (Array.isArray(schema.allOf)) {
     if (schema.allOf.length === 0) return "unknown";
     return schema.allOf
-      .map((member: JsonSchema) => parenthesize(typeOf(member)))
+      .map((member) => parenthesize(typeOf(member)))
       .join(" & ");
   }
   if (Array.isArray(schema.type)) {
@@ -97,7 +99,7 @@ function typeOf(schema: JsonSchema | boolean | undefined): string {
     case "integer":
       return "number";
     case "array":
-      return `${parenthesize(typeOf(schema.items as JsonSchema))}[]`;
+      return `${parenthesize(typeOf(schema.items))}[]`;
     case "object":
       return objectType(schema);
     default:
@@ -106,15 +108,11 @@ function typeOf(schema: JsonSchema | boolean | undefined): string {
 }
 
 function objectType(schema: JsonSchema): string {
-  const properties = schema.properties as
-    Record<string, JsonSchema> | undefined;
+  const { properties } = schema;
   if (properties === undefined) {
-    const values = schema.additionalProperties as
-      JsonSchema | boolean | undefined;
-    const valueType = values === undefined ? "unknown" : typeOf(values);
-    return `Record<string, ${valueType}>`;
+    return `Record<string, ${typeOf(schema.additionalProperties)}>`;
   }
-  const required = new Set((schema.required as string[] | undefined) ?? []);
+  const required = new Set(schema.required ?? []);
   const fields = Object.entries(properties).map(
     ([name, field]) =>
       `${propertyKey(name)}${required.has(name) ? "" : "?"}: ${typeOf(field)}`

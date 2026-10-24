@@ -145,6 +145,41 @@ describe("Drift detection", () => {
     expect(await openPlans(ws.dir).pending()).toEqual([]);
   });
 
+  it("checks responses against a Baseline whose schema holds true, as a server may declare", async () => {
+    const dir = join(ws.dir, ".workflows", "baselines");
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, "sentry.listIssues.json"),
+      JSON.stringify({
+        server: "sentry",
+        tool: "listIssues",
+        inputSchema: {
+          type: "object",
+          properties: { project: { type: "string" } },
+          required: ["project"],
+        },
+        outputSchema: {
+          type: "object",
+          properties: {
+            issues: {
+              type: "array",
+              items: { type: "object", properties: { title: true } },
+            },
+          },
+          required: ["issues"],
+        },
+      })
+    );
+    const core = await openTriage();
+    await save(core, "list_titles", titles);
+
+    const result = succeeded(
+      await core.runWorkflow({ name: "list_titles", input })
+    );
+
+    expect(result.value).toHaveLength(3);
+  });
+
   it("reports a pagination change, which needs more than a Response Adapter", async () => {
     const core = await openTriage();
     await saveApplied(core, "triage_sentry");

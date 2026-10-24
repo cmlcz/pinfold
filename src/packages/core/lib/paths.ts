@@ -90,36 +90,31 @@ export function shapeAllows(schema: JsonSchema, path: string): boolean {
   return steps !== undefined && hasSteps(schema, steps);
 }
 
-function hasSteps(schema: JsonSchema, steps: Step[]): boolean {
-  if (steps.length === 0) return true;
+function hasSteps(schema: JsonSchema | boolean, steps: Step[]): boolean {
+  if (typeof schema === "boolean") return schema;
+  const [step, ...rest] = steps;
+  if (step === undefined) return true;
   // type: ["object", "null"] is a union of its types.
   if (Array.isArray(schema.type)) {
-    return (schema.type as string[]).some((type) =>
-      hasSteps({ ...schema, type }, steps)
-    );
+    return schema.type.some((type) => hasSteps({ ...schema, type }, steps));
   }
   if (Array.isArray(schema.anyOf)) {
-    return (schema.anyOf as JsonSchema[]).some((option) =>
-      hasSteps(option, steps)
-    );
+    return schema.anyOf.some((option) => hasSteps(option, steps));
   }
-  const [step, ...rest] = steps as [Step, ...Step[]];
   if ("each" in step) {
     if (schema.type === undefined) return true;
+    // A tuple's elements have a schema each, and items covers the rest.
+    const prefix = Array.isArray(schema.prefixItems) ? schema.prefixItems : [];
     return (
       schema.type === "array" &&
-      hasSteps((schema.items ?? {}) as JsonSchema, rest)
+      [...prefix, schema.items ?? true].some((items) => hasSteps(items, rest))
     );
   }
   if (schema.type === undefined) return true;
   if (schema.type !== "object") return false;
-  const properties = (schema.properties ?? {}) as Record<string, JsonSchema>;
+  const properties = schema.properties ?? {};
   if (Object.hasOwn(properties, step.key)) {
     return hasSteps(properties[step.key]!, rest);
   }
-  const additional = schema.additionalProperties;
-  if (additional === false) return false;
-  return typeof additional === "object" && additional !== null
-    ? hasSteps(additional as JsonSchema, rest)
-    : true;
+  return hasSteps(schema.additionalProperties ?? true, rest);
 }

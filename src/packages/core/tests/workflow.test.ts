@@ -320,6 +320,21 @@ describe("list_workflows", () => {
     );
   });
 
+  it("shows tuple inputs, whose schemas hold false", async () => {
+    const core = await openTriage();
+    const run = explorationOf(
+      await core.explore({
+        code: "export async function main(input: { pair: [string, number]; tags: [string, ...string[]] }) { return input; }",
+        input: { pair: ["a", 1], tags: ["b"] },
+      })
+    );
+    await core.saveWorkflow({ run, name: "tuples", confirmed: true });
+
+    expect(formatWorkflows(await listWorkflows(ws.dir))).toContain(
+      "  inputs: pair: [string, number], tags: [string, ...string[]]"
+    );
+  });
+
   it("says so when there are none", async () => {
     expect(formatWorkflows(await listWorkflows(ws.dir))).toBe(
       "No saved Workflows."
