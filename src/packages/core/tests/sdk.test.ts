@@ -265,6 +265,46 @@ describe("search_sdk", () => {
     expect(core.searchSdk("deadlock kubernetes")).toEqual([]);
   });
 
+  it("finds Tools by words in any script, written with or without spaces", async () => {
+    await mkdir(baselines(), { recursive: true });
+    const describedAs = (tool: string, description: string) =>
+      writeFile(
+        join(baselines(), `sentry.${tool}.json`),
+        JSON.stringify({
+          server: "sentry",
+          tool,
+          description,
+          inputSchema: { type: "object" },
+          outputSchema: {},
+        })
+      );
+    await describedAs(
+      "listProjects",
+      "組織のプロジェクトを日本語で一覧表示します"
+    );
+    await describedAs("listIssues", "Zeigt die Ereignisse für ein Projekt");
+    const core = await ws.open();
+
+    expect(core.searchSdk("日本語").map(toolOf)[0]).toBe(
+      "sdk.sentry.listProjects"
+    );
+    expect(core.searchSdk("für").map(toolOf)).toEqual([
+      "sdk.sentry.listIssues",
+    ]);
+  });
+
+  it("folds the plural of a short word", async () => {
+    const core = await ws.open();
+
+    expect(core.searchSdk("ids").map(toolOf)).toContain("sdk.sentry.getIssue");
+  });
+
+  it("finds a Tool by stopwords when the query holds nothing else", async () => {
+    const core = await ws.open();
+
+    expect(core.searchSdk("get").map(toolOf)[0]).toBe("sdk.sentry.getIssue");
+  });
+
   it("types an unpinned Tool's undeclared response as unknown until a call pins it", async () => {
     const core = await ws.open();
     const listProjects = () =>
