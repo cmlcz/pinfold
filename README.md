@@ -34,7 +34,8 @@ Create a `pinfold.json` file in your project:
   "servers": {
     "sentry": {
       "command": "npx",
-      "args": ["-y", "<sentry-mcp-server-package>"]
+      "args": ["-y", "<sentry-mcp-server-package>"],
+      "env": { "SENTRY_ACCESS_TOKEN": "${SENTRY_ACCESS_TOKEN}" }
     },
     "linear": {
       "url": "https://<linear-mcp-host>/mcp",
@@ -52,7 +53,7 @@ Create a `pinfold.json` file in your project:
 }
 ```
 
-- **`servers`** lists the MCP servers pinfold connects to. Each server's tools appear in the sandbox as `sdk.<server>.<tool>`. Server names must be valid JavaScript identifiers. A server is either a `command` that pinfold starts and talks to over stdio, or a Streamable HTTP `url`. An HTTP server's `headers` are sent with every request. Write a secret as a reference to an environment variable, `${NAME}`, so it never sits in the file. pinfold refuses to start if a referenced variable is not set, and it keeps those values out of its errors.
+- **`servers`** lists the MCP servers pinfold connects to. Each server's tools appear in the sandbox as `sdk.<server>.<tool>`. Server names must be valid JavaScript identifiers. A server is either a `command` that pinfold starts and talks to over stdio, or a Streamable HTTP `url`. A stdio server inherits only a few safe environment variables, such as `PATH` and `HOME`. Give it others in `env`, and a working directory relative to the project in `cwd`. An HTTP server's `headers` are sent with every request. In `env` and `headers`, write a secret as a reference to an environment variable, `${NAME}`, so it never sits in the file. pinfold refuses to start if a referenced variable is not set, and it keeps those values out of its errors.
 - **`classification`** marks tools as `"read"`. Any tool you leave out is a write tool.
 - **`redact`** is optional. It lists, by server and tool, the fields that are replaced with `[redacted]` before a saved workflow's recorded calls are written to disk. A path starts with `arguments` or `response`, and `[]` stands for every element of an array, as in `"response.issues[].assignee.email"`.
 - **`limits`** is optional. The values above are the defaults: 30 seconds, 64 MiB of memory, and 100 tool calls per run.
