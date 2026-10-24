@@ -27,3 +27,4 @@ export {
   type HttpDriftKitServer,
 } from "./lib/http.ts";
 export type { ReceivedWrite } from "./lib/world.ts";
+export { sentryDriftScenarios } from "./lib/sentry/server.ts";
