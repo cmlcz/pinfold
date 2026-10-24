@@ -2,7 +2,7 @@
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
-import { loadConfig, openCore } from "../core/index.ts";
+import { loadConfig, openCore, type Core } from "../core/index.ts";
 import { createGateway } from "./index.ts";
 
 const { values } = parseArgs({
@@ -10,7 +10,14 @@ const { values } = parseArgs({
 });
 
 const root = dirname(resolve(values.config));
-const core = await openCore(await loadConfig(values.config), { root });
+let core: Core;
+try {
+  core = await openCore(await loadConfig(values.config), { root });
+} catch (error) {
+  // A configuration error, said in a line rather than a stack trace.
+  console.error(`pinfold: ${(error as Error).message}`);
+  process.exit(1);
+}
 const transport = new StdioServerTransport();
 transport.onclose = () => void core.close();
 await createGateway(core, { root }).connect(transport);

@@ -166,7 +166,16 @@ export async function classifyTools(
 }
 
 export async function loadConfig(path: string): Promise<PinfoldConfig> {
-  const text = await readFile(path, "utf8");
+  let text: string;
+  try {
+    text = await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    throw new Error(
+      `${path} does not exist; create a pinfold config there, or pass --config <path>`,
+      { cause: error }
+    );
+  }
   let json: unknown;
   try {
     json = JSON.parse(text);
