@@ -7,7 +7,7 @@ import {
   type Sdk,
   type SandboxResult,
 } from "../sandbox/index.ts";
-import { loadAdapters, type Adapters } from "./lib/adapters.ts";
+import { loadAdapters, writeAdapter, type Adapters } from "./lib/adapters.ts";
 import { openBaselines } from "./lib/baselines.ts";
 import {
   resolveLimits,
@@ -34,6 +34,14 @@ import { ApplyStopped, resolvePlaceholders, sendWrites } from "./lib/apply.ts";
 import { openJournal } from "./lib/journal.ts";
 import { openPlanStore, type PlanRecord } from "./lib/plans.ts";
 import {
+  openRepairs,
+  searchRepair,
+  type PendingDrift,
+  type RepairRecord,
+  type RepairSearch,
+} from "./lib/repair.ts";
+import type { JsonSchema } from "./lib/schema.ts";
+import {
   writeCount,
   type ExploreResult,
   type Failed,
@@ -43,6 +51,7 @@ import {
 } from "./lib/outcome.ts";
 import {
   checkInput,
+  fixtureCalls,
   inputFromCommandLine,
   loadWorkflow,
   recordRun,
@@ -63,6 +72,7 @@ export {
   type ToolKind,
 } from "./lib/config.ts";
 export type { PlannedWrite, WritePlan } from "./lib/plan.ts";
+export type { PendingDrift, RepairRecord } from "./lib/repair.ts";
 export {
   openPlans,
   type PlanRecord,
@@ -131,6 +141,8 @@ export type Core = {
       | { commandLine: CommandLineInput }
     )
   ): Promise<WorkflowRunResult>;
+  /** The Drift that deterministic Repair could not settle, by Tool. */
+  pendingDrift(): Promise<PendingDrift[]>;
   close(): Promise<void>;
 };
 
@@ -153,12 +165,13 @@ export async function openCore(
   // During a Plan, Read Tools run live, their responses mapped by their
   // Response Adapters, and Write Tool calls are recorded. Read Tool calls
   // are kept with their adapted responses, as Fixtures. `check` sees each
-  // adapted response first, and may stop the call.
+  // call as the server answered it and its adapted response first, and may
+  // stop the call.
   function planSdk(
     writes: PlannedWrite[],
     calls: RecordedCall[],
     adapters: Adapters,
-    check?: (tool: DownstreamTool, response: unknown) => void
+    check?: (tool: DownstreamTool, live: LiveCall, response: unknown) => void
   ): Sdk {
     // No prototype, so a server named like an Object member is just a name.
     const sdk: Sdk = Object.create(null);
@@ -173,8 +186,9 @@ export async function openCore(
                 `a Placeholder cannot be passed to the Read Tool ${name}`
               );
             }
-            const value = adapters.adapt(name, await tool.call(args));
-            check?.(tool, value);
+            const live = { arguments: args, response: await tool.call(args) };
+            const value = adapters.adapt(name, live.response);
+            check?.(tool, live, value);
             calls.push({ tool: name, arguments: args, response: value });
             await baselines.record(tool, value);
             return value;
@@ -207,6 +221,7 @@ export async function openCore(
   }
 
   const journal = openJournal(options.root);
+  const repairs = openRepairs(options.root);
 
   // Sends the writes of the run's Write Plan that the Apply Journal does not
   // hold yet. Returns the results of all its writes, and how many were sent
@@ -359,13 +374,26 @@ export async function openCore(
     const writes: PlannedWrite[] = [];
     const calls: RecordedCall[] = [];
     const drift: Drift[] = [];
-    const check = (tool: DownstreamTool, response: unknown) => {
+    // The checked calls of each Tool, and the Tools whose responses all fit
+    // their Baselines.
+    const checked = new Map<string, LiveCall[]>();
+    const fitting = new Set<string>();
+    const check = (tool: DownstreamTool, live: LiveCall, response: unknown) => {
       const name = `${tool.server}.${tool.tool}`;
       const baseline = baselines.get(tool.server, tool.tool);
       if (contract === undefined || baseline === undefined) return;
+      const responses = [...(checked.get(name) ?? []), live];
+      checked.set(name, responses);
       const found = mismatches(baseline.outputSchema, response);
+      if (found.length === 0) fitting.add(name);
       if (!touchesContract(found, contract, name)) return;
-      drift.push({ tool: name, mismatches: found });
+      drift.push({
+        tool: name,
+        offered: tool,
+        baseline: baseline.outputSchema,
+        mismatches: found,
+        responses,
+      });
       throw new Error(`${name} drifted from its Baseline`);
     };
     const loaded = await loadAdapters(options.root).catch(
@@ -392,23 +420,95 @@ export async function openCore(
       result,
       adapters,
       drift: drift[0],
+      fitting,
     };
   }
 
-  // What a run stopped by Drift reports: the Tool, its fields and every
-  // Workflow the Drift affects.
-  async function driftReport(workflow: string, drift: Drift): Promise<string> {
+  // Deterministic Repair of the Drift that stopped a run of a Workflow. The
+  // Adapter version it finds is written, and kept with its evidence for the
+  // Approval view; Drift it cannot settle is kept as pending.
+  async function repair(
+    workflow: string,
+    drift: Drift,
+    adapters: Adapters
+  ): Promise<
+    | { kind: "repaired"; record: RepairRecord }
+    | Exclude<RepairSearch, { kind: "repaired" }>
+  > {
+    const current = adapters.get(drift.tool);
+    const found = searchRepair({
+      baseline: drift.baseline,
+      ops: current?.ops ?? [],
+      responses: drift.responses,
+      contracts: (await savedContracts(options.root)).flatMap(({ contract }) =>
+        Object.hasOwn(contract, drift.tool) ? [contract[drift.tool]!] : []
+      ),
+      fixtures: await fixtureCalls(options.root, drift.tool),
+    });
+    if (found.kind === "pending") {
+      await repairs.pend({
+        tool: drift.tool,
+        workflow,
+        at: new Date().toISOString(),
+        mismatches: drift.mismatches,
+        reason: found.reason,
+      });
+    }
+    if (found.kind !== "repaired") return found;
+    const version = (current?.version ?? 0) + 1;
+    const kept = current?.ops.length ?? 0;
+    const digest = await writeAdapter(
+      options.root,
+      {
+        server: drift.offered.server,
+        tool: drift.offered.tool,
+        version,
+        ops: found.ops,
+      },
+      current?.path
+    );
+    const record: RepairRecord = {
+      tool: drift.tool,
+      digest,
+      version,
+      diff: found.ops.map(
+        (op, index) => `${index < kept ? " " : "+"} ${JSON.stringify(op)}`
+      ),
+      evidence: found.evidence,
+    };
+    await repairs.record(record);
+    return { kind: "repaired", record };
+  }
+
+  // What a run stopped by Drift reports: the Tool, its fields, every
+  // Workflow the Drift affects, and what Repair made of it.
+  async function driftReport(
+    workflow: string,
+    drift: Drift,
+    found: Exclude<RepairSearch, { kind: "repaired" }> | undefined
+  ): Promise<string> {
     const affected = (await savedContracts(options.root))
       .filter(({ contract }) =>
         touchesContract(drift.mismatches, contract, drift.tool)
       )
       .map(({ name }) => name);
-    return [
+    const lines = [
       `Workflow ${workflow} not run: the responses of ${drift.tool} drifted from its Baseline, so the run stopped before it made a Write Plan; nothing was sent.`,
       ...drift.mismatches.map((mismatch) => `  ${describeMismatch(mismatch)}`),
       `Affected Workflows: ${affected.join(", ")}.`,
-      `A Response Adapter for ${drift.tool} in .workflows/adapters/ that maps its responses back to the Baseline repairs every affected Workflow.`,
-    ].join("\n");
+    ];
+    if (found?.kind === "manual") {
+      return [...lines, `It needs a manual fix: ${found.reason}.`].join("\n");
+    }
+    if (found?.kind === "pending") {
+      lines.push(
+        `pinfold found no Repair to propose: ${found.reason}. The Drift is recorded as pending.`
+      );
+    }
+    lines.push(
+      `A Response Adapter for ${drift.tool} in .workflows/adapters/ that maps its responses back to the Baseline repairs every affected Workflow.`
+    );
+    return lines.join("\n");
   }
 
   // A Workflow Run: the Workflow's checks, then a Plan that needs Approval if
@@ -421,7 +521,9 @@ export async function openCore(
      * Receives which save of the Workflow ran and the Response Adapters its
      * Tools went through, for the run history.
      */
-    ran: { saved?: string; adapters?: Record<string, string> }
+    ran: { saved?: string; adapters?: Record<string, string> },
+    /** The Repair the run before this one made, which this run shows. */
+    repaired?: RepairRecord
   ): Promise<WorkflowRunResult> {
     const loaded = await loadWorkflow(options.root, name, {
       declarations: declarations(sdkTools()),
@@ -444,12 +546,22 @@ export async function openCore(
     if (!checked.ok)
       return { ok: false, error: `Workflow ${name} not run. ${checked.error}` };
 
-    const { key, approved, clock, writes, result, adapters, drift } =
+    const { key, approved, clock, writes, result, adapters, drift, fitting } =
       await planRun(workflow.source, input, workflow.contract);
     if (drift !== undefined) {
-      return { ok: false, error: await driftReport(name, drift) };
+      // A run that follows a Repair reports any Drift left, and repairs no
+      // more.
+      const found =
+        repaired === undefined
+          ? await repair(name, drift, adapters!)
+          : undefined;
+      if (found?.kind === "repaired") {
+        return runWorkflow(name, given, ran, found.record);
+      }
+      return { ok: false, error: await driftReport(name, drift, found) };
     }
     if (!result.ok) return result;
+    for (const tool of fitting) await repairs.settle(tool);
     const digests = adapters!.digests(workflow.tools);
     ran.adapters = digests;
     const plan = writePlan(writes);
@@ -482,9 +594,22 @@ export async function openCore(
     });
     if (!outcome.ok) return outcome;
     const paused = outcome.status === "pending" || outcome.status === "changed";
-    return paused && approvalReason !== undefined
-      ? { ...outcome, workflow: name, approvalReason }
-      : { ...outcome, workflow: name };
+    // The Approval view shows the Repairs behind the Adapters that changed.
+    const shown = new Map<string, RepairRecord>();
+    if (repaired !== undefined) shown.set(repaired.tool, repaired);
+    if (paused && lastApplied !== undefined) {
+      for (const tool of changedAdapters) {
+        const digest = digests[tool];
+        const record = digest && (await repairs.get(tool, digest));
+        if (record) shown.set(tool, record);
+      }
+    }
+    return {
+      ...outcome,
+      workflow: name,
+      ...(paused && approvalReason !== undefined && { approvalReason }),
+      ...(shown.size > 0 && { repairs: [...shown.values()] }),
+    };
   }
 
   const limits = resolveLimits(config);
@@ -535,6 +660,7 @@ export async function openCore(
       });
       return result;
     },
+    pendingDrift: () => repairs.pending(),
     async resume(run) {
       const record = await plans.get(run);
       if (record === undefined) throw new Error(`no run ${run}`);
@@ -573,8 +699,20 @@ export async function openCore(
   };
 }
 
-/** Drift that stopped a Workflow Run: the Tool, and where it drifted. */
-type Drift = { tool: string; mismatches: Mismatch[] };
+/** A Read Tool call as its Downstream Server answered it. */
+type LiveCall = { arguments: unknown; response: unknown };
+
+/**
+ * Drift that stopped a Workflow Run: the Tool, as `server.tool`, where its
+ * response drifted from its Baseline, and its calls in the run so far.
+ */
+type Drift = {
+  tool: string;
+  offered: DownstreamTool;
+  baseline: JsonSchema;
+  mismatches: Mismatch[];
+  responses: LiveCall[];
+};
 
 // The same code and input give the same run key, whatever the order of the
 // input's fields.

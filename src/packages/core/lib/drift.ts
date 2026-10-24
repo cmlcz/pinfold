@@ -1,9 +1,12 @@
 // Drift: where a Tool's adapted response no longer fits its Baseline, and
 // whether that touches what a Workflow reads.
+import { childPath } from "./paths.ts";
 import type { JsonSchema } from "./schema.ts";
 
 /** A field of the Baseline the response does not fit, and how. */
 export type Mismatch = { path: string; problem: string };
+
+const missing = "is missing";
 
 /**
  * Where a response does not fit a Baseline's shape, by field path; `""` is
@@ -83,9 +86,9 @@ function check(
   const properties = schema.properties ?? {};
   const required = schema.required ?? [];
   for (const [key, field] of Object.entries(properties)) {
-    const inner = join(path, key);
+    const inner = childPath(path, key);
     if (Object.hasOwn(record, key)) check(field, record[key], inner, report);
-    else if (required.includes(key)) report(inner, "is missing");
+    else if (required.includes(key)) report(inner, missing);
   }
   // The values of a map, keyed by data, are reported at the map.
   const additional = schema.additionalProperties;
@@ -107,11 +110,21 @@ export function touchesContract(
   tool: string
 ): boolean {
   const reads = Object.hasOwn(contract, tool) ? contract[tool]! : [];
-  return found.some(({ path }) => reads.some((read) => touches(path, read)));
+  return touching(found, reads).length > 0;
 }
 
-// Whether Drift at one path touches a field read at another.
-function touches(drifted: string, read: string): boolean {
+/** The mismatches that touch any of these field reads. */
+export function touching(found: Mismatch[], reads: string[]): Mismatch[] {
+  return found.filter(({ path }) => reads.some((read) => touches(path, read)));
+}
+
+/** Whether a mismatch is a field the Baseline requires that is not there. */
+export function isMissing(mismatch: Mismatch): boolean {
+  return mismatch.problem === missing;
+}
+
+/** Whether Drift at one path touches a field read at another. */
+export function touches(drifted: string, read: string): boolean {
   return within(drifted, read) || within(read, drifted);
 }
 
@@ -128,12 +141,6 @@ function within(path: string, outer: string): boolean {
 /** One line per mismatch, as the Drift report shows it. */
 export function describeMismatch({ path, problem }: Mismatch): string {
   return `${path === "" ? "the response" : path} ${problem}`;
-}
-
-// A field path one field further, written as Contracts write it.
-function join(path: string, key: string): string {
-  if (!/^[A-Za-z_$][\w$]*$/.test(key)) return `${path}[${JSON.stringify(key)}]`;
-  return path === "" ? key : `${path}.${key}`;
 }
 
 function allows(type: unknown, value: unknown): boolean {
