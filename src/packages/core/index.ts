@@ -131,7 +131,7 @@ export async function openCore(
   options: { root: string }
 ): Promise<Core> {
   const baselines = await openBaselines(options.root);
-  const downstream = await connectDownstream(config.servers);
+  const downstream = await connectDownstream(config.servers, options.root);
   const classificationOf = (tool: DownstreamTool) => {
     const servers = config.classification ?? {};
     const tools = Object.hasOwn(servers, tool.server)
