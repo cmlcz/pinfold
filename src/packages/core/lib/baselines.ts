@@ -11,7 +11,9 @@ import {
   type JsonSchema,
   type Shape,
 } from "./schema.ts";
+import { mismatches } from "./drift.ts";
 import { listJson, readJson } from "./files.ts";
+import { parsePath, schemasAt } from "./paths.ts";
 import { shortHash } from "./plan.ts";
 import type { SdkTool } from "./sdk.ts";
 
@@ -86,6 +88,60 @@ export async function openBaselines(root: string): Promise<Baselines> {
       observed.set(id, merged);
     },
   };
+}
+
+/**
+ * Makes a field of a Tool's pinned Baseline optional, a small Baseline
+ * Migration: the field may then be missing, or null. One response cannot
+ * show that a field is optional, so a Baseline pinned from one may need it.
+ * `name` is the Tool as `server.tool`; `path` a field path such as
+ * `issues[].assignee`.
+ */
+export async function makeFieldOptional(
+  root: string,
+  name: string,
+  path: string
+): Promise<void> {
+  const steps = parsePath(path);
+  const last = steps?.at(-1);
+  if (steps === undefined || last === undefined || "each" in last) {
+    throw new Error(
+      `${path} is not a field path that ends in a field, such as issues[].assignee`
+    );
+  }
+  const dir = join(root, ".workflows", "baselines");
+  const { server, tool } = splitToolName(name);
+  for (const file of await listJson(dir)) {
+    const parsed = baselineSchema.safeParse(await readJson(join(dir, file)));
+    if (!parsed.success) continue;
+    const baseline = parsed.data;
+    if (baseline.server !== server || baseline.tool !== tool) continue;
+    const parents = schemasAt(baseline.outputSchema, steps.slice(0, -1));
+    const holding = parents.filter(
+      ({ properties }) =>
+        properties !== undefined && Object.hasOwn(properties, last.key)
+    );
+    if (holding.length === 0) {
+      throw new Error(`The Baseline of ${name} has no field ${path}`);
+    }
+    for (const parent of holding) {
+      if (parent.required !== undefined) {
+        parent.required = parent.required.filter((key) => key !== last.key);
+      }
+      parent.properties![last.key] = orNull(parent.properties![last.key]!);
+    }
+    await writeFile(join(dir, file), `${JSON.stringify(baseline, null, 2)}\n`);
+    return;
+  }
+  throw new Error(`${name} has no Baseline`);
+}
+
+// A schema that allows null too.
+function orNull(schema: JsonSchema | boolean): JsonSchema | boolean {
+  if (typeof schema === "boolean" || mismatches(schema, null).length === 0) {
+    return schema;
+  }
+  return { anyOf: [schema, { type: "null" }] };
 }
 
 function baselineKey(server: string, tool: string): string {

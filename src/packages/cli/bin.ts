@@ -4,6 +4,7 @@
 //   node bin.ts approve|decline <plan-id> [--config pinfold.json]
 //   node bin.ts resume <run-id> [--config pinfold.json]
 //   node bin.ts resolve <run-id> <write> sent|not-sent [--config pinfold.json]
+//   node bin.ts baseline optional <server.tool> <field-path> [--config pinfold.json]
 //   node bin.ts list [--config pinfold.json]
 //   node bin.ts run <workflow> [<value> | --<field> <value>...] [--config pinfold.json]
 import { dirname, resolve } from "node:path";
@@ -14,6 +15,7 @@ import {
   formatWorkflows,
   listWorkflows,
   loadConfig,
+  makeFieldOptional,
   openCore,
   openPlans,
   reviewPlan,
@@ -28,6 +30,7 @@ const usage = `usage:
   pinfold approve|decline <plan-id> [--config <path>]
   pinfold resume <run-id> [--config <path>]
   pinfold resolve <run-id> <write> sent|not-sent [--config <path>]
+  pinfold baseline optional <server.tool> <field-path> [--config <path>]
   pinfold list [--config <path>]
   pinfold run <workflow> [<value> | --<field> <value>...] [--config <path>]
 
@@ -120,6 +123,17 @@ async function main(): Promise<number> {
         outcome === "sent"
           ? `Recorded write ${write} of run ${run} as sent; no resume sends it. \`pinfold resume ${run}\` sends the writes after it.`
           : `Recorded write ${write} of run ${run} as not sent. \`pinfold resume ${run}\` sends it and the writes after it.`
+      );
+      return 0;
+    }
+    case "baseline": {
+      const [change, tool, path] = rest;
+      if (change !== "optional" || tool === undefined || path === undefined)
+        return fail();
+      if (rest.length > 3) return fail();
+      await makeFieldOptional(root, tool, path);
+      console.log(
+        `Made ${path} of ${tool} optional in its Baseline: it may now be missing or null. A gateway that is running uses it once restarted.`
       );
       return 0;
     }

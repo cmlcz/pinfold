@@ -25,6 +25,7 @@ import {
   isRecord,
   parsePath,
   redacted,
+  schemasAt,
   valuesAt,
   type Step,
 } from "./paths.ts";
@@ -404,29 +405,6 @@ function pageCursor(
   const steps = (parsePath(target.path) ?? []).slice(0, -1);
   return newFields(baseline, steps, live).find((field) =>
     /cursor|^next|page|offset|^has_?more$/i.test(field)
-  );
-}
-
-// The schemas a path reaches in a JSON Schema, through unions and arrays.
-function schemasAt(schema: JsonSchema | boolean, steps: Step[]): JsonSchema[] {
-  if (typeof schema === "boolean") return [];
-  if (Array.isArray(schema.anyOf)) {
-    return schema.anyOf.flatMap((option) => schemasAt(option, steps));
-  }
-  const [step, ...rest] = steps;
-  if (step === undefined) return [schema];
-  if ("each" in step) {
-    const prefix = Array.isArray(schema.prefixItems) ? schema.prefixItems : [];
-    return [...prefix, schema.items ?? true].flatMap((items) =>
-      schemasAt(items, rest)
-    );
-  }
-  const properties = schema.properties ?? {};
-  return schemasAt(
-    Object.hasOwn(properties, step.key)
-      ? properties[step.key]!
-      : (schema.additionalProperties ?? true),
-    rest
   );
 }
 

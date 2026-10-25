@@ -23,6 +23,7 @@ import {
   type SaveResult,
 } from "./lib/workflows.ts";
 
+export { makeFieldOptional } from "./lib/baselines.ts";
 export {
   classifyTools,
   loadConfig,

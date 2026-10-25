@@ -11,7 +11,7 @@ import {
 } from "./adapters.ts";
 import { toolName } from "./baselines.ts";
 import type { DownstreamTool } from "./downstream.ts";
-import { describeMismatch, touchesContract } from "./drift.ts";
+import { describeMismatch, mayBeOptional, touchesContract } from "./drift.ts";
 import type { ProposalResult } from "./outcome.ts";
 import type { Drift } from "./plan-run.ts";
 import type { Project } from "./project.ts";
@@ -117,6 +117,13 @@ export async function driftReport(
   ];
   if (found?.kind === "manual") {
     return [...lines, `It needs a manual fix: ${found.reason}.`].join("\n");
+  }
+  // One response cannot show that a field is optional, so the Baseline may
+  // require one the server leaves out at times.
+  for (const { path } of drift.mismatches.filter(mayBeOptional)) {
+    lines.push(
+      `If the server leaves out ${path} at times, rather than having dropped it, \`pinfold baseline optional ${drift.tool} ${path}\` makes it optional in the Baseline.`
+    );
   }
   if (found?.kind === "pending") {
     lines.push(

@@ -163,3 +163,29 @@ function hasSteps(schema: JsonSchema | boolean, steps: Step[]): boolean {
   }
   return hasSteps(schema.additionalProperties ?? true, rest);
 }
+
+/** The schemas a path reaches in a JSON Schema, through unions and arrays. */
+export function schemasAt(
+  schema: JsonSchema | boolean,
+  steps: Step[]
+): JsonSchema[] {
+  if (typeof schema === "boolean") return [];
+  if (Array.isArray(schema.anyOf)) {
+    return schema.anyOf.flatMap((option) => schemasAt(option, steps));
+  }
+  const [step, ...rest] = steps;
+  if (step === undefined) return [schema];
+  if ("each" in step) {
+    const prefix = Array.isArray(schema.prefixItems) ? schema.prefixItems : [];
+    return [...prefix, schema.items ?? true].flatMap((items) =>
+      schemasAt(items, rest)
+    );
+  }
+  const properties = schema.properties ?? {};
+  return schemasAt(
+    Object.hasOwn(properties, step.key)
+      ? properties[step.key]!
+      : (schema.additionalProperties ?? true),
+    rest
+  );
+}
