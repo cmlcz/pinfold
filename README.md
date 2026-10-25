@@ -62,7 +62,7 @@ Create a `pinfold.json` file in your project:
 - **`classification`** marks tools as `"read"`. Any tool you leave out is a write tool.
 - **`redact`** is optional. It lists, by server and tool, the fields that are replaced with `[redacted]` before a saved workflow's recorded calls are written to disk. A path starts with `arguments` or `response`, and `[]` stands for every element of an array, as in `"response.issues[].assignee.email"`.
 - **`limits`** is optional. The values above are the defaults: 30 seconds, 64 MiB of memory, and 100 tool calls per run.
-- **`repairModel`** is optional. It names an OpenRouter model, such as `"openai/gpt-4o-mini"`, that proposes a repair when pinfold finds none itself. pinfold reads its key from `OPENROUTER_API_KEY`. Without `repairModel`, or without the key, pinfold never calls a model; a run stopped by drift then says the model was not asked.
+- **`repairModel`** is optional. It names an OpenRouter model, such as `"openai/gpt-4o-mini"`, that proposes a repair when pinfold finds none itself. The environment variable `PINFOLD_REPAIR_MODEL`, if set, picks the model instead. pinfold reads its key from `OPENROUTER_API_KEY`; copy `.env.example` to `.env`, fill it in, and run pinfold with `node --env-file=.env`. With no model named, or without the key, pinfold never calls a model; a run stopped by drift then says the model was not asked.
 
 ## Connect your agent
 

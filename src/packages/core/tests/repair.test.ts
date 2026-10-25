@@ -925,6 +925,29 @@ describe("Repair through the repair model", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("calls the model PINFOLD_REPAIR_MODEL picks, over the config's", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "sk-test");
+    vi.stubEnv("PINFOLD_REPAIR_MODEL", "test/picked");
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({
+        choices: [{ message: { content: "[]" } }],
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      })
+    );
+    vi.stubGlobal("fetch", fetch);
+    const core = await openTriage(ws, { repairModel: "test/configured" });
+    await saveApplied(core, "triage_sentry");
+    await ws.control("sentry").startDrift("removed-field");
+
+    await core.runWorkflow({ name: "triage_sentry", input });
+
+    expect(fetch).toHaveBeenCalledOnce();
+    const [, init] = fetch.mock.calls[0]!;
+    expect(JSON.parse(init?.body as string)).toMatchObject({
+      model: "test/picked",
+    });
+  });
+
   it("asks an OpenAI-compatible API and reads OpenRouter's usage fields", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async () =>
       Response.json({
