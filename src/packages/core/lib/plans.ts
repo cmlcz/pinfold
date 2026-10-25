@@ -2,17 +2,10 @@
 // directory .pinfold/. Each Approval request is its own record, so running
 // the same code again never reopens a plan that was applied or failed.
 import { randomUUID } from "node:crypto";
-import {
-  link,
-  mkdir,
-  readdir,
-  readFile,
-  rename,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { link, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { decodeValue, encodeValue, type Clock } from "../../sandbox/index.ts";
+import { listFiles, prepareState } from "./files.ts";
 import { openJournal } from "./journal.ts";
 import type { WritePlan } from "./plan.ts";
 
@@ -77,20 +70,12 @@ export function openPlans(root: string): Plans {
 }
 
 export function openPlanStore(root: string): PlanStore {
-  const state = join(root, ".pinfold");
-  const dir = join(state, "plans");
+  const dir = join(root, ".pinfold", "plans");
 
   // Files that do not parse are left out, so one damaged record cannot stop
   // every run. Leaving a record out never sends anything: at worst a plan
   // asks for Approval again.
-  async function planFiles(): Promise<string[]> {
-    try {
-      return await readdir(dir);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-      throw error;
-    }
-  }
+  const planFiles = () => listFiles(dir);
 
   async function scan(): Promise<{
     records: PlanRecord[];
@@ -127,9 +112,7 @@ export function openPlanStore(root: string): PlanStore {
   // Written aside and moved into place, so no reader ever sees half a
   // record. A new record is linked, which fails if its file exists already.
   async function save(record: PlanRecord, options = { new: false }) {
-    await mkdir(dir, { recursive: true });
-    // Nothing in the state directory belongs in version control.
-    await writeFile(join(state, ".gitignore"), "*\n");
+    await prepareState(root, "plans");
     const file = join(dir, `${record.record}.json`);
     const aside = `${file}.${randomUUID().slice(0, 8)}.tmp`;
     await writeFile(aside, `${encodeValue(record)}\n`);

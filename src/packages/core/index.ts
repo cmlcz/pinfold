@@ -14,7 +14,7 @@ import {
   type Adapters,
   type Op,
 } from "./lib/adapters.ts";
-import { openBaselines } from "./lib/baselines.ts";
+import { openBaselines, toolName } from "./lib/baselines.ts";
 import {
   resolveLimits,
   type PinfoldConfig,
@@ -210,7 +210,7 @@ export async function openCore(
     // No prototype, so a server named like an Object member is just a name.
     const sdk: Sdk = Object.create(null);
     for (const tool of downstream.tools) {
-      const name = `${tool.server}.${tool.tool}`;
+      const name = toolName(tool);
       if (!Object.hasOwn(sdk, tool.server))
         sdk[tool.server] = Object.create(null);
       sdk[tool.server]![tool.tool] = isRead(tool)
@@ -246,7 +246,7 @@ export async function openCore(
     });
   const plans = openPlanStore(options.root);
   const toolsByName = new Map(
-    downstream.tools.map((tool) => [`${tool.server}.${tool.tool}`, tool])
+    downstream.tools.map((tool) => [toolName(tool), tool])
   );
   function toolOf(write: PlannedWrite): DownstreamTool {
     const tool = toolsByName.get(write.tool);
@@ -413,7 +413,7 @@ export async function openCore(
     const checked = new Map<string, LiveCall[]>();
     const fitting = new Set<string>();
     const check = (tool: DownstreamTool, live: LiveCall, response: unknown) => {
-      const name = `${tool.server}.${tool.tool}`;
+      const name = toolName(tool);
       const baseline = baselines.get(tool.server, tool.tool);
       if (contract === undefined || baseline === undefined) return;
       const responses = [...(checked.get(name) ?? []), live];
@@ -518,7 +518,7 @@ export async function openCore(
     added: Op[],
     found: Pick<RepairRecord, "by" | "evidence">
   ): Promise<RepairRecord> {
-    const name = `${tool.server}.${tool.tool}`;
+    const name = toolName(tool);
     const current = adapters.get(name);
     const kept = current?.ops ?? [];
     const version = (current?.version ?? 0) + 1;
@@ -550,7 +550,7 @@ export async function openCore(
   // field paths each saved Workflow reads of it, and its Fixture calls,
   // redacted by the rules as they are now.
   async function repairInput(tool: DownstreamTool, adapters: Adapters) {
-    const name = `${tool.server}.${tool.tool}`;
+    const name = toolName(tool);
     const fixtures = await fixtureCalls(options.root, name);
     return {
       baseline: baselines.get(tool.server, tool.tool)?.outputSchema,
