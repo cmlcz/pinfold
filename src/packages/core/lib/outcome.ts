@@ -1,6 +1,7 @@
 // The outcome of an Exploration Run or a Workflow Run, and its readable form.
 import { Placeholder } from "../../sandbox/index.ts";
 import type { WritePlan } from "./plan.ts";
+import type { RepairRecord } from "./repair.ts";
 
 /**
  * An Exploration Run ran as a Plan. Without writes it is complete. Otherwise
@@ -17,10 +18,16 @@ export type ExploreResult =
 /**
  * A Workflow Run ran as a Plan. Its Write Plan was applied unattended, or
  * the run paused for Approval (`pending` or `changed`) for the reason given;
- * once approved, the same input running again applies it.
+ * once approved, the same input running again applies it. `repairs` are the
+ * Repairs this run made, or that a paused run's changed Adapters came from.
  */
 export type WorkflowRunResult =
-  Failed | (PlanOutcome & { workflow: string; approvalReason?: string });
+  | Failed
+  | (PlanOutcome & {
+      workflow: string;
+      approvalReason?: string;
+      repairs?: RepairRecord[];
+    });
 
 export type Failed = { ok: false; error: string };
 
@@ -68,10 +75,24 @@ export function formatWorkflowRun(
   result: Extract<WorkflowRunResult, { ok: true }>
 ): string {
   const again = `Then run Workflow ${result.workflow} again with the same input to apply it.`;
+  const repairs = (result.repairs ?? []).map(formatRepair);
   const text = describePlanOutcome(result, again);
-  if (result.status !== "pending" && result.status !== "changed") return text;
+  if (result.status !== "pending" && result.status !== "changed") {
+    return [...repairs, text].join("\n\n");
+  }
   const reason = result.approvalReason ?? "the Write Plan waits for Approval";
-  return `Paused for Approval: ${reason}.\n\n${text}`;
+  return [`Paused for Approval: ${reason}.`, ...repairs, text].join("\n\n");
+}
+
+// A Repair as the Approval view shows it: the Adapter diff, then the value
+// evidence.
+function formatRepair(repair: RepairRecord): string {
+  return [
+    `pinfold repaired the Response Adapter of ${repair.tool}, now version ${repair.version}:`,
+    ...repair.diff.map((line) => `  ${line}`),
+    "Value evidence, the live responses through this version next to the Fixtures:",
+    ...repair.evidence.map((line) => `  ${line}`),
+  ].join("\n");
 }
 
 function describePlanOutcome(result: PlanOutcome, again: string): string {

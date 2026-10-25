@@ -1,9 +1,12 @@
 // Drift: where a Tool's adapted response no longer fits its Baseline, and
 // whether that touches what a Workflow reads.
+import { childPath } from "./paths.ts";
 import type { JsonSchema } from "./schema.ts";
 
 /** A field of the Baseline the response does not fit, and how. */
 export type Mismatch = { path: string; problem: string };
+
+const missing = "is missing";
 
 /**
  * Where a response does not fit a Baseline's shape, by field path; `""` is
@@ -20,13 +23,18 @@ export function mismatches(schema: JsonSchema, value: unknown): Mismatch[] {
 type Report = (path: string, problem: string) => void;
 
 function check(
-  schema: JsonSchema,
+  schema: JsonSchema | boolean,
   value: unknown,
   path: string,
   report: Report
 ): void {
+  if (schema === true) return;
+  if (schema === false) {
+    report(path, `is ${kindOf(value)}, where the Baseline allows no value`);
+    return;
+  }
   if (Array.isArray(schema.anyOf)) {
-    const options = schema.anyOf as JsonSchema[];
+    const options = schema.anyOf;
     const results = options.map((option) => {
       const found: [string, string][] = [];
       check(option, value, path, (inner, problem) =>
@@ -36,7 +44,9 @@ function check(
     });
     if (results.some((result) => result.length === 0)) return;
     // The option for the value's kind, if any, says best what is wrong.
-    const kind = options.findIndex((option) => allows(option.type, value));
+    const kind = options.findIndex(
+      (option) => typeof option === "object" && allows(option.type, value)
+    );
     if (kind === -1) {
       report(path, `is ${kindOf(value)}, not ${describe(options)}`);
     } else {
@@ -63,26 +73,29 @@ function check(
     return;
   }
   if (Array.isArray(value)) {
-    const items = schema.items as JsonSchema | undefined;
-    if (items === undefined) return;
-    for (const item of value) check(items, item, `${path}[]`, report);
+    // A tuple's elements have a schema each, and items covers the rest.
+    const prefix = Array.isArray(schema.prefixItems) ? schema.prefixItems : [];
+    for (const [index, item] of value.entries()) {
+      const items = prefix[index] ?? schema.items;
+      if (items !== undefined) check(items, item, `${path}[]`, report);
+    }
     return;
   }
   if (typeof value !== "object" || value === null) return;
   const record = value as Record<string, unknown>;
-  const properties = (schema.properties ?? {}) as Record<string, JsonSchema>;
-  const required = (schema.required ?? []) as string[];
+  const properties = schema.properties ?? {};
+  const required = schema.required ?? [];
   for (const [key, field] of Object.entries(properties)) {
-    const inner = join(path, key);
+    const inner = childPath(path, key);
     if (Object.hasOwn(record, key)) check(field, record[key], inner, report);
-    else if (required.includes(key)) report(inner, "is missing");
+    else if (required.includes(key)) report(inner, missing);
   }
   // The values of a map, keyed by data, are reported at the map.
   const additional = schema.additionalProperties;
   if (typeof additional === "object" && additional !== null) {
     for (const [key, field] of Object.entries(record)) {
       if (Object.hasOwn(properties, key)) continue;
-      if (mismatches(additional as JsonSchema, field).length > 0) {
+      if (mismatches(additional, field).length > 0) {
         report(path, "holds values that do not fit the Baseline");
         return;
       }
@@ -97,11 +110,21 @@ export function touchesContract(
   tool: string
 ): boolean {
   const reads = Object.hasOwn(contract, tool) ? contract[tool]! : [];
-  return found.some(({ path }) => reads.some((read) => touches(path, read)));
+  return touching(found, reads).length > 0;
 }
 
-// Whether Drift at one path touches a field read at another.
-function touches(drifted: string, read: string): boolean {
+/** The mismatches that touch any of these field reads. */
+export function touching(found: Mismatch[], reads: string[]): Mismatch[] {
+  return found.filter(({ path }) => reads.some((read) => touches(path, read)));
+}
+
+/** Whether a mismatch is a field the Baseline requires that is not there. */
+export function isMissing(mismatch: Mismatch): boolean {
+  return mismatch.problem === missing;
+}
+
+/** Whether Drift at one path touches a field read at another. */
+export function touches(drifted: string, read: string): boolean {
   return within(drifted, read) || within(read, drifted);
 }
 
@@ -118,12 +141,6 @@ function within(path: string, outer: string): boolean {
 /** One line per mismatch, as the Drift report shows it. */
 export function describeMismatch({ path, problem }: Mismatch): string {
   return `${path === "" ? "the response" : path} ${problem}`;
-}
-
-// A field path one field further, written as Contracts write it.
-function join(path: string, key: string): string {
-  if (!/^[A-Za-z_$][\w$]*$/.test(key)) return `${path}[${JSON.stringify(key)}]`;
-  return path === "" ? key : `${path}.${key}`;
 }
 
 function allows(type: unknown, value: unknown): boolean {
@@ -154,8 +171,10 @@ function kindOf(value: unknown): string {
   return `a ${typeof value} ${JSON.stringify(value)}`;
 }
 
-function describe(options: JsonSchema[]): string {
-  const types = options.flatMap((option) => [option.type ?? "any"].flat());
+function describe(options: (JsonSchema | boolean)[]): string {
+  const types = options.flatMap((option) =>
+    typeof option === "boolean" ? [] : [option.type ?? "any"].flat()
+  );
   return [...new Set(types)].join(" or ");
 }
 

@@ -9,6 +9,7 @@ import {
   isFullyObserved,
   mergeSchemas,
   type JsonSchema,
+  type Shape,
 } from "./schema.ts";
 import { shortHash } from "./plan.ts";
 import type { SdkTool } from "./sdk.ts";
@@ -52,7 +53,7 @@ export async function openBaselines(root: string): Promise<Baselines> {
   }
 
   // Inferred shapes of Tools whose responses have not shown enough yet.
-  const observed = new Map<string, JsonSchema>();
+  const observed = new Map<string, Shape>();
 
   async function pin(tool: SdkTool, outputSchema: JsonSchema) {
     const id = baselineKey(tool.server, tool.tool);
