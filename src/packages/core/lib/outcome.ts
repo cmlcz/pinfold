@@ -163,6 +163,15 @@ function describePlanOutcome(result: PlanOutcome, again: string): string {
     case "declined":
       return `${value}\n\nThe developer declined Write Plan ${plan.id}; nothing was sent.`;
     case "pending":
+      // A run without writes waits only for changed Adapters to be approved,
+      // so its result, built through them, is held back until then.
+      if (plan.writes.length === 0) {
+        return [
+          "The result is held back until the developer approves the changed Response Adapters it was built through, in a terminal:",
+          `  pinfold approve ${plan.id}`,
+          again,
+        ].join("\n");
+      }
       return [value, "", formatPlan(plan), "", approval(plan, again)].join(
         "\n"
       );

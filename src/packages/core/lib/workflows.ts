@@ -41,6 +41,8 @@ export type Exploration = {
   /** Every Tool the run called, as `server.tool`, Read and Write alike. */
   tools: string[];
   reads: FieldReads;
+  /** The digest of the Response Adapter of each of its Tools that has one. */
+  adapters: Record<string, string>;
 };
 
 /** The checks save_workflow makes, in order. */
@@ -57,6 +59,8 @@ const recordSchema = z.object({
   tools: z.array(z.string()),
   /** The Baseline field paths the code read, by Tool. */
   contract: z.record(z.string(), z.array(z.string())),
+  /** The Response Adapters the confirmed run went through, by digest. */
+  adapters: z.record(z.string(), z.string()).default({}),
   savedFrom: z.string(),
   savedAt: z.string(),
 });
@@ -149,6 +153,7 @@ export async function saveWorkflow(
         deepestPaths(paths.map(withoutDataKeys).filter((path) => path !== "")),
       ])
     ),
+    adapters: exploration.adapters,
     savedFrom: exploration.run,
     savedAt: new Date().toISOString(),
   };
@@ -201,16 +206,24 @@ export function redactCall(
   call: RecordedCall,
   rules: Record<string, Record<string, string[]>>
 ): RecordedCall {
-  const [server, ...rest] = call.tool.split(".");
-  const tool = rest.join(".");
-  const tools = Object.hasOwn(rules, server!) ? rules[server!]! : {};
-  const paths = Object.hasOwn(tools, tool) ? tools[tool]! : [];
+  const paths = redactionRules(rules, call.tool);
   if (paths.length === 0) return call;
   const { arguments: args, response } = redact(
     { arguments: call.arguments, response: call.response },
     paths
   ) as Omit<RecordedCall, "tool">;
   return { tool: call.tool, arguments: args, response };
+}
+
+/** The redaction rules of a Tool, as `server.tool`. */
+export function redactionRules(
+  rules: Record<string, Record<string, string[]>>,
+  name: string
+): string[] {
+  const [server, ...rest] = name.split(".");
+  const tool = rest.join(".");
+  const tools = Object.hasOwn(rules, server!) ? rules[server!]! : {};
+  return Object.hasOwn(tools, tool) ? tools[tool]! : [];
 }
 
 /** The saved Workflows, by name. A record that does not parse is skipped. */
@@ -303,6 +316,8 @@ export type LoadedWorkflow = {
   tools: string[];
   /** The Baseline field paths the code reads, by Tool. */
   contract: Record<string, string[]>;
+  /** The Response Adapters the run it was saved from went through. */
+  adapters: Record<string, string>;
 };
 
 const settingsSchema = z.object({ writeBudget: z.int().nonnegative() });
@@ -384,6 +399,7 @@ export async function loadWorkflow(
       saved: `${record.savedFrom}@${record.savedAt}`,
       tools: record.tools,
       contract: record.contract,
+      adapters: record.adapters,
     },
   };
 }

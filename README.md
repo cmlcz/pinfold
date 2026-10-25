@@ -155,7 +155,7 @@ Value evidence, the live responses through this version next to the Fixtures:
   issues[].count: now median 128, range 73–210; in the Fixtures median 128, range 73–210
 ```
 
-Drift that no single mapping settles is recorded as pending. Your agent can repair it: `propose_repair` shows it the pending drift, with the fields that no longer fit, the baseline, a live response and the values in the fixtures, all redacted by your rules. The agent then proposes the adapter operations to add. pinfold rejects any proposal whose mapped responses do not fit every workflow that uses the tool and gives the reason. A proposal that passes becomes the adapter's next version and waits for your approval like any other; the agent cannot approve it. You can also write an adapter of your own.
+Drift that no single mapping settles is recorded as pending. Your agent can repair it: `propose_repair` shows it the pending drift, with the fields that no longer fit, the baseline, a live response and the values in the fixtures, all redacted by your rules. When a tool has redaction rules, any value the drift moved away from where the baseline has it is redacted too, since the rules may no longer reach it. The agent then proposes the adapter operations to add. pinfold rejects any proposal whose mapped responses do not fit every workflow that uses the tool and gives the reason. A proposal that passes becomes the adapter's next version and waits for your approval like any other; the agent cannot approve it. You can also write an adapter of your own.
 
 A response adapter lives in `.workflows/adapters/`, one file per tool. It maps the tool's live responses back to the baseline, so the workflow code never changes:
 
@@ -178,7 +178,7 @@ The ops run in order. A path such as `issues[].count` names the `count` of every
 - **`map`** replaces enum values at `path` by the `values` they map to.
 - **`default`** gives a missing field at `path` the `value`.
 
-A new or changed adapter makes the next run of every workflow that uses the tool pause for approval. Some drift, such as a response that is now paged, cannot be mapped back by an adapter: pinfold reports that it needs a manual fix, which is an edit to the workflow.
+A new or changed adapter makes the next run of every workflow that uses the tool pause for approval. That includes a workflow that sends no writes: its result is held back until you approve. Some drift, such as a response that is now paged, cannot be mapped back by an adapter: pinfold reports that it needs a manual fix, which is an edit to the workflow.
 
 ## Where pinfold keeps its state
 

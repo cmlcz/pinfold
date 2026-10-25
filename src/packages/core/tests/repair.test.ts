@@ -94,7 +94,7 @@ describe("Deterministic Repair", () => {
     expect(paused).toMatchObject({
       status: "pending",
       approvalReason:
-        "the Response Adapter of sentry.listIssues changed since Workflow triage_sentry was last applied",
+        "the Response Adapter of sentry.listIssues changed since the last finished run of Workflow triage_sentry",
       repairs: [renameRepair],
     });
     expect(paused.plan.writes).toEqual(before.plan.writes);
@@ -144,7 +144,7 @@ describe("Deterministic Repair", () => {
     expect(paused).toMatchObject({
       status: "pending",
       approvalReason:
-        "the Response Adapter of sentry.listIssues changed since Workflow triage_copy was last applied",
+        "the Response Adapter of sentry.listIssues changed since the last finished run of Workflow triage_copy",
       repairs: [renameRepair],
     });
   });
@@ -400,6 +400,41 @@ describe("Repair through the agent", () => {
     expect(proposed.ok).toBe(true);
   });
 
+  it("redacts the values a Drift moved out of reach of the redaction rules", async () => {
+    const core = await ws.open({
+      servers: { sentry: ws.sentry(), linear: ws.linear() },
+      classification: {
+        ...sentryReads,
+        linear: { searchIssues: "read", createIssue: "write" },
+      },
+      redact: { sentry: { listIssues: ["response.issues[].culprit"] } },
+    });
+    await saveApplied(core, "triage_sentry");
+    // The response now sits under data, where the rule does not reach.
+    await ws.control("sentry").startDrift("wrap");
+    await ws.control("sentry").startDrift("removed-field");
+    await core.runWorkflow({ name: "triage_sentry", input });
+
+    const [pending] = await core.pendingDrift();
+
+    const stored = JSON.stringify(pending!.responses);
+    expect(stored).not.toContain("checkout.ts in computeTotal");
+    expect(stored).not.toContain("WEB-1A");
+    const { data } = pending!.responses[0]!.response as {
+      data: { issues: Record<string, unknown>[] };
+    };
+    expect(data.issues[0]).toMatchObject({
+      culprit: "[redacted]",
+      count: "[redacted]",
+    });
+    expect(
+      await core.proposeRepair({
+        tool: "sentry.listIssues",
+        ops: [{ op: "unwrap", field: "data" }, ...userCountDefault],
+      })
+    ).toMatchObject({ ok: true });
+  });
+
   it("rejects ops outside the closed set, and ops that leave the Drift, with the reason", async () => {
     const core = await openTriage();
     await pendingRemovedField(core);
@@ -469,7 +504,7 @@ describe("Repair through the agent", () => {
     expect(paused).toMatchObject({
       status: "pending",
       approvalReason:
-        "the Response Adapter of sentry.listIssues changed since Workflow triage_sentry was last applied",
+        "the Response Adapter of sentry.listIssues changed since the last finished run of Workflow triage_sentry",
       repairs: [agentRepair],
     });
     expect(formatWorkflowRun(paused)).toContain(
@@ -483,5 +518,81 @@ describe("Repair through the agent", () => {
     );
 
     expect(applied.status).toBe("applied");
+  });
+});
+
+describe("Approval of changed Adapters without writes", () => {
+  const counts = `export async function main(input: { project: string }) {
+  const { issues } = await sdk.sentry.listIssues({ project: input.project });
+  return issues.map((issue) => issue.count);
+}`;
+
+  async function saveCounts(core: Core) {
+    const explored = await core.explore({ code: counts, input });
+    if (!explored.ok) throw new Error(explored.error);
+    const saved = await core.saveWorkflow({
+      run: explored.exploration,
+      name: "counts",
+      confirmed: true,
+    });
+    if (!saved.ok) throw new Error(saved.error);
+    return explored.value;
+  }
+
+  it("holds back the result of a run through a changed Adapter until the developer approves it", async () => {
+    const core = await openTriage();
+    const value = await saveCounts(core);
+    expect(
+      succeeded(await core.runWorkflow({ name: "counts", input })).status
+    ).toBe("complete");
+    await ws.control("sentry").startDrift("rename");
+
+    const paused = succeeded(await core.runWorkflow({ name: "counts", input }));
+
+    expect(paused).toMatchObject({
+      status: "pending",
+      approvalReason:
+        "the Response Adapter of sentry.listIssues changed since the last finished run of Workflow counts",
+      repairs: [{ tool: "sentry.listIssues", by: "pinfold" }],
+      plan: { writes: [] },
+    });
+    const view = formatWorkflowRun(paused);
+    expect(view).toContain(
+      `The result is held back until the developer approves the changed Response Adapters it was built through, in a terminal:\n  pinfold approve ${paused.plan.id}`
+    );
+    expect(view).not.toContain(JSON.stringify(value));
+
+    await openPlans(ws.dir).approve(paused.plan.id);
+    const approved = succeeded(
+      await core.runWorkflow({ name: "counts", input })
+    );
+    const after = succeeded(await core.runWorkflow({ name: "counts", input }));
+
+    expect(approved).toMatchObject({ status: "applied", value });
+    expect(after).toMatchObject({ status: "complete", value });
+  });
+
+  it("asks for Approval of an Adapter that changed since the Workflow was saved", async () => {
+    const core = await openTriage();
+    await saveCounts(core);
+    const adapters = join(ws.dir, ".workflows", "adapters");
+    await mkdir(adapters, { recursive: true });
+    await writeFile(
+      join(adapters, "sentry.listIssues.json"),
+      JSON.stringify({
+        server: "sentry",
+        tool: "listIssues",
+        version: 1,
+        ops: [{ op: "default", path: "issues[].count", value: 0 }],
+      })
+    );
+
+    const paused = succeeded(await core.runWorkflow({ name: "counts", input }));
+
+    expect(paused).toMatchObject({
+      status: "pending",
+      approvalReason:
+        "the Response Adapter of sentry.listIssues changed since Workflow counts was saved",
+    });
   });
 });
