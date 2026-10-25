@@ -11,30 +11,28 @@ export type PlannedWrite = {
 
 export type WritePlan = {
   /**
-   * Derived from the writes alone, so equal Write Plans share an ID; for a
-   * plan without writes that approves changed Response Adapters, from their
-   * digests.
+   * Derived from the writes and the Adapters alone, so equal Write Plans
+   * share an ID, and approving a plan approves the Adapters it was built
+   * through too.
    */
   id: string;
   writes: PlannedWrite[];
+  /**
+   * The digest of each Response Adapter the run's Tools went through, by
+   * Tool as `server.tool`. A plan without writes may still wait for
+   * Approval of changed Adapters.
+   */
+  adapters: Record<string, string>;
 };
 
-export function writePlan(writes: PlannedWrite[]): WritePlan {
-  return { id: shortHash(encodeValue(writes)), writes };
-}
-
-/**
- * A Write Plan without writes, which a run through changed Response Adapters
- * asks the developer to approve. Its ID comes from the Adapters' digests,
- * so approving it approves those Adapters and no other plan.
- */
-export function adapterApprovalPlan(
-  digests: Record<string, string>
+export function writePlan(
+  writes: PlannedWrite[],
+  adapters: Record<string, string>
 ): WritePlan {
-  return {
-    id: shortHash(JSON.stringify(["adapters", canonicalize(digests)])),
-    writes: [],
-  };
+  const id = shortHash(
+    encodeValue({ writes, adapters: canonicalize(adapters) })
+  );
+  return { id, writes, adapters };
 }
 
 /** A short, stable ID for a text. */

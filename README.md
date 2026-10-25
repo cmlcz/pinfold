@@ -8,7 +8,7 @@ pinfold is a local MCP server for coding agents. It sits between your agent and 
 
 - **Sandboxed runs.** The agent writes a short TypeScript program. pinfold runs it in a sandbox with no filesystem, network, or imports. The program reaches the outside only through your MCP servers, and it returns only its result.
 - **Read tools run live.** Tools you mark as read run against the real server.
-- **Writes wait for approval.** Tools that change something are recorded into a plan. Nothing is sent until you approve that exact plan.
+- **Writes wait for approval.** Tools that change something are recorded into a plan. Nothing is sent until you approve that exact plan, together with the response adapters it was built through.
 - **Resume.** If an approved plan stops partway through, `resume` sends the writes that were not sent yet. A write that may have reached the server is never sent again until you check the server and say it did not.
 - **Save workflows.** A successful run can be saved as a workflow: an ordinary TypeScript file in `.workflows/` that you own, with the response fields it reads and its recorded tool calls.
 - **Run workflows.** A saved workflow runs again from the terminal, cron or CI with no LLM.
@@ -141,7 +141,7 @@ node src/packages/cli/bin.ts run search_issues "deadlock"
 
 pinfold checks the workflow before each run, since you may have edited it. The code must still export a typed `main(input)`, type-check against the SDK, and set a whole-number `writeBudget`. Every tool it calls must still be offered, and every field in its contract must still be allowed by the tool's baseline. The input must fit `main`'s input type. If a check fails, the run is refused with the reason, and the command exits with 1.
 
-Each run builds a plan. Its writes are sent without asking you, unless the workflow has never been applied or the plan has more writes than `writeBudget`. Then the run pauses: nothing is sent, the command prints the plan and its ID, and exits with 3. Approve the plan with `approve <plan-id>`, then run the workflow again with the same input to apply it.
+Each run builds a plan. Its writes are sent without asking you, unless you have never approved writes of the workflow's code as it is now, a response adapter it reads through changed, or the plan has more writes than `writeBudget`. Any edit to the workflow's file counts as new code, whoever made it, so the first plan with writes after an edit waits for you. Then the run pauses: nothing is sent, the command prints the plan and its ID, and exits with 3. Review the plan with `plans`, which also shows the repair behind each changed adapter, approve it with `approve <plan-id>`, then run the workflow again with the same input to apply it.
 
 Every run is recorded in `.pinfold/runs.jsonl`, and `list` shows each workflow's last run.
 

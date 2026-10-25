@@ -99,6 +99,8 @@ export function openPlanStore(root: string): PlanStore {
         const record = decodeValue(
           await readFile(join(dir, name), "utf8")
         ) as PlanRecord;
+        // Records from before plans named their Adapters went through none.
+        record.adapters ??= {};
         // A decline is final: its marker outranks whatever an Apply that was
         // running wrote to the record afterwards.
         if (declined.has(`${record.record}.declined`)) {
