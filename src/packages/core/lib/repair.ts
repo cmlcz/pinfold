@@ -5,11 +5,11 @@
 // how alike the field names are and how well the values agree with the
 // Fixtures. It proposes a mapping only where one candidate stands out.
 // Repairs it writes, and Drift it cannot settle, are kept under .pinfold/.
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as z from "zod";
 import { applyOps, type Op } from "./adapters.ts";
-import { toolFileName } from "./baselines.ts";
+import { splitToolName, toolFileName } from "./baselines.ts";
 import {
   isMissing,
   mismatches,
@@ -20,12 +20,14 @@ import {
 import {
   childPath,
   formatPath,
+  isPrimitive,
   isRecord,
   parsePath,
   redacted,
   valuesAt,
   type Step,
 } from "./paths.ts";
+import { listJson, prepareState, readOrNone, safeJson } from "./files.ts";
 import { canonicalize } from "./plan.ts";
 import type { JsonSchema } from "./schema.ts";
 
@@ -565,10 +567,6 @@ function isNumber(value: unknown): value is number {
   return typeof value === "number";
 }
 
-function isPrimitive(value: unknown): value is string | number | boolean {
-  return ["string", "number", "boolean"].includes(typeof value);
-}
-
 /** A Repair pinfold wrote, kept for the Approval view of later runs. */
 export type RepairRecord = {
   /** The Tool, as `server.tool`. */
@@ -634,57 +632,39 @@ export type Repairs = {
 
 /** Repairs and pending Drift, in .pinfold/repairs/ and .pinfold/drift/. */
 export function openRepairs(root: string): Repairs {
-  const repairs = join(root, ".pinfold", "repairs");
-  const drift = join(root, ".pinfold", "drift");
-  const file = (dir: string, tool: string) => {
-    const [server = "", ...rest] = tool.split(".");
-    return join(dir, toolFileName(server, rest.join(".")));
+  type Dir = "repairs" | "drift";
+  const file = (dir: Dir, name: string) => {
+    const { server, tool } = splitToolName(name);
+    return join(root, ".pinfold", dir, toolFileName(server, tool));
   };
-  const write = async (path: string, value: unknown) => {
-    await mkdir(join(path, ".."), { recursive: true });
-    await writeFile(path, `${JSON.stringify(value, null, 2)}\n`);
+  const write = async (dir: Dir, tool: string, value: unknown) => {
+    await prepareState(root, dir);
+    await writeFile(file(dir, tool), `${JSON.stringify(value, null, 2)}\n`);
   };
   return {
     async get(tool, digest) {
-      const text = await orNone(readFile(file(repairs, tool), "utf8"));
+      const text = await readOrNone(file("repairs", tool));
       const parsed = recordSchema.safeParse(text && safeJson(text));
       return parsed.success && parsed.data.digest === digest
         ? parsed.data
         : undefined;
     },
     async record(repair) {
-      await write(file(repairs, repair.tool), repair);
-      await rm(file(drift, repair.tool), { force: true });
+      await write("repairs", repair.tool, repair);
+      await rm(file("drift", repair.tool), { force: true });
     },
-    pend: (pending) => write(file(drift, pending.tool), pending),
-    settle: (tool) => rm(file(drift, tool), { force: true }),
+    pend: (pending) => write("drift", pending.tool, pending),
+    settle: (tool) => rm(file("drift", tool), { force: true }),
     async pending() {
-      const files = (await orNone(readdir(drift))) ?? [];
       const found: PendingDrift[] = [];
-      for (const name of files.filter((name) => name.endsWith(".json"))) {
-        const text = await readFile(join(drift, name), "utf8");
-        const parsed = pendingSchema.safeParse(safeJson(text));
+      const drift = join(root, ".pinfold", "drift");
+      for (const name of await listJson(drift)) {
+        // Settled since the listing, or damaged: either way not pending.
+        const text = await readOrNone(join(drift, name));
+        const parsed = pendingSchema.safeParse(text && safeJson(text));
         if (parsed.success) found.push(parsed.data);
       }
       return found.sort((a, b) => a.tool.localeCompare(b.tool));
     },
   };
-}
-
-// A file's content, or undefined when it does not exist.
-async function orNone<T>(reading: Promise<T>): Promise<T | undefined> {
-  try {
-    return await reading;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw error;
-  }
-}
-
-function safeJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
 }
