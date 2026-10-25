@@ -1,6 +1,6 @@
 // Baselines: each Tool's shape, pinned on first use in committed files
 // under .workflows/baselines/ (ADR 0001).
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as z from "zod";
 import {
@@ -11,6 +11,7 @@ import {
   type JsonSchema,
   type Shape,
 } from "./schema.ts";
+import { listJson, readJson } from "./files.ts";
 import { shortHash } from "./plan.ts";
 import type { SdkTool } from "./sdk.ts";
 
@@ -91,6 +92,17 @@ function baselineKey(server: string, tool: string): string {
   return `${server}\0${tool}`;
 }
 
+/** A Tool's name as the SDK and the Workflows write it: `server.tool`. */
+export function toolName(tool: { server: string; tool: string }): string {
+  return `${tool.server}.${tool.tool}`;
+}
+
+/** A name written `server.tool`, apart; a server's name has no dot. */
+export function splitToolName(name: string): { server: string; tool: string } {
+  const [server = "", ...rest] = name.split(".");
+  return { server, tool: rest.join(".") };
+}
+
 /**
  * The file name for a Tool's file. Tool names come from Downstream Servers,
  * so only a short, safe part of the name is kept, for people to read; the
@@ -100,26 +112,4 @@ function baselineKey(server: string, tool: string): string {
 export function toolFileName(server: string, tool: string): string {
   const readable = `${server}.${tool}`.replace(/[^\w.-]/g, "_").slice(0, 64);
   return `${readable}.${shortHash(baselineKey(server, tool))}.json`;
-}
-
-/** A JSON file's value; an error names the file. */
-export async function readJson(path: string): Promise<unknown> {
-  const text = await readFile(path, "utf8");
-  try {
-    return JSON.parse(text);
-  } catch (error) {
-    throw new Error(`${path} is not valid JSON: ${(error as Error).message}`, {
-      cause: error,
-    });
-  }
-}
-
-/** The JSON files of a directory; none when it does not exist. */
-export async function listJson(dir: string): Promise<string[]> {
-  try {
-    return (await readdir(dir)).filter((file) => file.endsWith(".json"));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
-  }
 }

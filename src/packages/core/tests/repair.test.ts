@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sentryDriftScenarios } from "../../drift-kit/index.ts";
@@ -433,6 +433,21 @@ describe("Repair through the agent", () => {
         ops: [{ op: "unwrap", field: "data" }, ...userCountDefault],
       })
     ).toMatchObject({ ok: true });
+  });
+
+  it("keeps the Repair it writes in a git-ignored state directory", async () => {
+    const core = await openTriage();
+    await pendingRemovedField(core);
+    const ignore = join(ws.dir, ".pinfold", ".gitignore");
+    await rm(ignore);
+
+    const proposed = await core.proposeRepair({
+      tool: "sentry.listIssues",
+      ops: userCountDefault,
+    });
+
+    expect(proposed.ok).toBe(true);
+    expect(await readFile(ignore, "utf8")).toBe("*\n");
   });
 
   it("rejects ops outside the closed set, and ops that leave the Drift, with the reason", async () => {
