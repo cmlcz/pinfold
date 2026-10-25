@@ -315,10 +315,7 @@ describe("Gateway", () => {
 describe("Gateway startup", () => {
   it("says in one line that the config file does not exist", async () => {
     const missing = join(dir, "missing.json");
-    // Node 22 warns that node:sqlite is experimental; the flag keeps that out
-    // of the stderr compared here.
     const failed = await promisify(execFile)(process.execPath, [
-      "--disable-warning=ExperimentalWarning",
       fileURLToPath(new URL("../bin.ts", import.meta.url)),
       "--config",
       missing,
