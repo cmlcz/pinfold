@@ -1,6 +1,6 @@
 // Drift: where a Tool's adapted response no longer fits its Baseline, and
 // whether that touches what a Workflow reads.
-import { childPath } from "./paths.ts";
+import { childPath, redacted } from "./paths.ts";
 import type { JsonSchema } from "./schema.ts";
 
 /** A field of the Baseline the response does not fit, and how. */
@@ -11,24 +11,35 @@ const missing = "is missing";
 /**
  * Where a response does not fit a Baseline's shape, by field path; `""` is
  * the whole response. Fields the Baseline does not have are not Drift.
+ * With `redactedFits`, a `[redacted]` value fits wherever it stands, as it
+ * holds the place of a value that was kept out of a recorded response.
  */
-export function mismatches(schema: JsonSchema, value: unknown): Mismatch[] {
+export function mismatches(
+  schema: JsonSchema,
+  value: unknown,
+  options: { redactedFits?: boolean } = {}
+): Mismatch[] {
   const found = new Map<string, string>();
-  check(schema, value, "", (path, problem) => {
+  const report: Report = (path, problem) => {
     if (!found.has(path)) found.set(path, problem);
-  });
+  };
+  check(schema, value, "", { report, redactedFits: !!options.redactedFits });
   return [...found].map(([path, problem]) => ({ path, problem }));
 }
 
 type Report = (path: string, problem: string) => void;
 
+type Checking = { report: Report; redactedFits: boolean };
+
 function check(
   schema: JsonSchema | boolean,
   value: unknown,
   path: string,
-  report: Report
+  checking: Checking
 ): void {
+  const { report } = checking;
   if (schema === true) return;
+  if (checking.redactedFits && value === redacted) return;
   if (schema === false) {
     report(path, `is ${kindOf(value)}, where the Baseline allows no value`);
     return;
@@ -37,9 +48,10 @@ function check(
     const options = schema.anyOf;
     const results = options.map((option) => {
       const found: [string, string][] = [];
-      check(option, value, path, (inner, problem) =>
-        found.push([inner, problem])
-      );
+      check(option, value, path, {
+        ...checking,
+        report: (inner, problem) => found.push([inner, problem]),
+      });
       return found;
     });
     if (results.some((result) => result.length === 0)) return;
@@ -77,7 +89,7 @@ function check(
     const prefix = Array.isArray(schema.prefixItems) ? schema.prefixItems : [];
     for (const [index, item] of value.entries()) {
       const items = prefix[index] ?? schema.items;
-      if (items !== undefined) check(items, item, `${path}[]`, report);
+      if (items !== undefined) check(items, item, `${path}[]`, checking);
     }
     return;
   }
@@ -87,7 +99,7 @@ function check(
   const required = schema.required ?? [];
   for (const [key, field] of Object.entries(properties)) {
     const inner = childPath(path, key);
-    if (Object.hasOwn(record, key)) check(field, record[key], inner, report);
+    if (Object.hasOwn(record, key)) check(field, record[key], inner, checking);
     else if (required.includes(key)) report(inner, missing);
   }
   // The values of a map, keyed by data, are reported at the map.
@@ -95,7 +107,12 @@ function check(
   if (typeof additional === "object" && additional !== null) {
     for (const [key, field] of Object.entries(record)) {
       if (Object.hasOwn(properties, key)) continue;
-      if (mismatches(additional, field).length > 0) {
+      let fits = true;
+      check(additional, field, path, {
+        ...checking,
+        report: () => (fits = false),
+      });
+      if (!fits) {
         report(path, "holds values that do not fit the Baseline");
         return;
       }

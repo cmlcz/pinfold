@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sentryDriftScenarios } from "../../drift-kit/index.ts";
 import {
+  formatProposal,
+  formatRepairTasks,
   formatWorkflowRun,
   openPlans,
   type Core,
@@ -66,6 +68,7 @@ async function saveApplied(core: Core, name: string, workspace = ws) {
 
 const renameRepair = {
   tool: "sentry.listIssues",
+  by: "pinfold",
   digest: expect.any(String),
   version: 1,
   diff: [
@@ -91,7 +94,7 @@ describe("Deterministic Repair", () => {
     expect(paused).toMatchObject({
       status: "pending",
       approvalReason:
-        "the Response Adapter of sentry.listIssues changed since Workflow triage_sentry was last applied",
+        "the Response Adapter of sentry.listIssues changed since the last finished run of Workflow triage_sentry",
       repairs: [renameRepair],
     });
     expect(paused.plan.writes).toEqual(before.plan.writes);
@@ -141,7 +144,7 @@ describe("Deterministic Repair", () => {
     expect(paused).toMatchObject({
       status: "pending",
       approvalReason:
-        "the Response Adapter of sentry.listIssues changed since Workflow triage_copy was last applied",
+        "the Response Adapter of sentry.listIssues changed since the last finished run of Workflow triage_copy",
       repairs: [renameRepair],
     });
   });
@@ -155,7 +158,7 @@ describe("Deterministic Repair", () => {
 
     expect(result).toMatchObject({
       ok: false,
-      error: expect.stringContaining("The Drift is recorded as pending."),
+      error: expect.stringContaining("The Drift is recorded as pending"),
     });
     expect(await core.pendingDrift()).toEqual([
       {
@@ -165,6 +168,9 @@ describe("Deterministic Repair", () => {
         mismatches: [{ path: "issues[].userCount", problem: "is missing" }],
         reason:
           "no op of the closed set maps the live responses back to issues[].userCount",
+        responses: [
+          { arguments: input, response: { issues: expect.any(Array) } },
+        ],
       },
     ]);
     await expect(
@@ -289,5 +295,304 @@ describe("Deterministic Repair", () => {
     );
     expect(outcomes.pagination).toBe("manual");
     expect(repaired.length / mappable.length).toBeGreaterThanOrEqual(0.8);
+  });
+});
+
+describe("Repair through the agent", () => {
+  /** Saves and applies the triage Workflow, then removes userCount upstream. */
+  async function pendingRemovedField(core: Core) {
+    const before = await saveApplied(core, "triage_sentry");
+    await ws.control("sentry").startDrift("removed-field");
+    const stopped = await core.runWorkflow({ name: "triage_sentry", input });
+    if (stopped.ok) throw new Error("the run was not stopped by Drift");
+    return { before, stopped };
+  }
+
+  const userCountDefault = [
+    { op: "default", path: "issues[].userCount", value: 0 },
+  ];
+
+  it("has no repair task without pending Drift", async () => {
+    const core = await openTriage();
+
+    expect(await core.repairTasks()).toEqual([]);
+    expect(formatRepairTasks([])).toBe("No pending Drift.");
+    expect(
+      await core.proposeRepair({
+        tool: "sentry.listIssues",
+        ops: userCountDefault,
+      })
+    ).toEqual({
+      ok: false,
+      error:
+        "Repair of sentry.listIssues not proposed: it has no pending Drift; propose_repair with no ops lists the Tools that have.",
+    });
+  });
+
+  it("points the stopped run to propose_repair", async () => {
+    const core = await openTriage();
+    const { stopped } = await pendingRemovedField(core);
+
+    expect(stopped.error).toContain(
+      "the agent can see it and propose a Response Adapter with propose_repair, which the developer then approves."
+    );
+  });
+
+  it("shows the pending Drift with a live response and Fixture values, redacted", async () => {
+    const core = await ws.open({
+      servers: { sentry: ws.sentry(), linear: ws.linear() },
+      classification: {
+        ...sentryReads,
+        linear: { searchIssues: "read", createIssue: "write" },
+      },
+      redact: { sentry: { listIssues: ["response.issues[].culprit"] } },
+    });
+    await pendingRemovedField(core);
+
+    const [task, ...others] = await core.repairTasks();
+
+    expect(others).toEqual([]);
+    expect(task).toMatchObject({
+      tool: "sentry.listIssues",
+      workflow: "triage_sentry",
+      mismatches: [{ path: "issues[].userCount", problem: "is missing" }],
+      ops: [],
+      reads: [
+        "issues[].count",
+        "issues[].culprit",
+        "issues[].shortId",
+        "issues[].status",
+        "issues[].userCount",
+      ],
+      fixtureValues: ["issues[].userCount: median 61, range 12–88"],
+    });
+    const [sample] = task!.responses;
+    const issues = (sample!.response as { issues: Record<string, unknown>[] })
+      .issues;
+    expect(issues[0]).not.toHaveProperty("userCount");
+    expect(issues.every((issue) => issue.culprit === "[redacted]")).toBe(true);
+    const text = formatRepairTasks([task!]);
+    expect(text).toContain(
+      "Pending Drift of sentry.listIssues, found by a run of Workflow triage_sentry at "
+    );
+    expect(text).toContain("  issues[].userCount is missing");
+    expect(text).toContain('"culprit":"[redacted]"');
+    expect(text).not.toContain("checkout.ts in computeTotal");
+  });
+
+  it("checks a proposal against redacted responses, where a redacted value fits", async () => {
+    // count is a number the Workflow reads, which redaction turns to text.
+    const core = await ws.open({
+      servers: { sentry: ws.sentry(), linear: ws.linear() },
+      classification: {
+        ...sentryReads,
+        linear: { searchIssues: "read", createIssue: "write" },
+      },
+      redact: { sentry: { listIssues: ["response.issues[].count"] } },
+    });
+    await pendingRemovedField(core);
+
+    const proposed = await core.proposeRepair({
+      tool: "sentry.listIssues",
+      ops: userCountDefault,
+    });
+
+    expect(proposed.ok).toBe(true);
+  });
+
+  it("redacts the values a Drift moved out of reach of the redaction rules", async () => {
+    const core = await ws.open({
+      servers: { sentry: ws.sentry(), linear: ws.linear() },
+      classification: {
+        ...sentryReads,
+        linear: { searchIssues: "read", createIssue: "write" },
+      },
+      redact: { sentry: { listIssues: ["response.issues[].culprit"] } },
+    });
+    await saveApplied(core, "triage_sentry");
+    // The response now sits under data, where the rule does not reach.
+    await ws.control("sentry").startDrift("wrap");
+    await ws.control("sentry").startDrift("removed-field");
+    await core.runWorkflow({ name: "triage_sentry", input });
+
+    const [pending] = await core.pendingDrift();
+
+    const stored = JSON.stringify(pending!.responses);
+    expect(stored).not.toContain("checkout.ts in computeTotal");
+    expect(stored).not.toContain("WEB-1A");
+    const { data } = pending!.responses[0]!.response as {
+      data: { issues: Record<string, unknown>[] };
+    };
+    expect(data.issues[0]).toMatchObject({
+      culprit: "[redacted]",
+      count: "[redacted]",
+    });
+    expect(
+      await core.proposeRepair({
+        tool: "sentry.listIssues",
+        ops: [{ op: "unwrap", field: "data" }, ...userCountDefault],
+      })
+    ).toMatchObject({ ok: true });
+  });
+
+  it("rejects ops outside the closed set, and ops that leave the Drift, with the reason", async () => {
+    const core = await openTriage();
+    await pendingRemovedField(core);
+
+    const unknown = await core.proposeRepair({
+      tool: "sentry.listIssues",
+      ops: [{ op: "eval", code: "1" }],
+    });
+    const leaves = await core.proposeRepair({
+      tool: "sentry.listIssues",
+      ops: [{ op: "rename", from: "issues[].users", to: "issues[].userCount" }],
+    });
+
+    expect(unknown).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(
+        /^Repair of sentry\.listIssues not proposed: the ops are not of the closed set:\n/
+      ),
+    });
+    expect(leaves).toEqual({
+      ok: false,
+      error: [
+        "Repair of sentry.listIssues not proposed: through its Response Adapter and these ops, its live responses still do not fit the Baseline where a saved Workflow reads them:",
+        "  issues[].userCount is missing.",
+      ].join("\n"),
+    });
+    await expect(
+      readdir(join(ws.dir, ".workflows", "adapters"))
+    ).rejects.toThrow();
+    expect(await core.pendingDrift()).toHaveLength(1);
+  });
+
+  it("writes a valid proposal as the next Adapter version, which waits for the developer's Approval", async () => {
+    const core = await openTriage();
+    const { before } = await pendingRemovedField(core);
+
+    const proposed = await core.proposeRepair({
+      tool: "sentry.listIssues",
+      ops: userCountDefault,
+    });
+
+    if (!proposed.ok) throw new Error(proposed.error);
+    const agentRepair = {
+      tool: "sentry.listIssues",
+      by: "agent",
+      digest: expect.any(String),
+      version: 1,
+      diff: ['+ {"op":"default","path":"issues[].userCount","value":0}'],
+      evidence: [
+        "issues[].userCount: now median 0, range 0–0; in the Fixtures median 61, range 12–88",
+      ],
+    };
+    expect(proposed).toEqual({
+      ok: true,
+      repair: agentRepair,
+      affected: ["triage_sentry"],
+    });
+    expect(formatProposal(proposed)).toContain(
+      "It is not approved: the next run of Workflow triage_sentry pauses for the developer to approve it in a terminal"
+    );
+    expect(await core.pendingDrift()).toEqual([]);
+
+    const paused = succeeded(
+      await core.runWorkflow({ name: "triage_sentry", input })
+    );
+
+    expect(paused).toMatchObject({
+      status: "pending",
+      approvalReason:
+        "the Response Adapter of sentry.listIssues changed since the last finished run of Workflow triage_sentry",
+      repairs: [agentRepair],
+    });
+    expect(formatWorkflowRun(paused)).toContain(
+      "An agent, through propose_repair, repaired the Response Adapter of sentry.listIssues, now version 1:"
+    );
+    expect(paused.plan.writes).toEqual(before.plan.writes);
+
+    await openPlans(ws.dir).approve(paused.plan.id);
+    const applied = succeeded(
+      await core.runWorkflow({ name: "triage_sentry", input })
+    );
+
+    expect(applied.status).toBe("applied");
+  });
+});
+
+describe("Approval of changed Adapters without writes", () => {
+  const counts = `export async function main(input: { project: string }) {
+  const { issues } = await sdk.sentry.listIssues({ project: input.project });
+  return issues.map((issue) => issue.count);
+}`;
+
+  async function saveCounts(core: Core) {
+    const explored = await core.explore({ code: counts, input });
+    if (!explored.ok) throw new Error(explored.error);
+    const saved = await core.saveWorkflow({
+      run: explored.exploration,
+      name: "counts",
+      confirmed: true,
+    });
+    if (!saved.ok) throw new Error(saved.error);
+    return explored.value;
+  }
+
+  it("holds back the result of a run through a changed Adapter until the developer approves it", async () => {
+    const core = await openTriage();
+    const value = await saveCounts(core);
+    expect(
+      succeeded(await core.runWorkflow({ name: "counts", input })).status
+    ).toBe("complete");
+    await ws.control("sentry").startDrift("rename");
+
+    const paused = succeeded(await core.runWorkflow({ name: "counts", input }));
+
+    expect(paused).toMatchObject({
+      status: "pending",
+      approvalReason:
+        "the Response Adapter of sentry.listIssues changed since the last finished run of Workflow counts",
+      repairs: [{ tool: "sentry.listIssues", by: "pinfold" }],
+      plan: { writes: [] },
+    });
+    const view = formatWorkflowRun(paused);
+    expect(view).toContain(
+      `The result is held back until the developer approves the changed Response Adapters it was built through, in a terminal:\n  pinfold approve ${paused.plan.id}`
+    );
+    expect(view).not.toContain(JSON.stringify(value));
+
+    await openPlans(ws.dir).approve(paused.plan.id);
+    const approved = succeeded(
+      await core.runWorkflow({ name: "counts", input })
+    );
+    const after = succeeded(await core.runWorkflow({ name: "counts", input }));
+
+    expect(approved).toMatchObject({ status: "applied", value });
+    expect(after).toMatchObject({ status: "complete", value });
+  });
+
+  it("asks for Approval of an Adapter that changed since the Workflow was saved", async () => {
+    const core = await openTriage();
+    await saveCounts(core);
+    const adapters = join(ws.dir, ".workflows", "adapters");
+    await mkdir(adapters, { recursive: true });
+    await writeFile(
+      join(adapters, "sentry.listIssues.json"),
+      JSON.stringify({
+        server: "sentry",
+        tool: "listIssues",
+        version: 1,
+        ops: [{ op: "default", path: "issues[].count", value: 0 }],
+      })
+    );
+
+    const paused = succeeded(await core.runWorkflow({ name: "counts", input }));
+
+    expect(paused).toMatchObject({
+      status: "pending",
+      approvalReason:
+        "the Response Adapter of sentry.listIssues changed since Workflow counts was saved",
+    });
   });
 });
