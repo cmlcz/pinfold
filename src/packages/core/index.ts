@@ -128,7 +128,7 @@ export type Core = {
 
 /**
  * Opens a core on a project; `root` is the directory that holds
- * `.workflows/`. `model` stands in for the repair model the config names.
+ * `.workflows/`. `model` stands in for the Repair Model the config names.
  */
 export async function openCore(
   config: PinfoldConfig,

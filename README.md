@@ -62,7 +62,7 @@ Create a `pinfold.json` file in your project:
 - **`classification`** marks tools as `"read"`. Any tool you leave out is a write tool.
 - **`redact`** is optional. It lists, by server and tool, the fields that are replaced with `[redacted]` before a saved workflow's recorded calls are written to disk. A path starts with `arguments` or `response`, and `[]` stands for every element of an array, as in `"response.issues[].assignee.email"`.
 - **`limits`** is optional. The values above are the defaults: 30 seconds, 64 MiB of memory, and 100 tool calls per run.
-- **`repairModel`** is optional. It names an OpenRouter model, such as `"openai/gpt-4o-mini"`, that proposes a repair when pinfold finds none itself. pinfold reads its key from `OPENROUTER_API_KEY` and refuses to start without it. Leave it out and pinfold never calls a model.
+- **`repairModel`** is optional. It names an OpenRouter model, such as `"openai/gpt-4o-mini"`, that proposes a repair when pinfold finds none itself. pinfold reads its key from `OPENROUTER_API_KEY`. Without `repairModel`, or without the key, pinfold never calls a model; a run stopped by drift then says the model was not asked.
 
 ## Connect your agent
 
@@ -170,7 +170,7 @@ Value evidence, the live responses through this version next to the Fixtures:
 
 Drift that no single mapping settles is recorded as pending. Your agent can repair it: `propose_repair` shows it the pending drift, with the fields that no longer fit, the baseline, a live response and the values in the fixtures, all redacted by your rules. When a tool has redaction rules, any value the drift moved away from where the baseline has it is redacted too, since the rules may no longer reach it. The agent then proposes the adapter operations to add. pinfold rejects any proposal whose mapped responses do not fit every workflow that uses the tool and gives the reason. A proposal that passes becomes the adapter's next version and waits for your approval like any other; the agent cannot approve it. You can also write an adapter of your own.
 
-With `repairModel` set, pinfold first asks that model, unattended. The model sees what the agent would see through `propose_repair`, redacted the same way, and its proposal is checked the same way. One that passes becomes the adapter's next version, and the run pauses for your approval with the diff. One that fails leaves the drift pending, and the run says why. Each call's token counts and cost, as OpenRouter reports them, are added to `.pinfold/model-usage.jsonl`.
+With `repairModel` set, pinfold first asks that model, unattended. The model sees what the agent would see through `propose_repair`, redacted the same way, and its proposal is checked the same way. One that passes becomes the adapter's next version, and the run pauses for your approval with the diff. One that fails leaves the drift pending, and the run says why. pinfold does not ask the model again until the drift changes, so a stopped cron job does not pay on every run; a model that could not be reached is asked again on the next run. Each call's token counts and cost, as OpenRouter reports them, are added to `.pinfold/model-usage.jsonl`.
 
 A response adapter lives in `.workflows/adapters/`, one file per tool. It maps the tool's live responses back to the baseline, so the workflow code never changes. A write tool's adapter maps the real results of its writes the same way, and later writes in the plan read them through it:
 

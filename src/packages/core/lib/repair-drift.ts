@@ -1,5 +1,5 @@
 // Repair as a run and the agent meet it: deterministic Repair of the Drift
-// that stopped a Workflow Run, then the repair model's, the report of that
+// that stopped a Workflow Run, then the Repair Model's, the report of that
 // Drift, and Repair through the agent of Drift that stays pending. The
 // search and the checks are in repair.ts.
 import {
@@ -15,7 +15,11 @@ import type { DownstreamTool } from "./downstream.ts";
 import { describeMismatch, mayBeOptional, touchesContract } from "./drift.ts";
 import { safeJson } from "./files.ts";
 import { recordUsage, type ModelClient } from "./model.ts";
-import { formatRepairTask, type ProposalResult } from "./outcome.ts";
+import {
+  formatRepairTask,
+  redactedNote,
+  type ProposalResult,
+} from "./outcome.ts";
 import type { Drift } from "./plan-run.ts";
 import type { Project } from "./project.ts";
 import {
@@ -23,6 +27,8 @@ import {
   redactUnlisted,
   repairTask,
   searchRepair,
+  type DriftedTool,
+  type PendingDrift,
   type RepairRecord,
   type RepairSearch,
   type RepairTask,
@@ -38,8 +44,8 @@ import {
 export type RepairOutcome =
   | { kind: "repaired"; record: RepairRecord }
   | (Exclude<RepairSearch, { kind: "repaired" }> & {
-      /** Why the repair model, if one is configured, repaired nothing. */
-      modelFailed?: string;
+      /** Why the Repair Model, if one is configured, repaired nothing. */
+      modelError?: string;
     });
 
 /**
@@ -70,7 +76,7 @@ export async function repairDrift(
     // value the Drift moved out of their reach is redacted too.
     const rules = project.config.redact ?? {};
     const guarded = redactionRules(rules, drift.tool).length > 0;
-    await project.repairs.pend({
+    const pending: PendingDrift = {
       tool: drift.tool,
       workflow,
       at: new Date().toISOString(),
@@ -89,12 +95,11 @@ export async function repairDrift(
             : response,
         };
       }),
+    };
+    return pendDrift(project, found, pending, {
+      ...input,
+      baseline: drift.baseline,
     });
-  }
-  if (found.kind === "pending" && project.model !== undefined) {
-    const proposed = await modelRepair(project, project.model, drift.tool);
-    if (proposed.ok) return { kind: "repaired", record: proposed.repair };
-    return { ...found, modelFailed: proposed.error };
   }
   if (found.kind !== "repaired") return found;
   const added = found.ops.slice(input.ops.length);
@@ -142,8 +147,8 @@ export async function driftReport(
       `pinfold found no Repair to propose: ${found.reason}. The Drift is recorded as pending: the agent can see it and propose a Response Adapter with propose_repair, which the developer then approves.`
     );
   }
-  if (found?.modelFailed !== undefined) {
-    lines.push(`The repair model repaired nothing: ${found.modelFailed}`);
+  if (found?.modelError !== undefined) {
+    lines.push(`The Repair Model repaired nothing: ${found.modelError}`);
   }
   lines.push(
     `A Response Adapter for ${drift.tool} in .workflows/adapters/ that maps its responses back to the Baseline repairs every affected Workflow.`
@@ -175,7 +180,7 @@ export async function repairTasks(project: Project): Promise<RepairTask[]> {
 export async function proposeRepair(
   project: Project,
   { tool: name, ops }: { tool: string; ops: unknown },
-  by: "agent" | "model" = "agent"
+  by: Exclude<RepairRecord["by"], "pinfold"> = "agent"
 ): Promise<ProposalResult> {
   const refuse = (error: string) => ({
     ok: false as const,
@@ -239,37 +244,76 @@ export async function proposeRepair(
   return { ok: true, repair: record, affected };
 }
 
-// Unattended Repair: the repair model is shown a Tool's pending Drift as an
-// agent is, and its ops are checked as an agent's are.
+// Keeps Drift as pending and asks the Repair Model, if one is configured,
+// for ops for it: once while the Drift stays the same, since a refusal of
+// its proposal stands.
+async function pendDrift(
+  project: Project,
+  found: Extract<RepairSearch, { kind: "pending" }>,
+  pending: PendingDrift,
+  drifted: Omit<DriftedTool, "responses">
+): Promise<RepairOutcome> {
+  const refused = (await project.repairs.pending()).find(
+    (other) =>
+      other.tool === pending.tool &&
+      JSON.stringify(other.mismatches) === JSON.stringify(pending.mismatches)
+  )?.modelError;
+  await project.repairs.pend({ ...pending, modelError: refused });
+  if (project.model === undefined) {
+    if (project.config.repairModel === undefined) return found;
+    return {
+      ...found,
+      modelError: "it was not asked, as OPENROUTER_API_KEY is not set.",
+    };
+  }
+  if (refused !== undefined) {
+    return {
+      ...found,
+      modelError: `it is not asked again while the Drift stays the same. When asked: ${refused}`,
+    };
+  }
+  const proposed = await modelRepair(project, project.model, pending, drifted);
+  if (proposed.ok) return { kind: "repaired", record: proposed.repair };
+  return { ...found, modelError: proposed.error };
+}
+
+// Unattended Repair: the Repair Model is shown a Tool's pending Drift as an
+// agent is, and its ops are checked as an agent's are. A refusal is kept
+// with the Drift, so the model is not asked, and paid, on every run.
 async function modelRepair(
   project: Project,
   model: ModelClient,
-  name: string
+  pending: PendingDrift,
+  drifted: Omit<DriftedTool, "responses">
 ): Promise<ProposalResult> {
-  const task = (await repairTasks(project)).find((task) => task.tool === name);
-  if (task === undefined) {
-    return { ok: false, error: `${name} has no pending Drift to repair.` };
-  }
-  let text: string;
+  let answer: Awaited<ReturnType<ModelClient["complete"]>>;
   try {
-    const answer = await model.complete(repairPrompt(task));
-    await recordUsage(project.root, {
-      at: new Date().toISOString(),
-      tool: name,
-      ...answer.usage,
-    });
-    text = answer.text;
+    answer = await model.complete(repairPrompt(repairTask(pending, drifted)));
   } catch (error) {
     return {
       ok: false,
       error: `it could not be asked: ${(error as Error).message}.`,
     };
   }
+  await recordUsage(project.root, {
+    at: new Date().toISOString(),
+    tool: pending.tool,
+    ...answer.usage,
+  });
   // The answer is a JSON array, maybe in a code fence.
+  const { text } = answer;
   const ops = safeJson(
     text.slice(text.indexOf("["), text.lastIndexOf("]") + 1)
   );
-  return proposeRepair(project, { tool: name, ops }, "model");
+  const proposed = await proposeRepair(
+    project,
+    { tool: pending.tool, ops },
+    "model"
+  );
+  if (!proposed.ok) {
+    await project.repairs.pend({ ...pending, modelError: proposed.error });
+  }
+  return proposed;
 }
 
 function repairPrompt(task: RepairTask): string {
@@ -277,7 +321,7 @@ function repairPrompt(task: RepairTask): string {
     "A Downstream Server changed the responses of one of its Tools, so the Workflows that read them stopped. Propose the ops to add to the Tool's Response Adapter, which map a live response back to the Baseline.",
     formatRepairTask(task),
     opsGuide.join("\n"),
-    'Fields kept out of Fixtures hold "[redacted]". Answer with only a JSON array of the ops to add after the Adapter\'s ops now.',
+    `${redactedNote} Answer with only a JSON array of the ops to add after the Adapter's ops now.`,
   ].join("\n\n");
 }
 

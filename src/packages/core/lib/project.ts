@@ -38,7 +38,7 @@ export type Project = {
   plans: PlanStore;
   journal: Journal;
   repairs: Repairs;
-  /** The repair model, if the developer configured one. */
+  /** The Repair Model, if the developer configured one. */
   model: ModelClient | undefined;
   close(): Promise<void>;
 };

@@ -25,7 +25,7 @@ afterEach(() => ws.close());
 
 function openTriage(
   workspace = ws,
-  options: { model?: ModelClient } = {}
+  { model, repairModel }: { model?: ModelClient; repairModel?: string } = {}
 ): Promise<Core> {
   return workspace.open(
     {
@@ -34,8 +34,9 @@ function openTriage(
         ...sentryReads,
         linear: { searchIssues: "read", createIssue: "write" },
       },
+      ...(repairModel !== undefined && { repairModel }),
     },
-    options
+    model === undefined ? {} : { model }
   );
 }
 
@@ -744,7 +745,7 @@ describe("Repair through the repair model", () => {
     expect(paused.plan.writes).toEqual(before.plan.writes);
     expect(await ws.control("linear").receivedWrites()).toEqual(sent);
     expect(formatWorkflowRun(paused)).toContain(
-      "The repair model, unattended, repaired the Response Adapter of sentry.listIssues, now version 1:"
+      "The Repair Model, unattended, repaired the Response Adapter of sentry.listIssues, now version 1:"
     );
     expect(prompts).toHaveLength(1);
     expect(prompts[0]).toContain("issues[].userCount is missing");
@@ -763,10 +764,37 @@ describe("Repair through the repair model", () => {
     });
   });
 
-  it("keeps the Drift pending when the model's ops do not repair it", async () => {
-    const { model } = scriptedModel(
+  it("keeps the Drift pending when the model's ops do not repair it, and asks no more", async () => {
+    const { model, prompts } = scriptedModel(
       '[{"op":"rename","from":"issues[].users","to":"issues[].userCount"}]'
     );
+    const core = await openTriage(ws, { model });
+    await saveApplied(core, "triage_sentry");
+    await ws.control("sentry").startDrift("removed-field");
+    const refusal =
+      "Repair of sentry.listIssues not proposed: through its Response Adapter and these ops";
+
+    const first = await core.runWorkflow({ name: "triage_sentry", input });
+    const second = await core.runWorkflow({ name: "triage_sentry", input });
+
+    expect(first).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(
+        `The Repair Model repaired nothing: ${refusal}`
+      ),
+    });
+    expect(second).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(
+        `The Repair Model repaired nothing: it is not asked again while the Drift stays the same. When asked: ${refusal}`
+      ),
+    });
+    expect(prompts).toHaveLength(1);
+    expect(await core.pendingDrift()).toHaveLength(1);
+  });
+
+  it("refuses an answer that holds no ops", async () => {
+    const { model } = scriptedModel("I cannot map this response.");
     const core = await openTriage(ws, { model });
     await saveApplied(core, "triage_sentry");
     await ws.control("sentry").startDrift("removed-field");
@@ -776,9 +804,33 @@ describe("Repair through the repair model", () => {
     expect(result).toMatchObject({
       ok: false,
       error: expect.stringContaining(
-        "The repair model repaired nothing: Repair of sentry.listIssues not proposed: through its Response Adapter and these ops"
+        "The Repair Model repaired nothing: Repair of sentry.listIssues not proposed: the ops are not of the closed set"
       ),
     });
+  });
+
+  it("asks again on the next run when the model could not be reached", async () => {
+    let calls = 0;
+    const model: ModelClient = {
+      async complete() {
+        calls += 1;
+        throw new Error("fetch failed");
+      },
+    };
+    const core = await openTriage(ws, { model });
+    await saveApplied(core, "triage_sentry");
+    await ws.control("sentry").startDrift("removed-field");
+
+    const result = await core.runWorkflow({ name: "triage_sentry", input });
+    await core.runWorkflow({ name: "triage_sentry", input });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(
+        "The Repair Model repaired nothing: it could not be asked: fetch failed."
+      ),
+    });
+    expect(calls).toBe(2);
     expect(await core.pendingDrift()).toHaveLength(1);
   });
 
@@ -798,19 +850,29 @@ describe("Repair through the repair model", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("refuses to open with a repair model but no key", async () => {
+  it("works without a model when its key is not set, and says so", async () => {
     vi.stubEnv("OPENROUTER_API_KEY", "");
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    vi.stubGlobal("fetch", fetch);
+    const core = await openTriage(ws, { repairModel: "openai/gpt-4o-mini" });
+    await saveApplied(core, "triage_sentry");
+    await ws.control("sentry").startDrift("removed-field");
 
-    await expect(
-      ws.open({ repairModel: "openai/gpt-4o-mini" })
-    ).rejects.toThrow(
-      "repairModel needs the environment variable OPENROUTER_API_KEY, which is not set."
-    );
+    const result = await core.runWorkflow({ name: "triage_sentry", input });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(
+        "The Repair Model repaired nothing: it was not asked, as OPENROUTER_API_KEY is not set."
+      ),
+    });
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("asks an OpenAI-compatible API and reads OpenRouter's usage fields", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async () =>
       Response.json({
+        model: "openai/gpt-4o-mini-2024-07-18",
         choices: [{ message: { content: "[]" } }],
         usage: {
           prompt_tokens: 10,
@@ -831,7 +893,7 @@ describe("Repair through the repair model", () => {
     expect(answer).toEqual({
       text: "[]",
       usage: {
-        model: "openai/gpt-4o-mini",
+        model: "openai/gpt-4o-mini-2024-07-18",
         promptTokens: 10,
         completionTokens: 2,
         cost: 0.00001,
