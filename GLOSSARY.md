@@ -94,6 +94,10 @@ _Avoid_: patch, shim, transformer, lens
 Producing a new version of a Tool's Response Adapter after Drift is detected.
 _Avoid_: self-healing, fix, patching
 
+**Repair Model**:
+The small model, named in the config, that proposes a Repair unattended when deterministic search finds none. Its proposal is checked and approved like an agent's.
+_Avoid_: LLM fallback, AI repair
+
 **Drift Scenario**:
 A named, reproducible kind of Drift (such as a renamed field or a newly wrapped response) that a test Downstream Server can apply on demand.
 _Avoid_: breaking change, fault, mutation

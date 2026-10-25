@@ -10,6 +10,7 @@ import {
   type DownstreamTool,
 } from "./downstream.ts";
 import { openJournal, type Journal } from "./journal.ts";
+import type { ModelClient } from "./model.ts";
 import type { PlannedWrite } from "./plan.ts";
 import { openPlanStore, type PlanStore } from "./plans.ts";
 import { openRepairs, type Repairs } from "./repair.ts";
@@ -37,12 +38,15 @@ export type Project = {
   plans: PlanStore;
   journal: Journal;
   repairs: Repairs;
+  /** The repair model, if the developer configured one. */
+  model: ModelClient | undefined;
   close(): Promise<void>;
 };
 
 export async function openProject(
   config: PinfoldConfig,
-  root: string
+  root: string,
+  model: ModelClient | undefined
 ): Promise<Project> {
   const baselines = await openBaselines(root);
   const downstream = await connectDownstream(config.servers, root);
@@ -82,6 +86,7 @@ export async function openProject(
     plans: openPlanStore(root),
     journal,
     repairs: openRepairs(root),
+    model,
     async close() {
       journal.close();
       await downstream.close();
