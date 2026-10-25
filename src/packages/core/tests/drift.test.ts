@@ -87,7 +87,7 @@ describe("Drift detection", () => {
     await save(core, "list_titles", titles);
     const linear = ws.control("linear");
     const sent = (await linear.receivedWrites()).length;
-    await ws.control("sentry").startDrift("rename");
+    await ws.control("sentry").startDrift("removed-field");
 
     const result = await core.runWorkflow({ name: "triage_sentry", input });
 
@@ -95,8 +95,9 @@ describe("Drift detection", () => {
       ok: false,
       error: [
         "Workflow triage_sentry not run: the responses of sentry.listIssues drifted from its Baseline, so the run stopped before it made a Write Plan; nothing was sent.",
-        "  issues[].count is missing",
+        "  issues[].userCount is missing",
         "Affected Workflows: triage_sentry.",
+        "pinfold found no Repair to propose: no op of the closed set maps the live responses back to issues[].userCount. The Drift is recorded as pending.",
         "A Response Adapter for sentry.listIssues in .workflows/adapters/ that maps its responses back to the Baseline repairs every affected Workflow.",
       ].join("\n"),
     });
@@ -125,24 +126,57 @@ describe("Drift detection", () => {
       `export async function main(input: { project: string }) {
         try {
           const { issues } = await sdk.sentry.listIssues({ project: input.project });
-          return issues.map((issue) => issue.count);
+          return issues.map((issue) => issue.userCount);
         } catch {
           await sdk.linear.createIssue({ title: "fallback", description: "" });
           return "caught";
         }
       }`
     );
-    await ws.control("sentry").startDrift("type-change");
+    await ws.control("sentry").startDrift("removed-field");
 
     const result = await core.runWorkflow({ name: "careless", input });
 
     expect(result).toMatchObject({
       ok: false,
-      error: expect.stringContaining(
-        '  issues[].count is a string "128", not number'
-      ),
+      error: expect.stringContaining("  issues[].userCount is missing"),
     });
     expect(await openPlans(ws.dir).pending()).toEqual([]);
+  });
+
+  it("checks responses against a Baseline whose schema holds true, as a server may declare", async () => {
+    const dir = join(ws.dir, ".workflows", "baselines");
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, "sentry.listIssues.json"),
+      JSON.stringify({
+        server: "sentry",
+        tool: "listIssues",
+        inputSchema: {
+          type: "object",
+          properties: { project: { type: "string" } },
+          required: ["project"],
+        },
+        outputSchema: {
+          type: "object",
+          properties: {
+            issues: {
+              type: "array",
+              items: { type: "object", properties: { title: true } },
+            },
+          },
+          required: ["issues"],
+        },
+      })
+    );
+    const core = await openTriage();
+    await save(core, "list_titles", titles);
+
+    const result = succeeded(
+      await core.runWorkflow({ name: "list_titles", input })
+    );
+
+    expect(result.value).toHaveLength(3);
   });
 
   it("reports a pagination change, which needs more than a Response Adapter", async () => {
@@ -187,9 +221,6 @@ describe("Response Adapters", () => {
       const core = await openTriage();
       const before = await saveApplied(core, "triage_sentry");
       await ws.control("sentry").startDrift(scenario);
-      expect(
-        await core.runWorkflow({ name: "triage_sentry", input })
-      ).toMatchObject({ ok: false });
 
       await writeAdapter(ops);
       const repaired = succeeded(

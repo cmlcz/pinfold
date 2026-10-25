@@ -8,6 +8,7 @@ import {
 } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { resolveReferences, type ServerConfig } from "./config.ts";
+import type { JsonSchema } from "./schema.ts";
 import type { SdkTool } from "./sdk.ts";
 
 /** A Tool as its Downstream Server lists it now, before any Baseline. */
@@ -112,7 +113,9 @@ async function connect(server: string, config: ServerConfig, root: string) {
         ...(tool.description !== undefined && {
           description: tool.description,
         }),
-        inputSchema: tool.inputSchema,
+        // The SDK checks only the top level of a listed schema; the rest is
+        // read as JSON Schema, which may hold any of its forms (JsonSchema).
+        inputSchema: tool.inputSchema as JsonSchema,
         ...(tool.outputSchema !== undefined && {
           outputSchema: tool.outputSchema,
         }),

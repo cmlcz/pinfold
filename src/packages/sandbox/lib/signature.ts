@@ -2,7 +2,26 @@
 import ts from "typescript";
 import { checkedProgram } from "./typecheck.ts";
 
-export type JsonSchema = Record<string, unknown>;
+/**
+ * A JSON Schema, with the keywords pinfold walks typed. Where a schema may
+ * stand inside one, `true` allows every value and `false` none. Schemas from
+ * Downstream Servers are not checked against this type, so code that walks
+ * one still checks that a keyword's value is an array before it iterates.
+ */
+export type JsonSchema = {
+  type?: string | string[];
+  properties?: Record<string, JsonSchema | boolean>;
+  required?: string[];
+  patternProperties?: Record<string, JsonSchema | boolean>;
+  additionalProperties?: JsonSchema | boolean;
+  items?: JsonSchema | boolean;
+  prefixItems?: (JsonSchema | boolean)[];
+  anyOf?: (JsonSchema | boolean)[];
+  oneOf?: (JsonSchema | boolean)[];
+  allOf?: (JsonSchema | boolean)[];
+  enum?: unknown[];
+  [keyword: string]: unknown;
+};
 
 /**
  * The JSON Schema of the input that the program's exported `main` takes, or

@@ -19,6 +19,7 @@ import {
   type FieldReads,
   type JsonSchema,
 } from "../../sandbox/index.ts";
+import { listJson } from "./baselines.ts";
 import { deepestPaths, redact, shapeAllows, withoutDataKeys } from "./paths.ts";
 
 const defaultWriteBudget = 10;
@@ -230,6 +231,31 @@ export async function listWorkflows(root: string): Promise<WorkflowSummary[]> {
   return workflows;
 }
 
+const fixturesSchema = z.object({
+  calls: z.array(
+    z.object({ tool: z.string(), arguments: z.json(), response: z.json() })
+  ),
+});
+
+/**
+ * The calls of a Tool, as `server.tool`, that the Fixtures of the saved
+ * Workflows recorded. A Fixture file that does not parse is skipped.
+ */
+export async function fixtureCalls(
+  root: string,
+  tool: string
+): Promise<RecordedCall[]> {
+  const dir = join(root, ".workflows", "fixtures");
+  const calls: RecordedCall[] = [];
+  for (const file of await listJson(dir)) {
+    const text = await readOrNone(join(dir, file));
+    const parsed = fixturesSchema.safeParse(text && safeJson(text));
+    if (!parsed.success) continue;
+    calls.push(...parsed.data.calls.filter((call) => call.tool === tool));
+  }
+  return calls;
+}
+
 /** The Contract of every saved Workflow, by name. */
 export async function savedContracts(
   root: string
@@ -363,7 +389,7 @@ export function checkInput(
   schema: JsonSchema,
   input: unknown
 ): { ok: true } | { ok: false; error: string } {
-  const result = z.fromJSONSchema(schema).safeParse(input);
+  const result = zodSchema(schema).safeParse(input);
   if (result.success) return { ok: true };
   return {
     ok: false,
@@ -401,27 +427,29 @@ export function inputFromCommandLine(
 
 // The schema of an object's field, as JSON Schema finds it: a property, else
 // a matching pattern, else additionalProperties.
-function fieldOf(schema: JsonSchema, name: string): JsonSchema {
-  const properties = (schema.properties ?? {}) as Record<string, JsonSchema>;
+function fieldOf(schema: JsonSchema, name: string): JsonSchema | boolean {
+  const properties = schema.properties ?? {};
   if (Object.hasOwn(properties, name)) return properties[name]!;
-  const patterns = (schema.patternProperties ?? {}) as Record<
-    string,
-    JsonSchema
-  >;
+  const patterns = schema.patternProperties ?? {};
   for (const [pattern, field] of Object.entries(patterns)) {
     if (new RegExp(pattern).test(name)) return field;
   }
   const additional = schema.additionalProperties;
-  return typeof additional === "object" && additional !== null
-    ? (additional as JsonSchema)
-    : {};
+  return typeof additional === "object" ? additional : true;
 }
 
-function fromText(schema: JsonSchema, text: string): unknown {
+function fromText(schema: JsonSchema | boolean, text: string): unknown {
   const parsed = safeJson(text);
   const fits =
-    parsed !== undefined && z.fromJSONSchema(schema).safeParse(parsed).success;
+    parsed !== undefined && zodSchema(schema).safeParse(parsed).success;
   return fits ? parsed : text;
+}
+
+// The schema of main's input comes from mainInputSchema, which writes only
+// what zod's JSON Schema type allows. JsonSchema is wider, since it also
+// types the schemas Downstream Servers list.
+function zodSchema(schema: JsonSchema | boolean): z.ZodType {
+  return z.fromJSONSchema(schema as z.core.JSONSchema.JSONSchema);
 }
 
 /** One Workflow Run, as the run history records it. */
@@ -493,40 +521,45 @@ export function formatWorkflows(workflows: WorkflowSummary[]): string {
 }
 
 function describeInput(schema: JsonSchema): string {
-  const properties = schema.properties as
-    Record<string, JsonSchema> | undefined;
+  const { properties } = schema;
   if (properties === undefined) return describeType(schema);
-  const required = new Set((schema.required as string[] | undefined) ?? []);
+  const required = new Set(schema.required ?? []);
   const fields = Object.entries(properties).map(
     ([name, field]) =>
       `${name}${required.has(name) ? "" : "?"}: ${describeType(field)}`
   );
   // Index signatures: keys that spell numbers, then any other key.
-  const patterns = (schema.patternProperties ?? {}) as Record<
-    string,
-    JsonSchema
-  >;
+  const patterns = schema.patternProperties ?? {};
   for (const [pattern, values] of Object.entries(patterns)) {
     const key = pattern === numberKeyPattern ? "number" : `/${pattern}/`;
     fields.push(`[key: ${key}]: ${describeType(values)}`);
   }
   const additional = schema.additionalProperties;
-  if (typeof additional === "object" && additional !== null) {
-    fields.push(`[key: string]: ${describeType(additional as JsonSchema)}`);
+  if (typeof additional === "object") {
+    fields.push(`[key: string]: ${describeType(additional)}`);
   }
   return fields.length > 0 ? fields.join(", ") : "none";
 }
 
-function describeType(schema: JsonSchema): string {
+function describeType(schema: JsonSchema | boolean): string {
+  if (schema === true) return "unknown";
+  if (schema === false) return "never";
   if ("const" in schema) return JSON.stringify(schema.const);
   if (Array.isArray(schema.enum)) {
     return schema.enum.map((value) => JSON.stringify(value)).join(" | ");
   }
   if (Array.isArray(schema.anyOf)) {
-    return (schema.anyOf as JsonSchema[]).map(describeType).join(" | ");
+    return schema.anyOf.map(describeType).join(" | ");
+  }
+  if (Array.isArray(schema.prefixItems)) {
+    const elements = schema.prefixItems.map(describeType);
+    if (schema.items !== false) {
+      elements.push(`...${describeType(schema.items ?? true)}[]`);
+    }
+    return `[${elements.join(", ")}]`;
   }
   if (schema.type === "array") {
-    return `${describeType(schema.items as JsonSchema)}[]`;
+    return `${describeType(schema.items ?? true)}[]`;
   }
   if (schema.type === "object") return `{ ${describeInput(schema)} }`;
   return typeof schema.type === "string" ? schema.type : "unknown";

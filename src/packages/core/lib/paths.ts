@@ -21,6 +21,44 @@ export function parsePath(path: string): Step[] | undefined {
   return steps.length > 0 ? steps : undefined;
 }
 
+/** A field path one field further, written as Contracts write it. */
+export function childPath(path: string, key: string): string {
+  if (!/^[A-Za-z_$][\w$]*$/.test(key)) return `${path}[${JSON.stringify(key)}]`;
+  return path === "" ? key : `${path}.${key}`;
+}
+
+/** The field path of some steps; `""` for none, the whole value. */
+export function formatPath(steps: Step[]): string {
+  return steps.reduce(
+    (path, step) => ("each" in step ? `${path}[]` : childPath(path, step.key)),
+    ""
+  );
+}
+
+/**
+ * The values a path names, through every element of each array on its way;
+ * `""` names the whole value.
+ */
+export function valuesAt(value: unknown, path: string): unknown[] {
+  if (path === "") return [value];
+  const found: unknown[] = [];
+  const visit = (inner: unknown, steps: Step[]) => {
+    const [step, ...rest] = steps;
+    if (step === undefined) found.push(inner);
+    else if ("each" in step) {
+      if (Array.isArray(inner)) for (const item of inner) visit(item, rest);
+    } else if (isRecord(inner) && Object.hasOwn(inner, step.key)) {
+      visit(inner[step.key], rest);
+    }
+  };
+  visit(value, parsePath(path) ?? []);
+  return found;
+}
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /**
  * A path up to its first key that is data, such as an email address in a
  * map: Contracts are committed, and data must stay out of them. Empty when
@@ -49,7 +87,8 @@ export function deepestPaths(paths: Iterable<string>): string[] {
   );
 }
 
-const redacted = "[redacted]";
+/** What a redacted field holds instead of its value. */
+export const redacted = "[redacted]";
 
 /** A copy of a value with every field a path names replaced by `[redacted]`. */
 export function redact(value: unknown, paths: string[]): unknown {
@@ -90,36 +129,31 @@ export function shapeAllows(schema: JsonSchema, path: string): boolean {
   return steps !== undefined && hasSteps(schema, steps);
 }
 
-function hasSteps(schema: JsonSchema, steps: Step[]): boolean {
-  if (steps.length === 0) return true;
+function hasSteps(schema: JsonSchema | boolean, steps: Step[]): boolean {
+  if (typeof schema === "boolean") return schema;
+  const [step, ...rest] = steps;
+  if (step === undefined) return true;
   // type: ["object", "null"] is a union of its types.
   if (Array.isArray(schema.type)) {
-    return (schema.type as string[]).some((type) =>
-      hasSteps({ ...schema, type }, steps)
-    );
+    return schema.type.some((type) => hasSteps({ ...schema, type }, steps));
   }
   if (Array.isArray(schema.anyOf)) {
-    return (schema.anyOf as JsonSchema[]).some((option) =>
-      hasSteps(option, steps)
-    );
+    return schema.anyOf.some((option) => hasSteps(option, steps));
   }
-  const [step, ...rest] = steps as [Step, ...Step[]];
   if ("each" in step) {
     if (schema.type === undefined) return true;
+    // A tuple's elements have a schema each, and items covers the rest.
+    const prefix = Array.isArray(schema.prefixItems) ? schema.prefixItems : [];
     return (
       schema.type === "array" &&
-      hasSteps((schema.items ?? {}) as JsonSchema, rest)
+      [...prefix, schema.items ?? true].some((items) => hasSteps(items, rest))
     );
   }
   if (schema.type === undefined) return true;
   if (schema.type !== "object") return false;
-  const properties = (schema.properties ?? {}) as Record<string, JsonSchema>;
+  const properties = schema.properties ?? {};
   if (Object.hasOwn(properties, step.key)) {
     return hasSteps(properties[step.key]!, rest);
   }
-  const additional = schema.additionalProperties;
-  if (additional === false) return false;
-  return typeof additional === "object" && additional !== null
-    ? hasSteps(additional as JsonSchema, rest)
-    : true;
+  return hasSteps(schema.additionalProperties ?? true, rest);
 }

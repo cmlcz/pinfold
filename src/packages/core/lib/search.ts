@@ -15,14 +15,20 @@ export function search<T>(
   documents: { item: T; text: string }[],
   query: string
 ): T[] {
+  const words = tokenize(query);
+  // A query of stopwords only, such as "get", still finds the Tools it names.
+  const ignored = words.every((word) => stopwords.has(word))
+    ? new Set<string>()
+    : stopwords;
   const docs = documents.map(({ item, text }) => ({
     item,
-    terms: tokenize(text),
+    terms: tokenize(text).filter((term) => !ignored.has(term)),
   }));
   const averageLength =
     docs.reduce((sum, doc) => sum + doc.terms.length, 0) / (docs.length || 1);
+  const kept = words.filter((word) => !ignored.has(word));
   // A term's IDF depends on the documents only, so it is computed once.
-  const queryTerms = [...new Set(tokenize(query))].map((term) => {
+  const queryTerms = [...new Set(kept)].map((term) => {
     const containing = docs.filter((doc) => doc.terms.includes(term)).length;
     const idf = Math.log(
       1 + (docs.length - containing + 0.5) / (containing + 0.5)
@@ -48,14 +54,18 @@ export function search<T>(
     .map(({ item }) => item);
 }
 
-// Splits camelCase, snake_case and kebab-case, and folds plurals.
+// Splits camelCase, snake_case and kebab-case into words of any script, and
+// folds plurals. Han and kana run on without spaces, so each of their
+// characters is a word.
 function tokenize(text: string): string[] {
   return text
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .normalize("NFKC")
+    .replace(/([\p{Ll}\p{N}])(\p{Lu})/gu, "$1 $2")
+    .replace(/[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}]/gu, " $& ")
     .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((word) => word.length > 0 && !stopwords.has(word))
+    .split(/[^\p{L}\p{M}\p{N}]+/u)
+    .filter((word) => word.length > 0)
     .map((word) =>
-      word.length > 3 && word.endsWith("s") ? word.slice(0, -1) : word
+      word.length > 2 && word.endsWith("s") ? word.slice(0, -1) : word
     );
 }
