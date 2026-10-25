@@ -3,6 +3,7 @@
 // that, what becomes of a run's Write Plan: applied now, or left to wait
 // for Approval.
 import { Placeholder, type Clock } from "../../sandbox/index.ts";
+import { loadAdapters } from "./adapters.ts";
 import { resolveHint, type RunJournal } from "./journal.ts";
 import {
   span,
@@ -151,12 +152,19 @@ async function sendRest(
       );
     }
   }
+  // A write's result reaches later writes through its Tool's Response
+  // Adapter, as a read's response reaches the program.
+  const adapters = await loadAdapters(project.root).catch((error: unknown) => {
+    throw new Error(
+      `${(error as Error).message}\nNothing was sent. Once it is fixed, \`pinfold resume ${record.record}\` sends the writes not sent.`
+    );
+  });
   const run = project.journal.run(record.record);
   const before = run.sent().length;
   let results: unknown[];
   try {
-    results = await sendWrites(record.writes, run, (write, args) =>
-      project.toolOf(write).call(args)
+    results = await sendWrites(record.writes, run, async (write, args) =>
+      adapters.adapt(write.tool, await project.toolOf(write).call(args))
     );
   } catch (error) {
     // Any other error stopped this Apply before it took a write, so the
@@ -207,22 +215,21 @@ export async function sendWrites(
   for (let index = results.length; index < writes.length; index++) {
     const write = writes[index]!;
     const position = index + 1;
-    const stopped = (error: unknown, inDoubt: boolean) =>
+    const stopped = (error: unknown, next: string) =>
       new ApplyStopped(
-        `Apply stopped at write ${position} of ${writes.length} (${write.tool}): ${(error as Error).message}. ` +
-          `Sent: ${span(1, index)}.` +
-          (inDoubt
-            ? ` May have been sent: write ${position}. Not sent: ${span(position + 1, writes.length)}. ` +
-              `Then ${resolveHint(journal.run, position)}; after that, \`pinfold resume ${journal.run}\` sends the writes not sent.`
-            : ` Not sent: ${span(position, writes.length)}. ` +
-              `\`pinfold resume ${journal.run}\` sends the writes not sent.`),
+        `Apply stopped at write ${position} of ${writes.length} (${write.tool}): ${(error as Error).message}. Sent: ${span(1, index)}. ${next}`,
         { cause: error }
       );
     let args: unknown;
     try {
       args = resolvePlaceholders(write.arguments, results);
     } catch (error) {
-      throw stopped(error, false);
+      // The results a resume would resolve from are the same, so it would
+      // stop here again.
+      throw stopped(
+        error,
+        `Not sent: ${span(position, writes.length)}. The real result of an earlier write lacks what this write needs, as its Tool's response drifted, so no resume can send it. A Response Adapter for that Tool maps its results for later runs.`
+      );
     }
     switch (journal.take(index)) {
       case "busy":
@@ -239,7 +246,10 @@ export async function sendWrites(
       // first: the reference MCP server SDK, for one, checks a Tool's output
       // only after running it. So the write stays taken, in doubt, until the
       // developer resolves it.
-      throw stopped(error, true);
+      throw stopped(
+        error,
+        `May have been sent: write ${position}. Not sent: ${span(position + 1, writes.length)}. Then ${resolveHint(journal.run, position)}; after that, \`pinfold resume ${journal.run}\` sends the writes not sent.`
+      );
     }
     journal.settle(index, results[index]);
   }

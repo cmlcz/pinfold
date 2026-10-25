@@ -103,6 +103,8 @@ node src/packages/cli/bin.ts resume <run-id>    # finish a plan that stopped par
 node src/packages/cli/bin.ts resolve <run-id> <write> sent|not-sent  # settle a write in doubt
 ```
 
+A write whose real result no longer has a field a later write needs, because the write tool's response drifted, stops the Apply with the earlier writes sent. No resume can finish that run; a response adapter for the write tool lets later runs read its results as planned.
+
 A write that fails while it is being sent may still have reached its server: a server can make the change and then answer with an error. pinfold never sends such a write again by itself. The run stops with that write in doubt, and `resume` refuses to go on. Check the server, then tell pinfold what you found with `resolve`. A write you resolve as `not-sent` is sent by the next `resume`; one resolved as `sent` never is, and the writes after it follow.
 
 After you approve a plan, the agent runs the same code again. pinfold rebuilds the plan and sends the writes only if the plan has not changed. If it has changed, nothing is sent, and you need to approve the new plan. Inside a run, `Date` stands still and `Math.random` is seeded. The run after Approval gets the same time and seed, so a write that uses them rebuilds as you approved it.
@@ -166,7 +168,7 @@ Value evidence, the live responses through this version next to the Fixtures:
 
 Drift that no single mapping settles is recorded as pending. Your agent can repair it: `propose_repair` shows it the pending drift, with the fields that no longer fit, the baseline, a live response and the values in the fixtures, all redacted by your rules. When a tool has redaction rules, any value the drift moved away from where the baseline has it is redacted too, since the rules may no longer reach it. The agent then proposes the adapter operations to add. pinfold rejects any proposal whose mapped responses do not fit every workflow that uses the tool and gives the reason. A proposal that passes becomes the adapter's next version and waits for your approval like any other; the agent cannot approve it. You can also write an adapter of your own.
 
-A response adapter lives in `.workflows/adapters/`, one file per tool. It maps the tool's live responses back to the baseline, so the workflow code never changes:
+A response adapter lives in `.workflows/adapters/`, one file per tool. It maps the tool's live responses back to the baseline, so the workflow code never changes. A write tool's adapter maps the real results of its writes the same way, and later writes in the plan read them through it:
 
 ```json
 {
@@ -195,6 +197,8 @@ A new or changed adapter makes the next run of every workflow that uses the tool
 - **`.workflows/baselines/`** holds the recorded response shape of each tool.
 - **`.workflows/adapters/`** holds the response adapters.
 - **`.workflows/`** also holds the saved workflows. **`.workflows/fixtures/`** is git-ignored.
+
+Your approvals live in `.pinfold/runs.jsonl` and `.pinfold/plans/`. A workflow runs unattended only where they are: on a CI runner that starts each job afresh, keep `.pinfold/` between jobs, for example as a cache, or every run with writes pauses for approval. Keep `.workflows/fixtures/` there too: without the recorded values, deterministic repair has nothing to compare candidates with and proposes less.
 
 ## License
 
