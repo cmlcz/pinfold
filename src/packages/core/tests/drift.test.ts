@@ -230,7 +230,7 @@ describe("Response Adapters", () => {
       expect(repaired).toMatchObject({
         status: "pending",
         approvalReason:
-          "the Response Adapter of sentry.listIssues changed since Workflow triage_sentry was last applied",
+          "the Response Adapter of sentry.listIssues changed since the last finished run of Workflow triage_sentry",
       });
       expect(repaired.plan.writes).toEqual(before.plan.writes);
     }

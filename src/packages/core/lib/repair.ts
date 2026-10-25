@@ -232,6 +232,78 @@ export function repairTask(
   };
 }
 
+/**
+ * A copy of a drifted response that keeps only the values sitting where the
+ * Baseline lists a field. Redaction rules name fields where the Baseline
+ * has them, so they cannot be known to reach a value the Drift moved or
+ * renamed: such a value is redacted, and only its shape is kept.
+ */
+export function redactUnlisted(
+  baseline: JsonSchema,
+  response: unknown
+): unknown {
+  return keepListed([baseline], response);
+}
+
+function keepListed(
+  schemas: (JsonSchema | boolean)[],
+  value: unknown
+): unknown {
+  const options = schemas.flatMap(unionOptions);
+  if (options.length === 0) return redactLeaves(value);
+  // A schema that says nothing of what is inside a value describes all of it.
+  if (options.some(opaque)) return value;
+  if (Array.isArray(value)) {
+    const items = options.flatMap((schema) => [
+      ...(Array.isArray(schema.prefixItems) ? schema.prefixItems : []),
+      schema.items ?? true,
+    ]);
+    return value.map((item) => keepListed(items, item));
+  }
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, inner]) => {
+      const fields = options.flatMap((schema) => {
+        const properties = schema.properties ?? {};
+        if (Object.hasOwn(properties, key)) return [properties[key]!];
+        // The keys of a map are data, so each one is listed.
+        const additional = schema.additionalProperties;
+        return additional === true ||
+          (typeof additional === "object" && additional !== null)
+          ? [additional]
+          : [];
+      });
+      return [key, keepListed(fields, inner)];
+    })
+  );
+}
+
+// The options of a union, each a schema; true allows anything, as {} does.
+function unionOptions(schema: JsonSchema | boolean): JsonSchema[] {
+  if (schema === false) return [];
+  if (schema === true) return [{}];
+  return Array.isArray(schema.anyOf)
+    ? schema.anyOf.flatMap(unionOptions)
+    : [schema];
+}
+
+function opaque(schema: JsonSchema): boolean {
+  return (
+    schema.properties === undefined &&
+    schema.additionalProperties === undefined &&
+    schema.items === undefined &&
+    schema.prefixItems === undefined
+  );
+}
+
+function redactLeaves(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactLeaves);
+  if (!isRecord(value)) return redacted;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, inner]) => [key, redactLeaves(inner)])
+  );
+}
+
 // The ops that might map a drifted field back, each with how alike the
 // names it joins are, from 0 to 1.
 function candidates(

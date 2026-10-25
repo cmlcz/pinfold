@@ -28,6 +28,7 @@ import {
   type Mismatch,
 } from "./lib/drift.ts";
 import {
+  adapterApprovalPlan,
   canonicalize,
   containsPlaceholder,
   shortHash,
@@ -42,6 +43,7 @@ import { openPlanStore, type PlanRecord } from "./lib/plans.ts";
 import {
   checkRepair,
   openRepairs,
+  redactUnlisted,
   repairTask,
   searchRepair,
   type PendingDrift,
@@ -66,12 +68,14 @@ import {
   loadWorkflow,
   recordRun,
   redactCall,
+  redactionRules,
   runHistory,
   savedContracts,
   saveWorkflow,
   type CommandLineInput,
   type Exploration,
   type RecordedCall,
+  type RunEntry,
   type SaveResult,
 } from "./lib/workflows.ts";
 
@@ -349,7 +353,7 @@ export async function openCore(
       needsApproval: boolean;
     }
   ): Promise<PlanOutcome | Failed> {
-    if (plan.writes.length === 0)
+    if (plan.writes.length === 0 && !run.needsApproval)
       return { ok: true, status: "complete", value, plan };
     const record = await plans.latest(plan.id);
     switch (record?.status) {
@@ -472,19 +476,27 @@ export async function openCore(
       responses: drift.responses,
     });
     if (found.kind === "pending") {
+      // Kept on disk, so redacted like Fixtures. Where a Tool has rules, a
+      // value the Drift moved out of their reach is redacted too.
+      const rules = config.redact ?? {};
+      const guarded = redactionRules(rules, drift.tool).length > 0;
       await repairs.pend({
         tool: drift.tool,
         workflow,
         at: new Date().toISOString(),
         mismatches: drift.mismatches,
         reason: found.reason,
-        // Kept on disk, so redacted like Fixtures.
         responses: drift.responses.map((call) => {
           const { arguments: args, response } = redactCall(
             { tool: drift.tool, ...call },
-            config.redact ?? {}
+            rules
           );
-          return { arguments: args, response };
+          return {
+            arguments: args,
+            response: guarded
+              ? redactUnlisted(drift.baseline, response)
+              : response,
+          };
         }),
       });
     }
@@ -634,25 +646,43 @@ export async function openCore(
     for (const tool of fitting) await repairs.settle(tool);
     const digests = adapters!.digests(workflow.tools);
     ran.adapters = digests;
-    const plan = writePlan(writes);
     const history = await runHistory(options.root);
-    // Applied before means this very save: a Workflow saved again under the
-    // name of a deleted one is approved afresh.
+    // Runs of this very save: a Workflow saved again under the name of a
+    // deleted one is approved afresh.
+    const ofThisSave = (entry: RunEntry) =>
+      entry.workflow === name && entry.saved === workflow.saved;
     const lastApplied = history.findLast(
-      (entry) =>
-        entry.workflow === name &&
-        entry.saved === workflow.saved &&
-        entry.status === "applied"
+      (entry) => ofThisSave(entry) && entry.status === "applied"
     );
+    // The developer last saw the Workflow's results through the Adapters of
+    // its last finished run, or else of the run it was saved from.
+    const lastFinished = history.findLast(
+      (entry) =>
+        ofThisSave(entry) &&
+        (entry.status === "applied" || entry.status === "complete")
+    );
+    const seen =
+      lastFinished === undefined
+        ? workflow.adapters
+        : (lastFinished.adapters ?? {});
     // An Adapter added, changed or removed since then.
     const changedAdapters = workflow.tools.filter(
-      (tool) => lastApplied?.adapters?.[tool] !== digests[tool]
+      (tool) => seen[tool] !== digests[tool]
     );
+    // Even a run without writes waits for changed Adapters to be approved.
+    const plan =
+      writes.length === 0 && changedAdapters.length > 0
+        ? adapterApprovalPlan(digests)
+        : writePlan(writes);
     let approvalReason: string | undefined;
-    if (lastApplied === undefined) {
+    if (plan.writes.length > 0 && lastApplied === undefined) {
       approvalReason = `Workflow ${name} has never been applied`;
     } else if (changedAdapters.length > 0) {
-      approvalReason = `the Response Adapter of ${changedAdapters.join(", ")} changed since Workflow ${name} was last applied`;
+      const since =
+        lastFinished === undefined
+          ? `Workflow ${name} was saved`
+          : `the last finished run of Workflow ${name}`;
+      approvalReason = `the Response Adapter of ${changedAdapters.join(", ")} changed since ${since}`;
     } else if (plan.writes.length > workflow.writeBudget) {
       approvalReason = `the Write Plan has ${writeCount(plan)}, over the Write Budget of ${workflow.writeBudget}`;
     }
@@ -667,7 +697,7 @@ export async function openCore(
     // The Approval view shows the Repairs behind the Adapters that changed.
     const shown = new Map<string, RepairRecord>();
     if (repaired !== undefined) shown.set(repaired.tool, repaired);
-    if (paused && lastApplied !== undefined) {
+    if (paused) {
       for (const tool of changedAdapters) {
         const digest = digests[tool];
         const record = digest && (await repairs.get(tool, digest));
@@ -694,27 +724,29 @@ export async function openCore(
       })),
     searchSdk: (query) => searchTools(sdkTools(), query),
     async explore({ code, input = {} }) {
-      const { key, approved, clock, writes, calls, result } = await planRun(
-        code,
-        input
-      );
+      const { key, approved, clock, writes, calls, result, adapters } =
+        await planRun(code, input);
       if (!result.ok) return result;
       const plan = writePlan(writes);
       const outcome = await planOutcome(plan, result.value, {
         key,
         clock,
         approved,
-        needsApproval: true,
+        needsApproval: plan.writes.length > 0,
       });
       if (!outcome.ok) return outcome;
       const run = randomUUID().slice(0, 8);
+      const tools = [
+        ...new Set([...calls, ...writes].map((call) => call.tool)),
+      ];
       remember({
         run,
         code,
         input,
         calls,
-        tools: [...new Set([...calls, ...writes].map((call) => call.tool))],
+        tools,
         reads: result.reads,
+        adapters: adapters!.digests(tools),
       });
       return { ...outcome, exploration: run };
     },
