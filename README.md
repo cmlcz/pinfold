@@ -9,7 +9,7 @@ pinfold is a local MCP server for coding agents. It sits between your agent and 
 - **Sandboxed runs.** The agent writes a short TypeScript program. pinfold runs it in a sandbox with no filesystem, network, or imports. The program reaches the outside only through your MCP servers, and it returns only its result.
 - **Read tools run live.** Tools you mark as read run against the real server.
 - **Writes wait for approval.** Tools that change something are recorded into a plan. Nothing is sent until you approve that exact plan.
-- **Resume.** If an approved plan stops partway through, `resume` sends the writes that were not sent yet. A write that may have reached the server is never sent again.
+- **Resume.** If an approved plan stops partway through, `resume` sends the writes that were not sent yet. A write that may have reached the server is never sent again until you check the server and say it did not.
 - **Save workflows.** A successful run can be saved as a workflow: an ordinary TypeScript file in `.workflows/` that you own, with the response fields it reads and its recorded tool calls.
 - **Run workflows.** A saved workflow runs again from the terminal, cron or CI with no LLM.
 - **Drift detection and response adapters.** A run stops before any write when a tool's responses no longer fit the fields the workflow reads. A response adapter maps the responses back, and every workflow that uses the tool works again without any edit.
@@ -100,7 +100,10 @@ node src/packages/cli/bin.ts plans              # list pending plans
 node src/packages/cli/bin.ts approve <plan-id>  # approve the plan
 node src/packages/cli/bin.ts decline <plan-id>  # never send the plan
 node src/packages/cli/bin.ts resume <run-id>    # finish a plan that stopped partway
+node src/packages/cli/bin.ts resolve <run-id> <write> sent|not-sent  # settle a write in doubt
 ```
+
+A write that fails while it is being sent may still have reached its server: a server can make the change and then answer with an error. pinfold never sends such a write again by itself. The run stops with that write in doubt, and `resume` refuses to go on. Check the server, then tell pinfold what you found with `resolve`. A write you resolve as `not-sent` is sent by the next `resume`; one resolved as `sent` never is, and the writes after it follow.
 
 After you approve a plan, the agent runs the same code again. pinfold rebuilds the plan and sends the writes only if the plan has not changed. If it has changed, nothing is sent, and you need to approve the new plan. Inside a run, `Date` stands still and `Math.random` is seeded. The run after Approval gets the same time and seed, so a write that uses them rebuilds as you approved it.
 

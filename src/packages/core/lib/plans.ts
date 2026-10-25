@@ -34,6 +34,13 @@ export type Plans = {
    * run was applying (`previous: "applying"`) may have sent some writes.
    */
   decline(id: string): Promise<PlanRecord & { previous: PlanStatus }>;
+  /**
+   * Settles a write of a run that an Apply stopped while sending, as the
+   * developer found it on its server, so that a resume can go on: a write
+   * sent is never sent again, and one not sent is sent by the next resume.
+   * Writes are counted from 1.
+   */
+  resolve(run: string, write: number, sent: boolean): Promise<void>;
 };
 
 export type PlanStore = Plans & {
@@ -201,6 +208,18 @@ export function openPlanStore(root: string): PlanStore {
       const declined = { ...record, status: "declined" as const };
       await save(declined);
       return { ...declined, previous: record.status };
+    },
+    async resolve(run, write, sent) {
+      const journal = openJournal(root);
+      try {
+        if (!journal.run(run).resolve(write - 1, sent)) {
+          throw new Error(
+            `Write ${write} of run ${run} is not in doubt: only a write an Apply stopped while sending can be resolved.`
+          );
+        }
+      } finally {
+        journal.close();
+      }
     },
     async add(plan, run, clock, status) {
       // Records of a plan are numbered, so two runs adding the next record at

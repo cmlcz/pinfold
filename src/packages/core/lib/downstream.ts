@@ -18,9 +18,6 @@ export type DownstreamTool = SdkTool & {
   call(args: unknown): Promise<unknown>;
 };
 
-/** The Tool's server answered the call with an error result. */
-export class ToolError extends Error {}
-
 export type Downstream = {
   tools: DownstreamTool[];
   close(): Promise<void>;
@@ -184,7 +181,7 @@ async function callTool(
     .flatMap((part) => (part.type === "text" ? [part.text] : []))
     .join("\n");
   if (result.isError) {
-    throw new ToolError(secrets.scrub(`${server}.${name} failed: ${text}`));
+    throw new Error(secrets.scrub(`${server}.${name} failed: ${text}`));
   }
   return result.structuredContent ?? parseJsonText(text);
 }
