@@ -325,19 +325,22 @@ describe("run_workflow", () => {
     );
   });
 
-  it("refuses a Workflow whose Contract reads a field its Baseline lacks", async () => {
+  it("stops a run that reads a field its Baseline does not allow, before its Write Plan", async () => {
     const core = await openTriage();
     await saveTriage(core);
-    const recordFile = join(ws.dir, ".workflows", "triage_sentry.json");
-    const record = JSON.parse(await readFile(recordFile, "utf8"));
-    record.contract["sentry.listIssues"].push("issues[].gone");
-    await writeFile(recordFile, JSON.stringify(record));
+    await editWorkflow((source) =>
+      source.replace(
+        "description: issue.culprit,",
+        "description: issue.culprit + (issue as any).gone,"
+      )
+    );
 
     const result = await core.runWorkflow({ name: "triage_sentry", input });
 
     expect(!result.ok && result.error).toBe(
-      "Workflow triage_sentry not run: its Contract reads sentry.listIssues issues[].gone, which the Baseline of sentry.listIssues does not have."
+      "Workflow triage_sentry stopped before its Write Plan, so nothing was sent: it reads sentry.listIssues issues[].gone, which its Baseline does not have."
     );
+    expect(await ws.control("linear").receivedWrites()).toEqual([]);
   });
 
   it("runs a Workflow that reads a field its Baseline was pinned without", async () => {

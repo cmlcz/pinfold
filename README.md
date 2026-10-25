@@ -139,7 +139,7 @@ node src/packages/cli/bin.ts run triage_sentry --project web --minEvents 50
 node src/packages/cli/bin.ts run search_issues "deadlock"
 ```
 
-pinfold checks the workflow before each run, since you may have edited it. The code must still export a typed `main(input)`, type-check against the SDK, and set a whole-number `writeBudget`. Every tool it calls must still be offered, and every field in its contract must still be allowed by the tool's baseline. The input must fit `main`'s input type. If a check fails, the run is refused with the reason, and the command exits with 1.
+pinfold checks the workflow before each run, since you may have edited it. The code must still export a typed `main(input)`, type-check against the SDK, and set a whole-number `writeBudget`. Every tool it calls must still be offered, and the input must fit `main`'s input type. If a check fails, the run is refused with the reason, and the command exits with 1. A run that reads a field its tool's baseline does not allow stops before its plan, since no drift there could be told.
 
 Each run builds a plan. Its writes are sent without asking you, unless you have never approved writes of the workflow's code as it is now, a response adapter it reads through changed, or the plan has more writes than `writeBudget`. Any edit to the workflow's file counts as new code, whoever made it, so the first plan with writes after an edit waits for you. Then the run pauses: nothing is sent, the command prints the plan and its ID, and exits with 3. Review the plan with `plans`, which also shows the repair behind each changed adapter, approve it with `approve <plan-id>`, then run the workflow again with the same input to apply it.
 
@@ -147,7 +147,7 @@ Every run is recorded in `.pinfold/runs.jsonl`, and `list` shows each workflow's
 
 ## Repair drift
 
-Each tool's response shape is pinned in its baseline the first time the tool is called. When a server later answers differently, say it renames `count` to `eventCount`, a run of a workflow that reads `count` stops before it makes a plan. It reports the tool, the fields that drifted and every workflow the drift affects. A workflow that does not read the drifted fields runs as before.
+Each tool's response shape is pinned in its baseline the first time the tool is called. When a server later answers differently, say it renames `count` to `eventCount`, a run that reads `count` stops before it sends anything. Each run is checked against the fields it read itself, so an edit to the workflow, or an input that takes another branch, is checked as it runs. The run reports the tool, the fields that drifted and every workflow the drift affects. A run that does not read the drifted fields goes on as before.
 
 pinfold then tries to repair the drift itself, with no model. It looks for a mapping from the live responses back to the baseline, such as a renamed field, a response now wrapped in another object, a number sent as text, or renamed enum values. It scores each candidate by how alike the field names are and by how well its values agree with those in the saved fixtures. When one candidate stands out and the mapped responses fit every workflow that uses the tool, pinfold writes it as a new version of the tool's response adapter and runs the workflow again. That run pauses for approval and shows the adapter diff, the value evidence and the write plan:
 
@@ -181,7 +181,7 @@ The ops run in order. A path such as `issues[].count` names the `count` of every
 - **`map`** replaces enum values at `path` by the `values` they map to.
 - **`default`** gives a missing field at `path` the `value`.
 
-A new or changed adapter makes the next run of every workflow that uses the tool pause for approval. That includes a workflow that sends no writes: its result is held back until you approve. Some drift, such as a response that is now paged, cannot be mapped back by an adapter: pinfold reports that it needs a manual fix, which is an edit to the workflow.
+A new or changed adapter makes the next run of every workflow that uses the tool pause for approval. That includes a workflow that sends no writes: its result is held back until you approve. Some drift, such as a response that is now paged, cannot be mapped back by an adapter: pinfold reports that it needs a manual fix. Edit the workflow to read the new shape, and migrate the tool's baseline to it: delete the tool's file in `.workflows/baselines/`, and the next call pins the shape the server has now.
 
 ## Where pinfold keeps its state
 

@@ -14,7 +14,7 @@ import {
   placeholderMarker,
   PlaceholderError,
 } from "./placeholder.ts";
-import type { FieldReads, Program, Sandbox } from "./types.ts";
+import type { FieldReads, Program, Sandbox, SandboxResult } from "./types.ts";
 
 // Deep enough for ordinary code, and well below the host's own stack, which
 // unbounded guest recursion would otherwise overflow.
@@ -107,11 +107,13 @@ const clockSetup = `{
 // Each Tool result reaches the program as a proxy that notes which of its
 // fields the program reads, as paths like `issues[].count`. A field counts as
 // read when the program gets it, including when a value holding it is passed
-// to a Tool or returned.
+// to a Tool or returned, and when it asks for a field that is missing: Drift
+// that renames or removes a field shows as one. The reads are reported
+// through `report` when main ends, even when it fails.
 //
 // It also sets the run's clock, with clockSetup.
 
-const prelude = `(call, misuse, names, clock) => {
+const prelude = `(call, misuse, report, names, clock) => {
   const { now, seed } = JSON.parse(clock);
   const {
     apply,
@@ -280,10 +282,19 @@ const prelude = `(call, misuse, names, clock) => {
     const known = apply(weakGet, tracked, [value]);
     if (known !== undefined) return known;
     const list = isArray(value);
-    // The path a read of an own field reaches, noted as read; undefined
-    // for anything else.
+    // The path a read of a field reaches, noted as read; undefined for
+    // anything else. A missing field counts, but not a missing element, a
+    // member every object inherits, such as toString, nor the then and
+    // toJSON that awaiting and passing a value look up.
     const read = (target, property) => {
-      if (typeof property !== "string" || !hasOwn(target, property)) {
+      if (typeof property !== "string") return undefined;
+      if (
+        !hasOwn(target, property) &&
+        (list ||
+          reflectHas(target, property) ||
+          property === "then" ||
+          property === "toJSON")
+      ) {
         return undefined;
       }
       if (list && property === "length") return undefined;
@@ -300,7 +311,11 @@ const prelude = `(call, misuse, names, clock) => {
       getOwnPropertyDescriptor(target, property) {
         const descriptor = reflectDescriptor(target, property);
         const at = read(target, property);
-        if (at !== undefined && hasOwn(descriptor, "value")) {
+        if (
+          at !== undefined &&
+          descriptor !== undefined &&
+          hasOwn(descriptor, "value")
+        ) {
           define(descriptor, "value", track(descriptor.value, tool, at));
         }
         return descriptor;
@@ -330,22 +345,26 @@ const prelude = `(call, misuse, names, clock) => {
   }
   globalThis.sdk = sdk;
 
-  return async (input) => {
-    if (typeof globalThis.__program?.main !== "function") {
-      throw new TypeErrorType("the program must export a main(input) function");
-    }
-    const value = wire(await globalThis.__program.main(parse(input)));
-    let readPaths = "";
+  const readsText = () => {
+    let text = "";
     const tools = keys(reads);
     for (let i = 0; i < tools.length; i++) {
       const paths = wireList(keys(reads[tools[i]]));
-      readPaths += (i > 0 ? "," : "") + wireKey(tools[i]) + ":" + paths;
+      text += (i > 0 ? "," : "") + wireKey(tools[i]) + ":" + paths;
     }
-    return (
-      "{" +
-      (value === undefined ? "" : '"value":' + value + ",") +
-      '"reads":{' + readPaths + "}}"
-    );
+    return "{" + text + "}";
+  };
+
+  return async (input) => {
+    try {
+      if (typeof globalThis.__program?.main !== "function") {
+        throw new TypeErrorType("the program must export a main(input) function");
+      }
+      const value = wire(await globalThis.__program.main(parse(input)));
+      return value === undefined ? "{}" : '{"value":' + value + "}";
+    } finally {
+      report(readsText());
+    }
   };
 }`;
 
@@ -392,6 +411,13 @@ export const quickJsSandbox: Sandbox = {
     runtime.setMemoryLimit(limits.memoryBytes);
     runtime.setMaxStackSize(stackBytes);
     let toolCalls = 0;
+    // The fields the program read, once main has ended.
+    let reads: FieldReads | undefined;
+    // Kept with a failure when there are any, as they may show its cause.
+    const failedWith = (error: string): SandboxResult =>
+      reads !== undefined && Object.keys(reads).length > 0
+        ? { ok: false, error, reads }
+        : { ok: false, error };
 
     const placeholderError = (message: string, stack: string) =>
       compiled.describe({ name: "PlaceholderError", message, stack });
@@ -472,6 +498,12 @@ export const quickJsSandbox: Sandbox = {
       })
     );
 
+    const reportReads = track(
+      vm.newFunction("report", (text) => {
+        reads = decodeValue(vm.getString(text)) as FieldReads;
+      })
+    );
+
     const reportMisuse = track(
       vm.newFunction("misuse", (what, stack) => {
         misuse(
@@ -508,6 +540,7 @@ export const quickJsSandbox: Sandbox = {
           vm.undefined,
           call,
           reportMisuse,
+          reportReads,
           track(vm.newString(JSON.stringify(names))),
           track(vm.newString(JSON.stringify(clock)))
         )
@@ -521,26 +554,22 @@ export const quickJsSandbox: Sandbox = {
       const json = unwrap(await Promise.race([settled, stopped]));
       if (Date.now() > deadline) exceed(timeLimit);
       const error = failed();
-      if (error !== undefined) return { ok: false, error };
-      const { value, reads } = decodeValue(vm.getString(json)) as {
-        value: unknown;
-        reads: FieldReads;
-      };
-      return { ok: true, value, reads };
+      if (error !== undefined) return failedWith(error);
+      const { value } = decodeValue(vm.getString(json)) as { value: unknown };
+      return { ok: true, value, reads: reads ?? {} };
     } catch (error) {
       if (error instanceof GuestError && isOutOfMemory(error.value)) {
         exceed(`its memory limit of ${limits.memoryBytes} bytes`);
       }
       const reason = failed();
-      if (reason !== undefined) return { ok: false, error: reason };
+      if (reason !== undefined) return failedWith(reason);
       if (error instanceof GuestError) {
-        return { ok: false, error: compiled.describe(error.value) };
+        return failedWith(compiled.describe(error.value));
       }
       // Whatever else went wrong fails this run, never the host's caller.
-      return {
-        ok: false,
-        error: builtInOverflow(error) ?? `InternalError: ${messageOf(error)}`,
-      };
+      return failedWith(
+        builtInOverflow(error) ?? `InternalError: ${messageOf(error)}`
+      );
     } finally {
       finished = true;
       clearTimeout(timer);

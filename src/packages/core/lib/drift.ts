@@ -135,6 +135,17 @@ export function touching(found: Mismatch[], reads: string[]): Mismatch[] {
   return found.filter(({ path }) => reads.some((read) => touches(path, read)));
 }
 
+/** Mismatches without repeats. */
+export function uniqueMismatches(found: Mismatch[]): Mismatch[] {
+  return found.filter(
+    (mismatch, index) =>
+      found.findIndex(
+        (other) =>
+          other.path === mismatch.path && other.problem === mismatch.problem
+      ) === index
+  );
+}
+
 /** Whether a mismatch is a field the Baseline requires that is not there. */
 export function isMissing(mismatch: Mismatch): boolean {
   return mismatch.problem === missing;

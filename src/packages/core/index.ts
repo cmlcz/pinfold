@@ -154,7 +154,7 @@ export async function openCore(
     async explore({ code, input = {} }) {
       const { key, approved, clock, writes, calls, result, adapters } =
         await planRun(project, code, input);
-      if (!result.ok) return result;
+      if (!result.ok) return { ok: false, error: result.error };
       const tools = [
         ...new Set([...calls, ...writes].map((call) => call.tool)),
       ];

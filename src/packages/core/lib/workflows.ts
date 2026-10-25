@@ -15,7 +15,7 @@ import {
 } from "../../sandbox/index.ts";
 import { splitToolName } from "./baselines.ts";
 import { listJson, prepareState, readOrNone, safeJson } from "./files.ts";
-import { deepestPaths, redact, shapeAllows, withoutDataKeys } from "./paths.ts";
+import { deepestPaths, redact, withoutDataKeys } from "./paths.ts";
 
 const defaultWriteBudget = 10;
 
@@ -142,12 +142,7 @@ export async function saveWorkflow(
     name,
     input: mainInput.schema,
     tools: exploration.tools,
-    contract: Object.fromEntries(
-      Object.entries(exploration.reads).map(([tool, paths]) => [
-        tool,
-        deepestPaths(paths.map(withoutDataKeys).filter((path) => path !== "")),
-      ])
-    ),
+    contract: contractOf(exploration.reads),
     adapters: exploration.adapters,
     savedFrom: exploration.run,
     savedAt: new Date().toISOString(),
@@ -178,6 +173,19 @@ export async function saveWorkflow(
     `${JSON.stringify(record, null, 2)}\n`
   );
   return { ok: true, workflow: summary(record, true) };
+}
+
+/**
+ * The fields a run read, by Tool, as a Contract writes them: without data
+ * keys, and only the deepest paths.
+ */
+export function contractOf(reads: FieldReads): Record<string, string[]> {
+  return Object.fromEntries(
+    Object.entries(reads).map(([tool, paths]) => [
+      tool,
+      deepestPaths(paths.map(withoutDataKeys).filter((path) => path !== "")),
+    ])
+  );
 }
 
 function workflowSource(name: string, exploration: Exploration): string {
@@ -312,8 +320,7 @@ const settingsSchema = z.object({ writeBudget: z.int().nonnegative() });
 /**
  * Loads a Workflow for a run, re-checking it since the developer may have
  * edited it: it must still export a typed main(input), type-check against
- * the SDK, set a Write Budget, and call only Tools that are offered, whose
- * Baselines still have every field its Contract reads.
+ * the SDK, set a Write Budget, and call only Tools that are offered.
  */
 export async function loadWorkflow(
   root: string,
@@ -322,8 +329,6 @@ export async function loadWorkflow(
     declarations: string;
     /** Every offered Tool, as `server.tool`. */
     tools: Set<string>;
-    /** The pinned response shape of a Tool, if it has one yet. */
-    outputSchema(tool: string): JsonSchema | undefined;
   }
 ): Promise<
   { ok: true; workflow: LoadedWorkflow } | { ok: false; error: string }
@@ -364,16 +369,6 @@ export async function loadWorkflow(
   for (const tool of record.tools) {
     if (!sdk.tools.has(tool)) {
       return refuse(`it calls ${tool}, which no Downstream Server offers`);
-    }
-  }
-  for (const [tool, paths] of Object.entries(record.contract)) {
-    const shape = sdk.outputSchema(tool);
-    if (shape === undefined) continue;
-    const missing = paths.filter((path) => !shapeAllows(shape, path));
-    if (missing.length > 0) {
-      return refuse(
-        `its Contract reads ${missing.map((path) => `${tool} ${path}`).join(", ")}, which the Baseline of ${tool} does not have`
-      );
     }
   }
   return {
