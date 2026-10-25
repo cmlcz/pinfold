@@ -8,7 +8,7 @@ import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openPlans } from "../../core/index.ts";
-import { driftKitCommand } from "../../drift-kit/index.ts";
+import { connectControl, driftKitCommand } from "../../drift-kit/index.ts";
 
 let dir: string;
 let client: Client;
@@ -52,6 +52,7 @@ describe("Gateway", () => {
     const { tools } = await client.listTools();
     expect(tools.map((tool) => tool.name).sort()).toEqual([
       "list_workflows",
+      "propose_repair",
       "run_sandbox",
       "run_workflow",
       "save_workflow",
@@ -290,6 +291,85 @@ describe("Gateway", () => {
 
     expect(ran.isError).toBeFalsy();
     expect(ran.content).toEqual([{ type: "text", text: '"API"' }]);
+  });
+
+  it("says so when there is no pending Drift to repair", async () => {
+    const result = await client.callTool({
+      name: "propose_repair",
+      arguments: {},
+    });
+
+    expect(result.isError).toBeFalsy();
+    expect(result.content).toEqual([
+      { type: "text", text: "No pending Drift." },
+    ]);
+  });
+
+  it("points the agent to pending Drift and takes its Repair through propose_repair", async () => {
+    const run = await client.callTool({
+      name: "run_sandbox",
+      arguments: {
+        code: `export async function main(input: { project: string }) {
+          const { issues } = await sdk.sentry.listIssues(input);
+          return issues.reduce((sum, issue) => sum + issue.userCount, 0);
+        }`,
+        input: { project: "web" },
+      },
+    });
+    const [content] = run.content as [{ type: "text"; text: string }];
+    const exploration = /Exploration Run ([0-9a-f]{8})/.exec(content.text)![1]!;
+    await client.callTool({
+      name: "save_workflow",
+      arguments: { run: exploration, name: "count_users", confirmed: true },
+    });
+    await connectControl(join(dir, "s.sock")).startDrift("removed-field");
+    const text = (result: Awaited<ReturnType<typeof client.callTool>>) =>
+      (result.content as [{ type: "text"; text: string }])[0].text;
+
+    const stopped = await client.callTool({
+      name: "run_workflow",
+      arguments: { name: "count_users", input: { project: "web" } },
+    });
+    const listed = await client.callTool({
+      name: "list_workflows",
+      arguments: {},
+    });
+    const tasks = await client.callTool({
+      name: "propose_repair",
+      arguments: {},
+    });
+    const rejected = await client.callTool({
+      name: "propose_repair",
+      arguments: { tool: "sentry.listIssues", ops: [{ op: "drop" }] },
+    });
+    const proposed = await client.callTool({
+      name: "propose_repair",
+      arguments: {
+        tool: "sentry.listIssues",
+        ops: [{ op: "default", path: "issues[].userCount", value: 0 }],
+      },
+    });
+
+    expect(stopped.isError).toBe(true);
+    expect(text(stopped)).toContain("propose_repair");
+    expect(text(listed)).toContain(
+      [
+        "Pending Drift, which stops the runs of the Workflows it affects; propose_repair shows it and can repair it:",
+        "  sentry.listIssues, found by count_users",
+      ].join("\n")
+    );
+    expect(text(tasks)).toMatch(
+      /^Pending Drift of sentry\.listIssues, found by a run of Workflow count_users at /
+    );
+    expect(rejected.isError).toBe(true);
+    expect(text(rejected)).toMatch(
+      /^Repair of sentry\.listIssues not proposed: the ops are not of the closed set/
+    );
+    expect(proposed.isError).toBeFalsy();
+    expect(text(proposed)).toMatch(
+      /^An agent, through propose_repair, repaired the Response Adapter of sentry\.listIssues, now version 1:/
+    );
+    expect(text(proposed)).toContain("It is not approved");
   });
 
   it("reports a failed run as a tool error", async () => {

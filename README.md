@@ -2,7 +2,7 @@
 
 pinfold is a local MCP server for coding agents. It sits between your agent and the MCP servers you use, such as Sentry, GitHub, or Linear. It runs the code your agent writes in an isolated sandbox, and it does not send any write to those servers until you approve it.
 
-> **Early version (0.0.0).** Only the features below work today. Repairs through your agent or a model are planned but not available yet.
+> **Early version (0.0.0).** Only the features below work today. Repairs through a model are planned but not available yet.
 
 ## What works today
 
@@ -14,6 +14,7 @@ pinfold is a local MCP server for coding agents. It sits between your agent and 
 - **Run workflows.** A saved workflow runs again from the terminal, cron or CI with no LLM.
 - **Drift detection and response adapters.** A run stops before any write when a tool's responses no longer fit the fields the workflow reads. A response adapter maps the responses back, and every workflow that uses the tool works again without any edit.
 - **Deterministic repair.** pinfold searches for that adapter itself, with no model, and proposes it only when one mapping stands out. You approve it after seeing its diff, how its values compare with the recorded ones, and the write plan.
+- **Repair through your agent.** When pinfold finds no mapping, your agent can propose one through `propose_repair`, with no API key. pinfold checks it the same way and you approve it the same way.
 
 ## Requirements
 
@@ -69,13 +70,14 @@ Start pinfold as an MCP server over stdio. Add this command to your agent's MCP 
 node src/packages/gateway/bin.ts --config pinfold.json
 ```
 
-The agent gets five tools:
+The agent gets six tools:
 
 - **`search_sdk`** finds the TypeScript signatures of the tools that match a keyword query.
 - **`run_sandbox`** runs a program that exports `main(input)` and calls tools with `await sdk.<server>.<tool>(args)`.
 - **`save_workflow`** saves a successful run as a workflow, after you confirm its result.
 - **`run_workflow`** runs a saved workflow with an input.
 - **`list_workflows`** lists the saved workflows.
+- **`propose_repair`** shows drift that pinfold could not repair by itself and takes the agent's proposed response adapter. The adapter still waits for your approval.
 
 ## Mark read tools
 
@@ -153,7 +155,7 @@ Value evidence, the live responses through this version next to the Fixtures:
   issues[].count: now median 128, range 73–210; in the Fixtures median 128, range 73–210
 ```
 
-Drift that no single mapping settles is recorded as pending, and you repair it with an adapter of your own.
+Drift that no single mapping settles is recorded as pending. Your agent can repair it: `propose_repair` shows it the pending drift, with the fields that no longer fit, the baseline, a live response and the values in the fixtures, all redacted by your rules. The agent then proposes the adapter operations to add. pinfold rejects any proposal whose mapped responses do not fit every workflow that uses the tool and gives the reason. A proposal that passes becomes the adapter's next version and waits for your approval like any other; the agent cannot approve it. You can also write an adapter of your own.
 
 A response adapter lives in `.workflows/adapters/`, one file per tool. It maps the tool's live responses back to the baseline, so the workflow code never changes:
 

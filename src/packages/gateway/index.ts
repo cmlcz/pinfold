@@ -2,6 +2,8 @@ import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod";
 import {
   formatOutcome,
+  formatProposal,
+  formatRepairTasks,
   formatWorkflowRun,
   formatWorkflows,
   listWorkflows,
@@ -152,14 +154,82 @@ export function createGateway(
         "List the saved Workflows with their inputs, the Tools they call, their last run and their status.",
       inputSchema: z.object({}),
     },
-    async () => ({
-      content: [
-        {
-          type: "text",
-          text: formatWorkflows(await listWorkflows(options.root)),
-        },
-      ],
-    })
+    async () => {
+      const pending = await core.pendingDrift();
+      const text = [formatWorkflows(await listWorkflows(options.root))];
+      if (pending.length > 0) {
+        text.push(
+          [
+            "Pending Drift, which stops the runs of the Workflows it affects; propose_repair shows it and can repair it:",
+            ...pending.map(
+              ({ tool, workflow }) => `  ${tool}, found by ${workflow}`
+            ),
+          ].join("\n")
+        );
+      }
+      return { content: [{ type: "text", text: text.join("\n\n") }] };
+    }
+  );
+
+  server.registerTool(
+    "propose_repair",
+    {
+      description: [
+        "Repair Drift that pinfold could not repair by itself: a Downstream Server changed a Tool's responses, and the Workflows that read the changed fields stop before they make a Write Plan.",
+        "Call it with no ops to see each Tool's pending Drift: the fields that no longer fit, the Baseline shape Workflows expect, a live response and the field values in the Fixtures.",
+        "Then call it with the Tool and the ops to add after its Response Adapter's ops, which map a live response back to the Baseline. Workflow code is never changed.",
+        "Paths are field paths such as issues[].count; leaving out `at` means the whole response. The ops, applied in order:",
+        '  {"op":"rename","from":path,"to":path} moves a field, within the same array elements',
+        '  {"op":"wrap","at"?:path,"field":name} puts the value under a field',
+        '  {"op":"unwrap","at"?:path,"field":name} replaces the value with that field of it',
+        '  {"op":"convert","path":path,"to":"number"|"string"|"epoch-ms"|"iso-date"} converts text to a number and back, or an ISO date to epoch milliseconds and back',
+        '  {"op":"map","path":path,"values":{old:new}} maps enum values',
+        '  {"op":"default","path":path,"value":json} gives a missing field a value',
+        "pinfold checks the ops as it checks its own Repairs: through them, the live responses must fit the Baseline wherever a saved Workflow reads them. Ops that do not are rejected with the reason.",
+        "Ops that pass become the Tool's next Adapter version, which the developer must approve in a terminal on the next run of each affected Workflow; you cannot approve it.",
+      ].join("\n"),
+      inputSchema: z.object({
+        tool: z
+          .string()
+          .optional()
+          .describe("The drifted Tool, as server.tool; needed with ops"),
+        ops: z
+          .array(z.unknown())
+          .optional()
+          .describe(
+            "The ops to add to the Tool's Response Adapter; leave out to see the pending Drift"
+          ),
+      }),
+    },
+    async ({ tool, ops }) => {
+      if (ops === undefined) {
+        const tasks = await core.repairTasks();
+        const shown =
+          tool === undefined
+            ? tasks
+            : tasks.filter((task) => task.tool === tool);
+        return { content: [{ type: "text", text: formatRepairTasks(shown) }] };
+      }
+      if (tool === undefined) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Name the Tool the ops repair, as server.tool.",
+            },
+          ],
+          isError: true,
+        };
+      }
+      const result = await core.proposeRepair({ tool, ops });
+      if (!result.ok) {
+        return {
+          content: [{ type: "text", text: result.error }],
+          isError: true,
+        };
+      }
+      return { content: [{ type: "text", text: formatProposal(result) }] };
+    }
   );
 
   return server;

@@ -53,11 +53,8 @@ type Call = { arguments: unknown; response: unknown };
 const minScore = 0.5;
 const minLead = 0.25;
 
-/**
- * Searches for ops that, added to a Tool's Adapter, map its live responses
- * back to its Baseline wherever a saved Workflow reads them.
- */
-export function searchRepair(drift: {
+/** A drifted Tool, as Repair sees it. */
+export type DriftedTool = {
   baseline: JsonSchema;
   /** The ops of the Tool's Adapter now. */
   ops: Op[];
@@ -67,17 +64,16 @@ export function searchRepair(drift: {
   contracts: string[][];
   /** The Tool's calls in the Fixtures, whose responses fit the Baseline. */
   fixtures: Call[];
-}): RepairSearch {
+};
+
+/**
+ * Searches for ops that, added to a Tool's Adapter, map its live responses
+ * back to its Baseline wherever a saved Workflow reads them.
+ */
+export function searchRepair(drift: DriftedTool): RepairSearch {
   const { baseline, ops, responses } = drift;
-  // A mismatch that touches none of the reads touches no Contract, so
-  // responses without such mismatches satisfy every affected Contract.
   const reads = [...new Set(drift.contracts.flat())];
-  const driftedWith = (trial: Op[]) =>
-    unique(
-      responses.flatMap(({ response }) =>
-        touching(mismatches(baseline, applyOps(trial, response)), reads)
-      )
-    );
+  const driftedWith = drifting(drift);
   const adaptedWith = (trial: Op[]) =>
     responses.map(({ response }) => applyOps(trial, response));
   const history = historyOf(drift.fixtures, responses);
@@ -140,21 +136,100 @@ export function searchRepair(drift: {
     chosen.push(best.op);
   }
 
-  const final = [...ops, ...chosen];
-  if (driftedWith(final).length > 0) {
+  const checked = checkRepair(drift, chosen);
+  if (!checked.ok) {
     return {
       kind: "pending",
       reason: "the mappings found do not repair every field together",
     };
   }
-  const adapted = adaptedWith(final);
-  const evidence = reads
+  return {
+    kind: "repaired",
+    ops: [...ops, ...chosen],
+    evidence: checked.evidence,
+  };
+}
+
+/**
+ * Checks ops added to a drifted Tool's Adapter, as every Repair is checked,
+ * whoever found it: through the Adapter's ops and these, the live responses
+ * fit the Baseline wherever a saved Workflow reads them. Returns the value
+ * evidence for the Approval view, or the mismatches left. With
+ * `redactedFits`, the responses are recorded ones, redacted.
+ */
+export function checkRepair(
+  drift: DriftedTool,
+  added: Op[],
+  options: { redactedFits?: boolean } = {}
+): { ok: true; evidence: string[] } | { ok: false; drifted: Mismatch[] } {
+  const driftedWith = drifting(drift, options);
+  const final = [...drift.ops, ...added];
+  const drifted = driftedWith(final);
+  if (drifted.length > 0) return { ok: false, drifted };
+  const targets = driftedWith(drift.ops);
+  const adapted = drift.responses.map(({ response }) =>
+    applyOps(final, response)
+  );
+  const history = historyOf(drift.fixtures, drift.responses);
+  const evidence = [...new Set(drift.contracts.flat())]
     .filter((read) => targets.some((target) => touches(target.path, read)))
     .map(
       (read) =>
         `${read}: now ${summarize(valuesIn(adapted, read))}; in the Fixtures ${summarize(valuesIn(history, read))}`
     );
-  return { kind: "repaired", ops: final, evidence };
+  return { ok: true, evidence };
+}
+
+// The mismatches of the live responses through some ops that touch a field
+// a saved Workflow reads. One that touches none of the reads touches no
+// Contract, so responses without such mismatches satisfy every affected
+// Contract.
+function drifting(
+  drift: DriftedTool,
+  options: { redactedFits?: boolean } = {}
+): (trial: Op[]) => Mismatch[] {
+  const reads = [...new Set(drift.contracts.flat())];
+  return (trial) =>
+    unique(
+      drift.responses.flatMap(({ response }) =>
+        touching(
+          mismatches(drift.baseline, applyOps(trial, response), options),
+          reads
+        )
+      )
+    );
+}
+
+/** Pending Drift, with what an agent needs to propose ops for it. */
+export type RepairTask = PendingDrift & {
+  /** The Tool's Baseline response shape. */
+  baseline: JsonSchema;
+  /** The ops of the Tool's Adapter now. */
+  ops: Op[];
+  /** The field paths the saved Workflows read of the Tool. */
+  reads: string[];
+  /** One line per field read the Drift touches: its values in the Fixtures. */
+  fixtureValues: string[];
+};
+
+export function repairTask(
+  pending: PendingDrift,
+  drift: Omit<DriftedTool, "responses">
+): RepairTask {
+  const reads = [...new Set(drift.contracts.flat())].sort();
+  const history = historyOf(drift.fixtures, pending.responses);
+  const fixtureValues = reads
+    .filter((read) =>
+      pending.mismatches.some((mismatch) => touches(mismatch.path, read))
+    )
+    .map((read) => `${read}: ${summarize(valuesIn(history, read))}`);
+  return {
+    ...pending,
+    baseline: drift.baseline,
+    ops: drift.ops,
+    reads,
+    fixtureValues,
+  };
 }
 
 // The ops that might map a drifted field back, each with how alike the
@@ -426,6 +501,8 @@ function isPrimitive(value: unknown): value is string | number | boolean {
 export type RepairRecord = {
   /** The Tool, as `server.tool`. */
   tool: string;
+  /** Who found it: deterministic search, or an agent through propose_repair. */
+  by: "pinfold" | "agent";
   /** The digest of the Adapter version it wrote. */
   digest: string;
   version: number;
@@ -443,10 +520,18 @@ export type PendingDrift = {
   at: string;
   mismatches: Mismatch[];
   reason: string;
+  /**
+   * The Tool's calls in the run, as the server answered them, redacted like
+   * Fixtures. A Repair proposed later is checked against them.
+   */
+  responses: Call[];
 };
+
+const callSchema = z.object({ arguments: z.json(), response: z.json() });
 
 const recordSchema = z.object({
   tool: z.string(),
+  by: z.enum(["pinfold", "agent"]).default("pinfold"),
   digest: z.string(),
   version: z.int(),
   diff: z.array(z.string()),
@@ -459,6 +544,7 @@ const pendingSchema = z.object({
   at: z.string(),
   mismatches: z.array(z.object({ path: z.string(), problem: z.string() })),
   reason: z.string(),
+  responses: z.array(callSchema).default([]),
 });
 
 export type Repairs = {
