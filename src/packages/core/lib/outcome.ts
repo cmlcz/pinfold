@@ -3,7 +3,7 @@
 import { Placeholder } from "../../sandbox/index.ts";
 import { describeMismatch } from "./drift.ts";
 import type { WritePlan } from "./plan.ts";
-import type { RepairRecord, RepairTask } from "./repair.ts";
+import { openRepairs, type RepairRecord, type RepairTask } from "./repair.ts";
 
 /**
  * An Exploration Run ran as a Plan. Without writes it is complete. Otherwise
@@ -163,19 +163,12 @@ function describePlanOutcome(result: PlanOutcome, again: string): string {
     case "declined":
       return `${value}\n\nThe developer declined Write Plan ${plan.id}; nothing was sent.`;
     case "pending":
-      // A run without writes waits only for changed Adapters to be approved,
-      // so its result, built through them, is held back until then.
-      if (plan.writes.length === 0) {
-        return [
-          "The result is held back until the developer approves the changed Response Adapters it was built through, in a terminal:",
-          `  pinfold approve ${plan.id}`,
-          again,
-        ].join("\n");
-      }
+      if (plan.writes.length === 0) return heldBack(plan, again);
       return [value, "", formatPlan(plan), "", approval(plan, again)].join(
         "\n"
       );
     case "changed":
+      if (plan.writes.length === 0) return heldBack(plan, again);
       return [
         value,
         "",
@@ -188,6 +181,16 @@ function describePlanOutcome(result: PlanOutcome, again: string): string {
         approval(plan, again),
       ].join("\n");
   }
+}
+
+// A run without writes waits only for changed Adapters to be approved, so
+// its result, built through them, is held back until then.
+function heldBack(plan: WritePlan, again: string): string {
+  return [
+    "The result is held back until the developer approves the changed Response Adapters it was built through, in a terminal:",
+    `  pinfold approve ${plan.id}`,
+    again,
+  ].join("\n");
 }
 
 export function formatPlan(plan: WritePlan): string {
@@ -205,11 +208,38 @@ function approval(plan: WritePlan, again: string): string {
   ].join("\n");
 }
 
+// The writes, and the Adapters the plan was built through, which approving
+// it approves too.
 function formatWrites(plan: WritePlan): string[] {
-  return plan.writes.map(
+  const lines = plan.writes.map(
     (write, index) =>
       `  ${index + 1}. ${write.tool} ${formatValue(write.arguments)}`
   );
+  const adapters = Object.entries(plan.adapters);
+  if (adapters.length > 0) {
+    const named = adapters.map(([tool, digest]) => `${tool} ${digest}`);
+    lines.push(`  Through the Response Adapters: ${named.join(", ")}`);
+  }
+  return lines;
+}
+
+/**
+ * A Write Plan as the developer reviews it in a terminal: its writes, and
+ * the Repair behind each Adapter it was built through, with its diff and
+ * value evidence.
+ */
+export async function reviewPlan(
+  root: string,
+  plan: WritePlan
+): Promise<string> {
+  const repairs = openRepairs(root);
+  const found = await Promise.all(
+    Object.entries(plan.adapters).map(([tool, digest]) =>
+      repairs.get(tool, digest)
+    )
+  );
+  const shown = found.filter((repair) => repair !== undefined);
+  return [formatPlan(plan), ...shown.map(formatRepair)].join("\n\n");
 }
 
 /** What resuming a stopped run sent. */

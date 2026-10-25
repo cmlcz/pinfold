@@ -464,12 +464,16 @@ export type RunEntry = {
   workflow: string;
   /** Which save of the Workflow ran, once it was loaded. */
   saved?: string;
+  /** A hash of the Workflow's code as it ran. */
+  source?: string;
   at: string;
   /** What became of the run's Write Plan, or `failed`. */
   status: string;
   /** The digest of each Response Adapter the run's Tools went through. */
   adapters?: Record<string, string>;
   plan?: string;
+  /** How many writes the run's Write Plan held. */
+  writes?: number;
   error?: string;
 };
 

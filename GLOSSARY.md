@@ -61,7 +61,7 @@ The second phase of a Workflow Run, which sends the approved Write Plan to the D
 _Avoid_: commit, flush, execute
 
 **Approval**:
-The developer's acceptance of a specific Write Plan, required before Apply when a Workflow has never been applied, when a Response Adapter it depends on is new or updated, or when the Write Plan exceeds the Workflow's Write Budget.
+The developer's acceptance of a specific Write Plan and the Response Adapters it was built through, required before Apply when the developer has never approved writes of a Workflow's code as it is now, when a Response Adapter it depends on is new or updated, or when the Write Plan exceeds the Workflow's Write Budget.
 _Avoid_: confirmation, sign-off
 
 **Apply Journal**:

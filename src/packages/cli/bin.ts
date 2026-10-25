@@ -9,7 +9,6 @@
 import { dirname, resolve } from "node:path";
 import {
   classifyTools,
-  formatPlan,
   formatResume,
   formatWorkflowRun,
   formatWorkflows,
@@ -17,6 +16,7 @@ import {
   loadConfig,
   openCore,
   openPlans,
+  reviewPlan,
   type CommandLineInput,
   type Core,
   type ToolKind,
@@ -72,7 +72,7 @@ async function main(): Promise<number> {
       }
       const pending = await plans.pending();
       if (pending.length === 0) console.log("No pending Write Plans.");
-      for (const plan of pending) console.log(formatPlan(plan));
+      for (const plan of pending) console.log(await reviewPlan(root, plan));
       return 0;
     }
     case "approve": {
@@ -80,7 +80,7 @@ async function main(): Promise<number> {
       if (id === undefined || rest.length > 1) return fail();
       const plans = openPlans(root);
       const plan = await plans.approve(id);
-      console.log(formatPlan(plan));
+      console.log(await reviewPlan(root, plan));
       console.log(
         `Approved Write Plan ${id}. It is sent when the same code runs again and rebuilds the same plan.`
       );

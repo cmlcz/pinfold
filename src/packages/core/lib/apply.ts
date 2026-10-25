@@ -76,7 +76,8 @@ export async function resume(
 ): Promise<ResumeResult> {
   const record = await project.plans.get(run);
   if (record === undefined) throw new Error(`no run ${run}`);
-  const plan = { id: record.id, writes: record.writes };
+  const { id, writes, adapters } = record;
+  const plan = { id, writes, adapters };
   switch (record.status) {
     case "applied":
       return { run, plan, sent: [] };

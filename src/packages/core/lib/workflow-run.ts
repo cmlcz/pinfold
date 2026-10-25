@@ -3,7 +3,7 @@
 // repaired deterministically where it can be, and the run tried again.
 import { planOutcome } from "./apply.ts";
 import {
-  adapterApprovalPlan,
+  shortHash,
   writePlan,
   type PlannedWrite,
   type WritePlan,
@@ -43,16 +43,18 @@ export async function runWorkflow(
     ...ran,
     at: new Date().toISOString(),
     status: result.ok ? result.status : "failed",
-    ...(result.ok ? { plan: result.plan.id } : { error: result.error }),
+    ...(result.ok
+      ? { plan: result.plan.id, writes: result.plan.writes.length }
+      : { error: result.error }),
   });
   return result;
 }
 
 /**
- * Which save of the Workflow ran and the Response Adapters its Tools went
- * through, for the run history.
+ * Which save of the Workflow ran, its code and the Response Adapters its
+ * Tools went through, for the run history.
  */
-type Ran = { saved?: string; adapters?: Record<string, string> };
+type Ran = Pick<RunEntry, "saved" | "source" | "adapters">;
 
 async function runOnce(
   project: Project,
@@ -75,7 +77,9 @@ async function runOnce(
   });
   if (!loaded.ok) return loaded;
   const { workflow } = loaded;
+  const source = shortHash(workflow.source);
   ran.saved = workflow.saved;
+  ran.source = source;
   const input =
     "commandLine" in given
       ? inputFromCommandLine(workflow.input, given.commandLine)
@@ -108,7 +112,7 @@ async function runOnce(
   const { plan, reason, changedAdapters } = approvalFor(
     workflow,
     await runHistory(project.root),
-    digests,
+    { source, adapters: digests },
     writes
   );
   const outcome = await planOutcome(project, plan, result.value, {
@@ -139,30 +143,31 @@ async function runOnce(
 
 /**
  * The Write Plan of a Workflow Run and why it needs Approval, if it does:
- * the Workflow was never applied, an Adapter changed since the developer
- * last saw its results, or the plan exceeds the Write Budget.
+ * the developer never approved writes of this code, an Adapter changed
+ * since the developer last saw its results, or the plan exceeds the Write
+ * Budget.
  */
 function approvalFor(
   workflow: LoadedWorkflow,
   history: RunEntry[],
-  /** The digests of the Adapters this run went through. */
-  digests: Record<string, string>,
+  /** The code that ran, and the digests of the Adapters it went through. */
+  ran: { source: string; adapters: Record<string, string> },
   writes: PlannedWrite[]
 ): { plan: WritePlan; reason?: string; changedAdapters: string[] } {
   const { name } = workflow;
   // Runs of this very save: a Workflow saved again under the name of a
   // deleted one is approved afresh.
-  const ofThisSave = (entry: RunEntry) =>
-    entry.workflow === name && entry.saved === workflow.saved;
-  const lastApplied = history.findLast(
-    (entry) => ofThisSave(entry) && entry.status === "applied"
+  const ofThisSave = history.filter(
+    (entry) => entry.workflow === name && entry.saved === workflow.saved
+  );
+  // Applied runs that sent writes, which the developer approved once.
+  const appliedWrites = ofThisSave.filter(
+    (entry) => entry.status === "applied" && (entry.writes ?? 0) > 0
   );
   // The developer last saw the Workflow's results through the Adapters of
   // its last finished run, or else of the run it was saved from.
-  const lastFinished = history.findLast(
-    (entry) =>
-      ofThisSave(entry) &&
-      (entry.status === "applied" || entry.status === "complete")
+  const lastFinished = ofThisSave.findLast(
+    (entry) => entry.status === "applied" || entry.status === "complete"
   );
   const seen =
     lastFinished === undefined
@@ -170,37 +175,35 @@ function approvalFor(
       : (lastFinished.adapters ?? {});
   // An Adapter added, changed or removed since then.
   const changedAdapters = workflow.tools.filter(
-    (tool) => seen[tool] !== digests[tool]
+    (tool) => seen[tool] !== ran.adapters[tool]
   );
-  // Even a run without writes waits for changed Adapters to be approved.
-  const plan =
-    writes.length === 0 && changedAdapters.length > 0
-      ? adapterApprovalPlan(digests)
-      : writePlan(writes);
-  if (plan.writes.length > 0 && lastApplied === undefined) {
-    return {
-      plan,
-      reason: `Workflow ${name} has never been applied`,
-      changedAdapters,
-    };
+  const plan = writePlan(writes, ran.adapters);
+  const needs = (reason: string) => ({ plan, reason, changedAdapters });
+  if (plan.writes.length > 0 && appliedWrites.length === 0) {
+    return needs(`Workflow ${name} has never been applied`);
+  }
+  // Code edited since, by hand or by an agent, is approved afresh.
+  if (
+    plan.writes.length > 0 &&
+    !appliedWrites.some((entry) => entry.source === ran.source)
+  ) {
+    return needs(
+      `the code of Workflow ${name} changed since its writes were last approved`
+    );
   }
   if (changedAdapters.length > 0) {
     const since =
       lastFinished === undefined
         ? `Workflow ${name} was saved`
         : `the last finished run of Workflow ${name}`;
-    return {
-      plan,
-      reason: `the Response Adapter of ${changedAdapters.join(", ")} changed since ${since}`,
-      changedAdapters,
-    };
+    return needs(
+      `the Response Adapter of ${changedAdapters.join(", ")} changed since ${since}`
+    );
   }
   if (plan.writes.length > workflow.writeBudget) {
-    return {
-      plan,
-      reason: `the Write Plan has ${writeCount(plan)}, over the Write Budget of ${workflow.writeBudget}`,
-      changedAdapters,
-    };
+    return needs(
+      `the Write Plan has ${writeCount(plan)}, over the Write Budget of ${workflow.writeBudget}`
+    );
   }
   return { plan, changedAdapters };
 }
