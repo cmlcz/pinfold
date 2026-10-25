@@ -168,6 +168,20 @@ describe("pinfold resume", () => {
   });
 });
 
+describe("pinfold baseline optional", () => {
+  it("names a Tool that has no Baseline", async () => {
+    const { code, stderr } = await pinfold(
+      "baseline",
+      "optional",
+      "linear.createIssue",
+      "url"
+    );
+
+    expect(code).toBe(1);
+    expect(stderr).toBe("linear.createIssue has no Baseline\n");
+  });
+});
+
 describe("pinfold list", () => {
   it("lists the saved Workflows", async () => {
     expect((await pinfold("list")).stdout).toBe("No saved Workflows.\n");

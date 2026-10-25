@@ -1,6 +1,6 @@
 // Drift: where a Tool's adapted response no longer fits its Baseline, and
 // whether that touches what a Workflow reads.
-import { childPath, redacted } from "./paths.ts";
+import { childPath, redacted, valuesAt } from "./paths.ts";
 import type { JsonSchema } from "./schema.ts";
 
 /** A field of the Baseline the response does not fit, and how. */
@@ -10,7 +10,10 @@ const missing = "is missing";
 
 /**
  * Where a response does not fit a Baseline's shape, by field path; `""` is
- * the whole response. Fields the Baseline does not have are not Drift.
+ * the whole response. Fields the Baseline does not have are not Drift, and
+ * neither is a field that is missing or null in some elements of an array
+ * while others have it: the field is optional, which one response, pinned
+ * as a Baseline, cannot show.
  * With `redactedFits`, a `[redacted]` value fits wherever it stands, as it
  * holds the place of a value that was kept out of a recorded response.
  */
@@ -85,12 +88,7 @@ function check(
     return;
   }
   if (Array.isArray(value)) {
-    // A tuple's elements have a schema each, and items covers the rest.
-    const prefix = Array.isArray(schema.prefixItems) ? schema.prefixItems : [];
-    for (const [index, item] of value.entries()) {
-      const items = prefix[index] ?? schema.items;
-      if (items !== undefined) check(items, item, `${path}[]`, checking);
-    }
+    checkElements(schema, value, path, checking);
     return;
   }
   if (typeof value !== "object" || value === null) return;
@@ -118,6 +116,55 @@ function check(
       }
     }
   }
+}
+
+// Checks the elements of an array. A field missing or null in an element
+// is reported only if no other element has a value there that fits.
+function checkElements(
+  schema: JsonSchema,
+  value: unknown[],
+  path: string,
+  checking: Checking
+): void {
+  const element = `${path}[]`;
+  // A tuple's elements have a schema each, and items covers the rest.
+  const prefix = Array.isArray(schema.prefixItems) ? schema.prefixItems : [];
+  const found = value.map((item, index) => {
+    const items = prefix[index] ?? schema.items;
+    const local: Mismatch[] = [];
+    if (items !== undefined) {
+      check(items, item, element, {
+        ...checking,
+        report: (inner, problem) => local.push({ path: inner, problem }),
+      });
+    }
+    return local;
+  });
+  // Whether some element has a value at a field path that fits there.
+  const fitting = new Map<string, boolean>();
+  const someFits = (inner: string) => {
+    const relative = inner.slice(element.length).replace(/^\./, "");
+    if (!fitting.has(inner)) {
+      fitting.set(
+        inner,
+        value.some(
+          (item, index) =>
+            !found[index]!.some((mismatch) => mismatch.path === inner) &&
+            valuesAt(item, relative).length > 0
+        )
+      );
+    }
+    return fitting.get(inner)!;
+  };
+  for (const mismatch of found.flat()) {
+    if (mayBeOptional(mismatch) && someFits(mismatch.path)) continue;
+    checking.report(mismatch.path, mismatch.problem);
+  }
+}
+
+/** Whether a mismatch could be a field that may be missing or null. */
+export function mayBeOptional({ problem }: Mismatch): boolean {
+  return problem === missing || problem.startsWith("is null,");
 }
 
 /** Whether any mismatch touches a field a Contract reads of the Tool. */

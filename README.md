@@ -147,7 +147,13 @@ Every run is recorded in `.pinfold/runs.jsonl`, and `list` shows each workflow's
 
 ## Repair drift
 
-Each tool's response shape is pinned in its baseline the first time the tool is called. When a server later answers differently, say it renames `count` to `eventCount`, a run that reads `count` stops before it sends anything. Each run is checked against the fields it read itself, so an edit to the workflow, or an input that takes another branch, is checked as it runs. The run reports the tool, the fields that drifted and every workflow the drift affects. A run that does not read the drifted fields goes on as before.
+Each tool's response shape is pinned in its baseline the first time the tool is called. For a tool that declares no output schema, pinfold infers the shape from that response, so it cannot know yet which fields are optional. Within an array, a field that some elements leave out or hold as null, while others have it, is not drift. A field missing from a single response is: if the server leaves it out at times, mark it optional in the baseline:
+
+```sh
+node src/packages/cli/bin.ts baseline optional sentry.getIssue assignee
+```
+
+A field marked optional may be missing or null, and workflows that read it must handle that to type-check. When a server later answers differently, say it renames `count` to `eventCount`, a run that reads `count` stops before it sends anything. Each run is checked against the fields it read itself, so an edit to the workflow, or an input that takes another branch, is checked as it runs. The run reports the tool, the fields that drifted and every workflow the drift affects. A run that does not read the drifted fields goes on as before.
 
 pinfold then tries to repair the drift itself, with no model. It looks for a mapping from the live responses back to the baseline, such as a renamed field, a response now wrapped in another object, a number sent as text, or renamed enum values. It scores each candidate by how alike the field names are and by how well its values agree with those in the saved fixtures. When one candidate stands out and the mapped responses fit every workflow that uses the tool, pinfold writes it as a new version of the tool's response adapter and runs the workflow again. That run pauses for approval and shows the adapter diff, the value evidence and the write plan:
 
