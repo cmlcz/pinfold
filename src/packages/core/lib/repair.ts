@@ -546,8 +546,11 @@ function isNumber(value: unknown): value is number {
 export type RepairRecord = {
   /** The Tool, as `server.tool`. */
   tool: string;
-  /** Who found it: deterministic search, or an agent through propose_repair. */
-  by: "pinfold" | "agent";
+  /**
+   * Who found it: deterministic search, an agent through propose_repair, or
+   * the repair model.
+   */
+  by: "pinfold" | "agent" | "model";
   /** The digest of the Adapter version it wrote. */
   digest: string;
   version: number;
@@ -578,7 +581,7 @@ const callSchema = z.object({ arguments: z.json(), response: z.json() });
 
 const recordSchema = z.object({
   tool: z.string(),
-  by: z.enum(["pinfold", "agent"]).default("pinfold"),
+  by: z.enum(["pinfold", "agent", "model"]).default("pinfold"),
   digest: z.string(),
   version: z.int(),
   diff: z.array(z.string()),

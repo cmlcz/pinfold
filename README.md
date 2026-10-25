@@ -2,7 +2,7 @@
 
 pinfold is a local MCP server for coding agents. It sits between your agent and the MCP servers you use, such as Sentry, GitHub, or Linear. It runs the code your agent writes in an isolated sandbox, and it does not send any write to those servers until you approve it.
 
-> **Early version (0.0.0).** Only the features below work today. Repairs through a model are planned but not available yet.
+> **Early version (0.0.0).** Only the features below work today.
 
 ## What works today
 
@@ -15,6 +15,7 @@ pinfold is a local MCP server for coding agents. It sits between your agent and 
 - **Drift detection and response adapters.** A run stops before any write when a tool's responses no longer fit the fields the workflow reads. A response adapter maps the responses back, and every workflow that uses the tool works again without any edit.
 - **Deterministic repair.** pinfold searches for that adapter itself, with no model, and proposes it only when one mapping stands out. You approve it after seeing its diff, how its values compare with the recorded ones, and the write plan.
 - **Repair through your agent.** When pinfold finds no mapping, your agent can propose one through `propose_repair`, with no API key. pinfold checks it the same way and you approve it the same way.
+- **Unattended repair through a model.** If you name an OpenRouter model, pinfold asks it for a mapping when it finds none itself, so a cron or CI run can repair drift with no agent. The mapping is checked and approved like any other.
 
 ## Requirements
 
@@ -61,6 +62,7 @@ Create a `pinfold.json` file in your project:
 - **`classification`** marks tools as `"read"`. Any tool you leave out is a write tool.
 - **`redact`** is optional. It lists, by server and tool, the fields that are replaced with `[redacted]` before a saved workflow's recorded calls are written to disk. A path starts with `arguments` or `response`, and `[]` stands for every element of an array, as in `"response.issues[].assignee.email"`.
 - **`limits`** is optional. The values above are the defaults: 30 seconds, 64 MiB of memory, and 100 tool calls per run.
+- **`repairModel`** is optional. It names an OpenRouter model, such as `"openai/gpt-4o-mini"`, that proposes a repair when pinfold finds none itself. pinfold reads its key from `OPENROUTER_API_KEY` and refuses to start without it. Leave it out and pinfold never calls a model.
 
 ## Connect your agent
 
@@ -168,6 +170,8 @@ Value evidence, the live responses through this version next to the Fixtures:
 
 Drift that no single mapping settles is recorded as pending. Your agent can repair it: `propose_repair` shows it the pending drift, with the fields that no longer fit, the baseline, a live response and the values in the fixtures, all redacted by your rules. When a tool has redaction rules, any value the drift moved away from where the baseline has it is redacted too, since the rules may no longer reach it. The agent then proposes the adapter operations to add. pinfold rejects any proposal whose mapped responses do not fit every workflow that uses the tool and gives the reason. A proposal that passes becomes the adapter's next version and waits for your approval like any other; the agent cannot approve it. You can also write an adapter of your own.
 
+With `repairModel` set, pinfold first asks that model, unattended. The model sees what the agent would see through `propose_repair`, redacted the same way, and its proposal is checked the same way. One that passes becomes the adapter's next version, and the run pauses for your approval with the diff. One that fails leaves the drift pending, and the run says why. Each call's token counts and cost, as OpenRouter reports them, are added to `.pinfold/model-usage.jsonl`.
+
 A response adapter lives in `.workflows/adapters/`, one file per tool. It maps the tool's live responses back to the baseline, so the workflow code never changes. A write tool's adapter maps the real results of its writes the same way, and later writes in the plan read them through it:
 
 ```json
@@ -193,7 +197,7 @@ A new or changed adapter makes the next run of every workflow that uses the tool
 
 ## Where pinfold keeps its state
 
-- **`.pinfold/`** holds the write plans, a journal of the writes already sent, the run history, the repairs pinfold made and the drift it could not repair. It is git-ignored.
+- **`.pinfold/`** holds the write plans, a journal of the writes already sent, the run history, the repairs pinfold made, the drift it could not repair and the repair model's usage. It is git-ignored.
 - **`.workflows/baselines/`** holds the recorded response shape of each tool.
 - **`.workflows/adapters/`** holds the response adapters.
 - **`.workflows/`** also holds the saved workflows. **`.workflows/fixtures/`** is git-ignored.

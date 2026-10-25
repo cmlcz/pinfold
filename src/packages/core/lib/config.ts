@@ -83,6 +83,12 @@ const configSchema = z.object({
   redact: z
     .record(z.string(), z.record(z.string(), z.array(redactionPath)))
     .optional(),
+  /**
+   * The OpenRouter model, such as `openai/gpt-4o-mini`, that proposes a
+   * Repair when deterministic search finds none. Its key is read from
+   * OPENROUTER_API_KEY. Left out, no model is ever called.
+   */
+  repairModel: z.string().min(1).optional(),
   /** Per-run limits; each one left out takes its default. */
   limits: z
     .object({

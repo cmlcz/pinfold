@@ -12,6 +12,7 @@ import {
 import {
   openCore,
   type Core,
+  type ModelClient,
   type PinfoldConfig,
   type ServerConfig,
 } from "../index.ts";
@@ -48,7 +49,10 @@ export type Workspace = {
    * Opens a core on this directory. By default it has one Sentry server
    * whose Tools are all Read Tools.
    */
-  open(config?: Partial<PinfoldConfig>): Promise<Core>;
+  open(
+    config?: Partial<PinfoldConfig>,
+    options?: { model?: ModelClient }
+  ): Promise<Core>;
   close(): Promise<void>;
 };
 
@@ -73,14 +77,14 @@ export async function createWorkspace(): Promise<Workspace> {
       return server.url;
     },
     control: (name) => connectControl(socket(name)),
-    async open(config = {}) {
+    async open(config = {}, options = {}) {
       const core = await openCore(
         {
           servers: { sentry: sentry() },
           classification: sentryReads,
           ...config,
         },
-        { root: dir }
+        { root: dir, ...options }
       );
       cores.push(core);
       return core;
