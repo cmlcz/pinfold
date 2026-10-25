@@ -21,8 +21,12 @@ export type RunJournal = {
    */
   take(position: number): "taken" | "busy" | "declined";
   settle(position: number, result: unknown): void;
-  /** Gives back a write its server refused, so that a resume sends it. */
-  release(position: number): void;
+  /**
+   * Settles a write in doubt as the developer found it on its server: one
+   * sent is never sent again, and one not sent is sent by the next resume.
+   * Returns false when the write is not in doubt.
+   */
+  resolve(position: number, sent: boolean): boolean;
   /** Stops every Apply of the run before its next write. */
   decline(): void;
 };
@@ -31,6 +35,11 @@ export type Journal = {
   run(run: string): RunJournal;
   close(): void;
 };
+
+/** How the developer settles a write in doubt, counted from 1. */
+export function resolveHint(run: string, write: number): string {
+  return `check whether write ${write} reached its server, then \`pinfold resolve ${run} ${write} sent\` or \`pinfold resolve ${run} ${write} not-sent\``;
+}
 
 export function openJournal(root: string): Journal {
   let db: DatabaseSync | undefined;
@@ -72,7 +81,7 @@ export function openJournal(root: string): Journal {
           return rows.map(({ position, result }) => {
             if (result === null) {
               throw new Error(
-                `Write ${position + 1} of run ${run} is being sent by another Apply, or an Apply stopped while sending it and it may have reached its server. Nothing was sent.`
+                `Write ${position + 1} of run ${run} is being sent by another Apply, or an Apply stopped while sending it and it may have reached its server. Nothing was sent. Once no Apply is sending it, ${resolveHint(run, position + 1)}.`
               );
             }
             return JSON.parse(result) as unknown;
@@ -100,10 +109,12 @@ export function openJournal(root: string): Journal {
             )
             .run(JSON.stringify(result ?? null), run, position);
         },
-        release(position) {
-          open()
-            .prepare("DELETE FROM writes WHERE run = ? AND position = ?")
-            .run(run, position);
+        resolve(position, sent) {
+          // A write sent this way has no known result, so it is null.
+          const statement = sent
+            ? "UPDATE writes SET result = 'null' WHERE run = ? AND position = ? AND result IS NULL"
+            : "DELETE FROM writes WHERE run = ? AND position = ? AND result IS NULL";
+          return open().prepare(statement).run(run, position).changes === 1;
         },
         decline() {
           open()

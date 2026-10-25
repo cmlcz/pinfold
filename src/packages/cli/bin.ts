@@ -3,6 +3,7 @@
 //   node bin.ts plans [--config pinfold.json]
 //   node bin.ts approve|decline <plan-id> [--config pinfold.json]
 //   node bin.ts resume <run-id> [--config pinfold.json]
+//   node bin.ts resolve <run-id> <write> sent|not-sent [--config pinfold.json]
 //   node bin.ts list [--config pinfold.json]
 //   node bin.ts run <workflow> [<value> | --<field> <value>...] [--config pinfold.json]
 import { dirname, resolve } from "node:path";
@@ -26,12 +27,17 @@ const usage = `usage:
   pinfold plans [--config <path>]
   pinfold approve|decline <plan-id> [--config <path>]
   pinfold resume <run-id> [--config <path>]
+  pinfold resolve <run-id> <write> sent|not-sent [--config <path>]
   pinfold list [--config <path>]
   pinfold run <workflow> [<value> | --<field> <value>...] [--config <path>]
 
 pinfold run takes one value for a Workflow whose input is not an object, or
 else a flag per input field; a value starting with -- is given as
---<field>=<value>. It exits with 3 when the run pauses for Approval.`;
+--<field>=<value>. It exits with 3 when the run pauses for Approval.
+
+pinfold resolve records whether a write that an Apply stopped while sending
+reached its server. Check the server first, and only once no Apply is
+sending the write.`;
 
 // A Workflow Run that pauses for Approval exits with this code, so that cron
 // or CI can tell it from a failure.
@@ -101,6 +107,19 @@ async function main(): Promise<number> {
         console.log(formatResume(await core.resume(run)));
         return 0;
       });
+    }
+    case "resolve": {
+      const [run, write, outcome] = rest;
+      if (run === undefined || rest.length !== 3) return fail();
+      if (!/^[1-9]\d*$/.test(write!)) return fail();
+      if (outcome !== "sent" && outcome !== "not-sent") return fail();
+      await openPlans(root).resolve(run, Number(write), outcome === "sent");
+      console.log(
+        outcome === "sent"
+          ? `Recorded write ${write} of run ${run} as sent; no resume sends it. \`pinfold resume ${run}\` sends the writes after it.`
+          : `Recorded write ${write} of run ${run} as not sent. \`pinfold resume ${run}\` sends it and the writes after it.`
+      );
+      return 0;
     }
     case "list":
       if (rest.length > 0) return fail();

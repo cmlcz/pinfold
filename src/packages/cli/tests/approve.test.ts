@@ -139,9 +139,17 @@ describe("pinfold resume", () => {
   it("sends the writes a stopped run did not send, then does nothing", async () => {
     const { run, id } = await stoppedRun();
 
+    const inDoubt = await pinfold("resume", run);
+    const resolved = await pinfold("resolve", run, "1", "not-sent");
     const resumed = await pinfold("resume", run);
     const again = await pinfold("resume", run);
 
+    expect(inDoubt.code).toBe(1);
+    expect(inDoubt.stderr).toContain(`pinfold resolve ${run} 1 not-sent`);
+    expect(resolved).toMatchObject({
+      code: 0,
+      stdout: `Recorded write 1 of run ${run} as not sent. \`pinfold resume ${run}\` sends it and the writes after it.\n`,
+    });
     expect(resumed).toMatchObject({
       code: 0,
       stdout: `Resumed run ${run}: sent write 1 of Write Plan ${id}.\n`,

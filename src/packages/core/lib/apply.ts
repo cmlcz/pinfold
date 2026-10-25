@@ -3,8 +3,7 @@
 // that, what becomes of a run's Write Plan: applied now, or left to wait
 // for Approval.
 import { Placeholder, type Clock } from "../../sandbox/index.ts";
-import { ToolError } from "./downstream.ts";
-import type { RunJournal } from "./journal.ts";
+import { resolveHint, type RunJournal } from "./journal.ts";
 import {
   span,
   writeCount,
@@ -206,7 +205,7 @@ export async function sendWrites(
           `Sent: ${span(1, index)}.` +
           (inDoubt
             ? ` May have been sent: write ${position}. Not sent: ${span(position + 1, writes.length)}. ` +
-              `No resume sends this run's writes, since write ${position} may have reached its server.`
+              `Then ${resolveHint(journal.run, position)}; after that, \`pinfold resume ${journal.run}\` sends the writes not sent.`
             : ` Not sent: ${span(position, writes.length)}. ` +
               `\`pinfold resume ${journal.run}\` sends the writes not sent.`),
         { cause: error }
@@ -228,12 +227,11 @@ export async function sendWrites(
     try {
       results.push(await send(write, args));
     } catch (error) {
-      // A server that answered with an error did not take the write. Any
-      // other failure may have reached it, so the write stays taken and is
-      // never sent again.
-      const refused = error instanceof ToolError;
-      if (refused) journal.release(index);
-      throw stopped(error, !refused);
+      // Even a server that answered with an error may have made the change
+      // first: the reference MCP server SDK, for one, checks a Tool's output
+      // only after running it. So the write stays taken, in doubt, until the
+      // developer resolves it.
+      throw stopped(error, true);
     }
     journal.settle(index, results[index]);
   }
