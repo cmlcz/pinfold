@@ -11,6 +11,7 @@ import {
   reviewPlan,
   type Core,
   type ModelClient,
+  type PinfoldConfig,
   type WorkflowRunResult,
 } from "../index.ts";
 import { createWorkspace, sentryReads, type Workspace } from "./workspace.ts";
@@ -25,7 +26,15 @@ afterEach(() => ws.close());
 
 function openTriage(
   workspace = ws,
-  { model, repairModel }: { model?: ModelClient; repairModel?: string } = {}
+  {
+    model,
+    repairModel,
+    redact,
+  }: {
+    model?: ModelClient;
+    repairModel?: string;
+    redact?: PinfoldConfig["redact"];
+  } = {}
 ): Promise<Core> {
   return workspace.open(
     {
@@ -35,6 +44,7 @@ function openTriage(
         linear: { searchIssues: "read", createIssue: "write" },
       },
       ...(repairModel !== undefined && { repairModel }),
+      ...(redact !== undefined && { redact }),
     },
     model === undefined ? {} : { model }
   );
@@ -576,6 +586,7 @@ describe("Repair through the agent", () => {
       version: 1,
       diff: ['+ {"op":"default","path":"issues[].userCount","value":0}'],
       evidence: [
+        "issues[].userCount: the server sends no value here; the default op gives it 0",
         "issues[].userCount: now median 0, range 0–0; in the Fixtures median 61, range 12–88",
       ],
     };
@@ -722,7 +733,12 @@ describe("Repair through the repair model", () => {
     const { model, prompts } = scriptedModel(
       `\`\`\`json\n${JSON.stringify(userCountDefault)}\n\`\`\``
     );
-    const core = await openTriage(ws, { model });
+    // With userCount kept out of the Fixtures, nothing shows the default
+    // makes data up, so it is left to the developer's Approval.
+    const core = await openTriage(ws, {
+      model,
+      redact: { sentry: { listIssues: ["response.issues[].userCount"] } },
+    });
     const before = await saveApplied(core, "triage_sentry");
     const sent = await ws.control("linear").receivedWrites();
     await ws.control("sentry").startDrift("removed-field");
@@ -746,6 +762,9 @@ describe("Repair through the repair model", () => {
     expect(await ws.control("linear").receivedWrites()).toEqual(sent);
     expect(formatWorkflowRun(paused)).toContain(
       "The Repair Model, unattended, repaired the Response Adapter of sentry.listIssues, now version 1:"
+    );
+    expect(formatWorkflowRun(paused)).toContain(
+      "issues[].userCount: the server sends no value here; the default op gives it 0"
     );
     expect(prompts).toHaveLength(1);
     expect(prompts[0]).toContain("issues[].userCount is missing");
@@ -790,6 +809,43 @@ describe("Repair through the repair model", () => {
       ),
     });
     expect(prompts).toHaveLength(1);
+    expect(await core.pendingDrift()).toHaveLength(1);
+  });
+
+  it("refuses a default that makes up a field the Fixtures hold varied values of", async () => {
+    const { model } = scriptedModel(
+      '[{"op":"default","path":"issues[].userCount","value":61}]'
+    );
+    const core = await openTriage(ws, { model });
+    await saveApplied(core, "triage_sentry");
+    await ws.control("sentry").startDrift("removed-field");
+
+    const result = await core.runWorkflow({ name: "triage_sentry", input });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(
+        "The Repair Model repaired nothing: Repair of sentry.listIssues not proposed: a default op would make up values for issues[].userCount, which held varied values in the Fixtures."
+      ),
+    });
+    expect(await core.pendingDrift()).toHaveLength(1);
+  });
+
+  it("keeps the Drift pending when the model finds no faithful ops", async () => {
+    const { model, prompts } = scriptedModel("[]");
+    const core = await openTriage(ws, { model });
+    await saveApplied(core, "triage_sentry");
+    await ws.control("sentry").startDrift("removed-field");
+
+    const result = await core.runWorkflow({ name: "triage_sentry", input });
+
+    expect(prompts[0]).toContain("Never make up a value");
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(
+        "The Repair Model repaired nothing: it found no ops that map the live responses back faithfully."
+      ),
+    });
     expect(await core.pendingDrift()).toHaveLength(1);
   });
 

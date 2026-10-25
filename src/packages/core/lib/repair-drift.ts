@@ -24,6 +24,7 @@ import type { Drift } from "./plan-run.ts";
 import type { Project } from "./project.ts";
 import {
   checkRepair,
+  madeUpDefaults,
   redactUnlisted,
   repairTask,
   searchRepair,
@@ -225,6 +226,13 @@ export async function proposeRepair(
       "its live responses fit its Baseline through its Response Adapter as it is now; run an affected Workflow again"
     );
   }
+  // Unattended, nobody stands by to see a default that makes data up.
+  const madeUp = by === "model" ? madeUpDefaults(drift, parsed.ops) : [];
+  if (madeUp.length > 0) {
+    return refuse(
+      `a default op would make up values for ${madeUp.join(", ")}, which held varied values in the Fixtures`
+    );
+  }
   const checked = checkRepair(drift, parsed.ops, recorded);
   if (!checked.ok) {
     return refuse(
@@ -305,11 +313,13 @@ async function modelRepair(
   const ops = safeJson(
     text.slice(text.indexOf("["), text.lastIndexOf("]") + 1)
   );
-  const proposed = await proposeRepair(
-    project,
-    { tool: pending.tool, ops },
-    "model"
-  );
+  const proposed: ProposalResult =
+    Array.isArray(ops) && ops.length === 0
+      ? {
+          ok: false,
+          error: "it found no ops that map the live responses back faithfully.",
+        }
+      : await proposeRepair(project, { tool: pending.tool, ops }, "model");
   if (!proposed.ok) {
     await project.repairs.pend({ ...pending, modelError: proposed.error });
   }
@@ -321,7 +331,8 @@ function repairPrompt(task: RepairTask): string {
     "A Downstream Server changed the responses of one of its Tools, so the Workflows that read them stopped. Propose the ops to add to the Tool's Response Adapter, which map a live response back to the Baseline.",
     formatRepairTask(task),
     opsGuide.join("\n"),
-    `${redactedNote} Answer with only a JSON array of the ops to add after the Adapter's ops now.`,
+    `${redactedNote} Never make up a value: use a default op only where the server leaves out a field whose value has one fixed meaning, never in place of data the server no longer sends. If no ops map the live responses back faithfully, answer [].`,
+    "Answer with only a JSON array of the ops to add after the Adapter's ops now.",
   ].join("\n\n");
 }
 
@@ -349,9 +360,19 @@ async function writeRepair(
     },
     current?.path
   );
+  // A default gives values the server did not send, which the values
+  // through the new version alone may not make plain.
+  const defaults = added.flatMap((op) =>
+    op.op === "default"
+      ? [
+          `${op.path}: the server sends no value here; the default op gives it ${JSON.stringify(op.value)}`,
+        ]
+      : []
+  );
   const record: RepairRecord = {
     tool: name,
     ...found,
+    evidence: [...defaults, ...found.evidence],
     digest,
     version,
     diff: [
