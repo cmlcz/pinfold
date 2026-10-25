@@ -102,7 +102,7 @@ function formatRepair(repair: RepairRecord): string {
   const who = {
     pinfold: "pinfold",
     agent: "An agent, through propose_repair,",
-    model: "The repair model, unattended,",
+    model: "The Repair Model, unattended,",
   }[repair.by];
   return [
     `${who} repaired the Response Adapter of ${repair.tool}, now version ${repair.version}:`,
@@ -124,6 +124,9 @@ export function formatProposal(
   ].join("\n");
 }
 
+/** How a repair task says which values redaction kept out. */
+export const redactedNote = 'Fields kept out of Fixtures hold "[redacted]".';
+
 // A live response is shown for its shape, so its arrays are cut short.
 const shownElements = 3;
 
@@ -132,7 +135,7 @@ export function formatRepairTasks(tasks: RepairTask[]): string {
   if (tasks.length === 0) return "No pending Drift.";
   return [
     ...tasks.map(formatRepairTask),
-    'Fields kept out of Fixtures hold "[redacted]". To repair a Tool, call propose_repair with it and the ops to add after its Adapter\'s ops.',
+    `${redactedNote} To repair a Tool, call propose_repair with it and the ops to add after its Adapter's ops.`,
   ].join("\n\n");
 }
 

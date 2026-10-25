@@ -1,6 +1,7 @@
-// The repair model: a small model unattended Repair asks for ops when
+// The Repair Model: a small model unattended Repair asks for ops when
 // deterministic search finds none. It is any OpenAI-compatible chat API,
-// OpenRouter by default, and is used only when the config names a model.
+// OpenRouter by default, and is used only when the config names a model
+// and OPENROUTER_API_KEY is set.
 // Each call's token usage and cost are kept in .pinfold/model-usage.jsonl.
 import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -24,6 +25,8 @@ export type ModelClient = {
 const openRouterUrl = "https://openrouter.ai/api/v1/chat/completions";
 
 const completionSchema = z.object({
+  /** The model that answered, which OpenRouter's routing may pick. */
+  model: z.string().optional(),
   choices: z
     .array(z.object({ message: z.object({ content: z.string().nullable() }) }))
     .min(1),
@@ -61,11 +64,12 @@ export function chatClient({
       if (!response.ok) {
         throw new Error(`${url} answered ${response.status}`);
       }
-      const { choices, usage } = completionSchema.parse(await response.json());
+      const answered = completionSchema.parse(await response.json());
+      const { choices, usage } = answered;
       return {
         text: choices[0]!.message.content ?? "",
         usage: {
-          model,
+          model: answered.model ?? model,
           promptTokens: usage.prompt_tokens,
           completionTokens: usage.completion_tokens,
           ...(usage.cost !== undefined && { cost: usage.cost }),
@@ -75,18 +79,16 @@ export function chatClient({
   };
 }
 
-/** The repair model the config names, through OpenRouter; none if it names none. */
+/**
+ * The Repair Model the config names, through OpenRouter; none if it names
+ * none, or if OPENROUTER_API_KEY is not set.
+ */
 export function configuredModel(
   config: PinfoldConfig,
   env: NodeJS.ProcessEnv
 ): ModelClient | undefined {
-  if (config.repairModel === undefined) return undefined;
   const apiKey = env.OPENROUTER_API_KEY;
-  if (apiKey === undefined || apiKey === "") {
-    throw new Error(
-      "repairModel needs the environment variable OPENROUTER_API_KEY, which is not set."
-    );
-  }
+  if (config.repairModel === undefined || !apiKey) return undefined;
   return chatClient({ model: config.repairModel, apiKey });
 }
 

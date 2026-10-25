@@ -74,7 +74,7 @@ const adapterSchema = z.strictObject({
 
 export type Op = z.infer<typeof opSchema>;
 
-/** The closed set of ops, as an agent or the repair model is told of it. */
+/** The closed set of ops, as an agent or the Repair Model is told of it. */
 export const opsGuide = [
   "Paths are field paths such as issues[].count; leaving out `at` means the whole response. The ops, applied in order:",
   '  {"op":"rename","from":path,"to":path} moves a field, within the same array elements',

@@ -86,7 +86,7 @@ const configSchema = z.object({
   /**
    * The OpenRouter model, such as `openai/gpt-4o-mini`, that proposes a
    * Repair when deterministic search finds none. Its key is read from
-   * OPENROUTER_API_KEY. Left out, no model is ever called.
+   * OPENROUTER_API_KEY; left out, or without the key, no model is called.
    */
   repairModel: z.string().min(1).optional(),
   /** Per-run limits; each one left out takes its default. */

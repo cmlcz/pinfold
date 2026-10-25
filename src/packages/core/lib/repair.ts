@@ -548,9 +548,9 @@ export type RepairRecord = {
   tool: string;
   /**
    * Who found it: deterministic search, an agent through propose_repair, or
-   * the repair model.
+   * the Repair Model.
    */
-  by: "pinfold" | "agent" | "model";
+  by: (typeof repairers)[number];
   /** The digest of the Adapter version it wrote. */
   digest: string;
   version: number;
@@ -575,13 +575,20 @@ export type PendingDrift = {
    * Fixtures. A Repair proposed later is checked against them.
    */
   responses: Call[];
+  /**
+   * Why the Repair Model's proposal for it was refused. The model is not
+   * asked again while the Drift stays the same.
+   */
+  modelError?: string | undefined;
 };
 
 const callSchema = z.object({ arguments: z.json(), response: z.json() });
 
+const repairers = ["pinfold", "agent", "model"] as const;
+
 const recordSchema = z.object({
   tool: z.string(),
-  by: z.enum(["pinfold", "agent", "model"]).default("pinfold"),
+  by: z.enum(repairers).default("pinfold"),
   digest: z.string(),
   version: z.int(),
   diff: z.array(z.string()),
@@ -596,6 +603,7 @@ const pendingSchema = z.object({
   reads: z.array(z.string()).default([]),
   reason: z.string(),
   responses: z.array(callSchema).default([]),
+  modelError: z.string().optional(),
 });
 
 export type Repairs = {
