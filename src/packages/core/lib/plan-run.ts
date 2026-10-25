@@ -11,7 +11,12 @@ import {
 import { loadAdapters, type Adapters } from "./adapters.ts";
 import { toolName } from "./baselines.ts";
 import type { DownstreamTool } from "./downstream.ts";
-import { mismatches, touchesContract, type Mismatch } from "./drift.ts";
+import {
+  mismatches,
+  touching,
+  uniqueMismatches,
+  type Mismatch,
+} from "./drift.ts";
 import {
   canonicalize,
   containsPlaceholder,
@@ -28,7 +33,8 @@ export type LiveCall = { arguments: unknown; response: unknown };
 
 /**
  * Drift that stopped a Workflow Run: the Tool, as `server.tool`, where its
- * response drifted from its Baseline, and its calls in the run so far.
+ * responses drifted from its Baseline, its calls in the run, and the fields
+ * the run read of it.
  */
 export type Drift = {
   tool: string;
@@ -36,19 +42,33 @@ export type Drift = {
   baseline: JsonSchema;
   mismatches: Mismatch[];
   responses: LiveCall[];
+  reads: string[];
+};
+
+/** A Read Tool call of a run. */
+export type Observed = {
+  tool: DownstreamTool;
+  /** The call as its Downstream Server answered it. */
+  live: LiveCall;
+  /** The response through the Tool's Response Adapter. */
+  response: unknown;
+  /**
+   * Where that response does not fit the Baseline the Tool had at the call;
+   * none for a Tool not pinned yet.
+   */
+  mismatches: Mismatch[];
 };
 
 // During a Plan, Read Tools run live, their responses mapped by their
 // Response Adapters, and Write Tool calls are recorded. Read Tool calls are
-// kept with their adapted responses, as Fixtures. `check` sees each call as
-// the server answered it and its adapted response first, and may stop the
-// call.
+// kept with their adapted responses, as Fixtures, and observed with how
+// they fit their Baselines.
 function planSdk(
   project: Project,
   writes: PlannedWrite[],
   calls: RecordedCall[],
-  adapters: Adapters,
-  check?: (tool: DownstreamTool, live: LiveCall, response: unknown) => void
+  observed: Observed[],
+  adapters: Adapters
 ): Sdk {
   // No prototype, so a server named like an Object member is just a name.
   const sdk: Sdk = Object.create(null);
@@ -65,7 +85,15 @@ function planSdk(
           }
           const live = { arguments: args, response: await tool.call(args) };
           const value = adapters.adapt(name, live.response);
-          check?.(tool, live, value);
+          const baseline = project.baselines.get(tool.server, tool.tool);
+          observed.push({
+            tool,
+            live,
+            response: value,
+            mismatches: baseline
+              ? mismatches(baseline.outputSchema, value)
+              : [],
+          });
           calls.push({ tool: name, arguments: args, response: value });
           await project.baselines.record(tool, value);
           return value;
@@ -81,16 +109,9 @@ function planSdk(
 /**
  * Runs code as a Plan. A run after Approval sees the clock the approved run
  * saw, so a plan built from the time or Math.random is rebuilt as it was
- * approved. Given a Contract, the run stops at the first response whose
- * Drift touches it, and fails even if the program catches that.
+ * approved.
  */
-export async function planRun(
-  project: Project,
-  code: string,
-  input: unknown,
-  contract?: Record<string, string[]>
-) {
-  const { baselines } = project;
+export async function planRun(project: Project, code: string, input: unknown) {
   const key = runKey(code, input);
   const approved = await project.plans.approvedFor(key);
   const clock = approved?.clock ?? {
@@ -99,29 +120,7 @@ export async function planRun(
   };
   const writes: PlannedWrite[] = [];
   const calls: RecordedCall[] = [];
-  const drift: Drift[] = [];
-  // The checked calls of each Tool, and the Tools whose responses all fit
-  // their Baselines.
-  const checked = new Map<string, LiveCall[]>();
-  const fitting = new Set<string>();
-  const check = (tool: DownstreamTool, live: LiveCall, response: unknown) => {
-    const name = toolName(tool);
-    const baseline = baselines.get(tool.server, tool.tool);
-    if (contract === undefined || baseline === undefined) return;
-    const responses = [...(checked.get(name) ?? []), live];
-    checked.set(name, responses);
-    const found = mismatches(baseline.outputSchema, response);
-    if (found.length === 0) fitting.add(name);
-    if (!touchesContract(found, contract, name)) return;
-    drift.push({
-      tool: name,
-      offered: tool,
-      baseline: baseline.outputSchema,
-      mismatches: found,
-      responses,
-    });
-    throw new Error(`${name} drifted from its Baseline`);
-  };
+  const observed: Observed[] = [];
   const loaded = await loadAdapters(project.root).catch(
     (error: unknown) => error as Error
   );
@@ -132,22 +131,43 @@ export async function planRun(
           source: code,
           declarations: declarations(project.sdkTools()),
           input,
-          sdk: planSdk(project, writes, calls, loaded, check),
+          sdk: planSdk(project, writes, calls, observed, loaded),
           limits: project.limits,
           clock,
         });
   const adapters = loaded instanceof Error ? undefined : loaded;
-  return {
-    key,
-    approved,
-    clock,
-    writes,
-    calls,
-    result,
-    adapters,
-    drift: drift[0],
-    fitting,
-  };
+  return { key, approved, clock, writes, calls, observed, result, adapters };
+}
+
+/**
+ * The first Tool, in the order of the calls, whose responses drifted from
+ * its Baseline where the run read them. Fields the run did not read do not
+ * matter to it, so Drift there is no Drift of the run.
+ */
+export function findDrift(
+  project: Project,
+  observed: Observed[],
+  /** The fields the run read, by Tool, as a Contract writes them. */
+  reads: Record<string, string[]>
+): Drift | undefined {
+  for (const name of new Set(observed.map(({ tool }) => toolName(tool)))) {
+    const calls = observed.filter(({ tool }) => toolName(tool) === name);
+    const found = uniqueMismatches(calls.flatMap((call) => call.mismatches));
+    const read = Object.hasOwn(reads, name) ? reads[name]! : [];
+    if (touching(found, read).length === 0) continue;
+    const offered = calls[0]!.tool;
+    return {
+      tool: name,
+      offered,
+      // A call with mismatches had a Baseline.
+      baseline: project.baselines.get(offered.server, offered.tool)!
+        .outputSchema,
+      mismatches: found,
+      responses: calls.map((call) => call.live),
+      reads: read,
+    };
+  }
+  return undefined;
 }
 
 // The same code and input give the same run key, whatever the order of the

@@ -15,6 +15,7 @@ import {
   mismatches,
   touches,
   touching,
+  uniqueMismatches,
   type Mismatch,
 } from "./drift.ts";
 import {
@@ -24,6 +25,7 @@ import {
   isRecord,
   parsePath,
   redacted,
+  schemasAt,
   valuesAt,
   type Step,
 } from "./paths.ts";
@@ -62,7 +64,10 @@ export type DriftedTool = {
   ops: Op[];
   /** The live responses of the run, as the server sent them. */
   responses: Call[];
-  /** The field paths each saved Workflow reads of the Tool. */
+  /**
+   * The field paths each saved Workflow reads of the Tool, and those the run
+   * that drifted read.
+   */
   contracts: string[][];
   /** The Tool's calls in the Fixtures, whose responses fit the Baseline. */
   fixtures: Call[];
@@ -192,7 +197,7 @@ function drifting(
 ): (trial: Op[]) => Mismatch[] {
   const reads = [...new Set(drift.contracts.flat())];
   return (trial) =>
-    unique(
+    uniqueMismatches(
       drift.responses.flatMap(({ response }) =>
         touching(
           mismatches(drift.baseline, applyOps(trial, response), options),
@@ -208,7 +213,7 @@ export type RepairTask = PendingDrift & {
   baseline: JsonSchema;
   /** The ops of the Tool's Adapter now. */
   ops: Op[];
-  /** The field paths the saved Workflows read of the Tool. */
+  /** The field paths the Workflows read of the Tool. */
   reads: string[];
   /** One line per field read the Drift touches: its values in the Fixtures. */
   fixtureValues: string[];
@@ -403,29 +408,6 @@ function pageCursor(
   );
 }
 
-// The schemas a path reaches in a JSON Schema, through unions and arrays.
-function schemasAt(schema: JsonSchema | boolean, steps: Step[]): JsonSchema[] {
-  if (typeof schema === "boolean") return [];
-  if (Array.isArray(schema.anyOf)) {
-    return schema.anyOf.flatMap((option) => schemasAt(option, steps));
-  }
-  const [step, ...rest] = steps;
-  if (step === undefined) return [schema];
-  if ("each" in step) {
-    const prefix = Array.isArray(schema.prefixItems) ? schema.prefixItems : [];
-    return [...prefix, schema.items ?? true].flatMap((items) =>
-      schemasAt(items, rest)
-    );
-  }
-  const properties = schema.properties ?? {};
-  return schemasAt(
-    Object.hasOwn(properties, step.key)
-      ? properties[step.key]!
-      : (schema.additionalProperties ?? true),
-    rest
-  );
-}
-
 // Maps enum values by rank: the live value seen most often to the value the
 // Fixtures show most often, and so on. A tie leaves the ranks open, and so
 // does a different number of values: then there is no mapping.
@@ -552,13 +534,6 @@ function mean(numbers: number[]): number {
   return numbers.reduce((sum, n) => sum + n, 0) / numbers.length;
 }
 
-function unique(found: Mismatch[]): Mismatch[] {
-  return found.filter(
-    (mismatch, index) =>
-      found.findIndex((other) => same(other, mismatch)) === index
-  );
-}
-
 function same(a: Mismatch, b: Mismatch): boolean {
   return a.path === b.path && a.problem === b.problem;
 }
@@ -589,6 +564,8 @@ export type PendingDrift = {
   workflow: string;
   at: string;
   mismatches: Mismatch[];
+  /** The fields the run that found it read of the Tool. */
+  reads: string[];
   reason: string;
   /**
    * The Tool's calls in the run, as the server answered them, redacted like
@@ -613,6 +590,7 @@ const pendingSchema = z.object({
   workflow: z.string(),
   at: z.string(),
   mismatches: z.array(z.object({ path: z.string(), problem: z.string() })),
+  reads: z.array(z.string()).default([]),
   reason: z.string(),
   responses: z.array(callSchema).default([]),
 });

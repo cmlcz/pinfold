@@ -106,7 +106,7 @@ export function createGateway(
     {
       description: [
         "Run a saved Workflow with an input, without writing code: list_workflows shows each one's inputs.",
-        "The run is a Plan, then an Apply. Its writes are sent unattended unless Approval is required: the Workflow has never been applied, or its Write Plan exceeds its Write Budget. Then the run pauses, nothing is sent, and the result shows the Write Plan for the developer to approve in a terminal.",
+        "The run is a Plan, then an Apply. Its writes are sent unattended unless Approval is required: the developer has not approved writes of the Workflow's code as it is now, a Response Adapter it reads through changed, or its Write Plan exceeds its Write Budget. Then the run pauses, nothing is sent, and the result shows the Write Plan for the developer to approve in a terminal.",
         "The Workflow is checked before it runs, since the developer may have edited it; a run refused by a check says why.",
       ].join("\n"),
       inputSchema: z.object({

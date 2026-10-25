@@ -23,6 +23,7 @@ import {
   type SaveResult,
 } from "./lib/workflows.ts";
 
+export { makeFieldOptional } from "./lib/baselines.ts";
 export {
   classifyTools,
   loadConfig,
@@ -45,6 +46,7 @@ export {
   formatRepairTasks,
   formatResume,
   formatWorkflowRun,
+  reviewPlan,
   type ExploreResult,
   type ProposalResult,
   type ResumeResult,
@@ -153,8 +155,11 @@ export async function openCore(
     async explore({ code, input = {} }) {
       const { key, approved, clock, writes, calls, result, adapters } =
         await planRun(project, code, input);
-      if (!result.ok) return result;
-      const plan = writePlan(writes);
+      if (!result.ok) return { ok: false, error: result.error };
+      const tools = [
+        ...new Set([...calls, ...writes].map((call) => call.tool)),
+      ];
+      const plan = writePlan(writes, adapters!.digests(tools));
       const outcome = await planOutcome(project, plan, result.value, {
         key,
         clock,
@@ -163,9 +168,6 @@ export async function openCore(
       });
       if (!outcome.ok) return outcome;
       const run = randomUUID().slice(0, 8);
-      const tools = [
-        ...new Set([...calls, ...writes].map((call) => call.tool)),
-      ];
       remember({
         run,
         code,
@@ -173,7 +175,7 @@ export async function openCore(
         calls,
         tools,
         reads: result.reads,
-        adapters: adapters!.digests(tools),
+        adapters: plan.adapters,
       });
       return { ...outcome, exploration: run };
     },

@@ -3,8 +3,8 @@
 // that, what becomes of a run's Write Plan: applied now, or left to wait
 // for Approval.
 import { Placeholder, type Clock } from "../../sandbox/index.ts";
-import { ToolError } from "./downstream.ts";
-import type { RunJournal } from "./journal.ts";
+import { loadAdapters } from "./adapters.ts";
+import { resolveHint, type RunJournal } from "./journal.ts";
 import {
   span,
   writeCount,
@@ -37,8 +37,6 @@ export async function planOutcome(
     return { ok: true, status: "complete", value, plan };
   const record = await plans.latest(plan.id);
   switch (record?.status) {
-    case "declined":
-      return { ok: true, status: "declined", value, plan };
     case "approved":
       return apply(project, record, plan, value);
     case "applying":
@@ -51,7 +49,8 @@ export async function planOutcome(
     case "pending":
       break;
     default: {
-      // New, or applied before: the developer approves this run afresh.
+      // New, or applied or declined before: the developer approves this run
+      // afresh. A decline answered one request, not every run to come.
       const status = run.needsApproval ? "pending" : "approved";
       const added = await plans.add(plan, run.key, run.clock, status);
       if (status === "approved") {
@@ -65,9 +64,17 @@ export async function planOutcome(
       }
     }
   }
-  return run.approved === undefined
-    ? { ok: true, status: "pending", value, plan }
-    : { ok: true, status: "changed", value, plan, approved: run.approved };
+  if (run.approved !== undefined) {
+    return { ok: true, status: "changed", value, plan, approved: run.approved };
+  }
+  const declined = record?.status === "declined";
+  return {
+    ok: true,
+    status: "pending",
+    value,
+    plan,
+    ...(declined && { declined }),
+  };
 }
 
 /** Sends the writes a stopped run's Apply did not send, and no others. */
@@ -77,7 +84,8 @@ export async function resume(
 ): Promise<ResumeResult> {
   const record = await project.plans.get(run);
   if (record === undefined) throw new Error(`no run ${run}`);
-  const plan = { id: record.id, writes: record.writes };
+  const { id, writes, adapters } = record;
+  const plan = { id, writes, adapters };
   switch (record.status) {
     case "applied":
       return { run, plan, sent: [] };
@@ -144,12 +152,19 @@ async function sendRest(
       );
     }
   }
+  // A write's result reaches later writes through its Tool's Response
+  // Adapter, as a read's response reaches the program.
+  const adapters = await loadAdapters(project.root).catch((error: unknown) => {
+    throw new Error(
+      `${(error as Error).message}\nNothing was sent. Once it is fixed, \`pinfold resume ${record.record}\` sends the writes not sent.`
+    );
+  });
   const run = project.journal.run(record.record);
   const before = run.sent().length;
   let results: unknown[];
   try {
-    results = await sendWrites(record.writes, run, (write, args) =>
-      project.toolOf(write).call(args)
+    results = await sendWrites(record.writes, run, async (write, args) =>
+      adapters.adapt(write.tool, await project.toolOf(write).call(args))
     );
   } catch (error) {
     // Any other error stopped this Apply before it took a write, so the
@@ -200,22 +215,21 @@ export async function sendWrites(
   for (let index = results.length; index < writes.length; index++) {
     const write = writes[index]!;
     const position = index + 1;
-    const stopped = (error: unknown, inDoubt: boolean) =>
+    const stopped = (error: unknown, next: string) =>
       new ApplyStopped(
-        `Apply stopped at write ${position} of ${writes.length} (${write.tool}): ${(error as Error).message}. ` +
-          `Sent: ${span(1, index)}.` +
-          (inDoubt
-            ? ` May have been sent: write ${position}. Not sent: ${span(position + 1, writes.length)}. ` +
-              `No resume sends this run's writes, since write ${position} may have reached its server.`
-            : ` Not sent: ${span(position, writes.length)}. ` +
-              `\`pinfold resume ${journal.run}\` sends the writes not sent.`),
+        `Apply stopped at write ${position} of ${writes.length} (${write.tool}): ${(error as Error).message}. Sent: ${span(1, index)}. ${next}`,
         { cause: error }
       );
     let args: unknown;
     try {
       args = resolvePlaceholders(write.arguments, results);
     } catch (error) {
-      throw stopped(error, false);
+      // The results a resume would resolve from are the same, so it would
+      // stop here again.
+      throw stopped(
+        error,
+        `Not sent: ${span(position, writes.length)}. The real result of an earlier write lacks what this write needs, as its Tool's response drifted, so no resume can send it. A Response Adapter for that Tool maps its results for later runs.`
+      );
     }
     switch (journal.take(index)) {
       case "busy":
@@ -228,12 +242,14 @@ export async function sendWrites(
     try {
       results.push(await send(write, args));
     } catch (error) {
-      // A server that answered with an error did not take the write. Any
-      // other failure may have reached it, so the write stays taken and is
-      // never sent again.
-      const refused = error instanceof ToolError;
-      if (refused) journal.release(index);
-      throw stopped(error, !refused);
+      // Even a server that answered with an error may have made the change
+      // first: the reference MCP server SDK, for one, checks a Tool's output
+      // only after running it. So the write stays taken, in doubt, until the
+      // developer resolves it.
+      throw stopped(
+        error,
+        `May have been sent: write ${position}. Not sent: ${span(position + 1, writes.length)}. Then ${resolveHint(journal.run, position)}; after that, \`pinfold resume ${journal.run}\` sends the writes not sent.`
+      );
     }
     journal.settle(index, results[index]);
   }

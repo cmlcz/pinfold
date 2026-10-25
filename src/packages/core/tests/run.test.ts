@@ -1,4 +1,4 @@
-import { readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -141,7 +141,7 @@ describe("run_workflow", () => {
     );
   });
 
-  it("pauses a Write Plan over the Write Budget", async () => {
+  it("asks for Approval again once the code changed, even an edit by an agent", async () => {
     const core = await openTriage();
     await saveTriage(core);
     const first = succeeded(
@@ -150,8 +150,83 @@ describe("run_workflow", () => {
     await openPlans(ws.dir).approve(first.plan.id);
     succeeded(await core.runWorkflow({ name: "triage_sentry", input }));
     await editWorkflow((source) =>
+      source.replace(
+        "const created = [];",
+        'const created = [];\n  await sdk.linear.createIssue({ title: "added" });'
+      )
+    );
+
+    const paused = succeeded(
+      await core.runWorkflow({ name: "triage_sentry", input })
+    );
+    await openPlans(ws.dir).approve(paused.plan.id);
+    const applied = succeeded(
+      await core.runWorkflow({ name: "triage_sentry", input })
+    );
+
+    expect(paused.status).toBe("pending");
+    expect(paused.approvalReason).toBe(
+      "the code of Workflow triage_sentry changed since its writes were last approved"
+    );
+    expect(applied.status).toBe("applied");
+    expect(
+      succeeded(await core.runWorkflow({ name: "triage_sentry", input })).status
+    ).toBe("applied");
+  });
+
+  it("asks for Approval of the first writes even after a run without writes was applied", async () => {
+    const core = await openTriage();
+    const maybe = `export async function main(input: { title?: string }) {
+  await sdk.sentry.listIssues({ project: "web" });
+  if (input.title !== undefined) await sdk.linear.createIssue({ title: input.title });
+}`;
+    const explored = await core.explore({ code: maybe, input: {} });
+    if (!explored.ok) throw new Error(explored.error);
+    await core.saveWorkflow({
+      run: explored.exploration,
+      name: "maybe",
+      confirmed: true,
+    });
+    // An Adapter approved through a run that sends nothing.
+    await mkdir(join(ws.dir, ".workflows", "adapters"), { recursive: true });
+    await writeFile(
+      join(ws.dir, ".workflows", "adapters", "sentry.listIssues.json"),
+      JSON.stringify({
+        server: "sentry",
+        tool: "listIssues",
+        version: 1,
+        ops: [],
+      })
+    );
+    const held = succeeded(
+      await core.runWorkflow({ name: "maybe", input: {} })
+    );
+    await openPlans(ws.dir).approve(held.plan.id);
+    expect(
+      succeeded(await core.runWorkflow({ name: "maybe", input: {} })).status
+    ).toBe("applied");
+
+    const writing = succeeded(
+      await core.runWorkflow({ name: "maybe", input: { title: "t" } })
+    );
+
+    expect(writing.status).toBe("pending");
+    expect(writing.approvalReason).toBe(
+      "Workflow maybe has never been applied"
+    );
+  });
+
+  it("pauses a Write Plan over the Write Budget", async () => {
+    const core = await openTriage();
+    await saveTriage(core);
+    await editWorkflow((source) =>
       source.replace("writeBudget: 10", "writeBudget: 0")
     );
+    const first = succeeded(
+      await core.runWorkflow({ name: "triage_sentry", input })
+    );
+    await openPlans(ws.dir).approve(first.plan.id);
+    succeeded(await core.runWorkflow({ name: "triage_sentry", input }));
 
     const paused = succeeded(
       await core.runWorkflow({ name: "triage_sentry", input })
@@ -250,19 +325,22 @@ describe("run_workflow", () => {
     );
   });
 
-  it("refuses a Workflow whose Contract reads a field its Baseline lacks", async () => {
+  it("stops a run that reads a field its Baseline does not allow, before its Write Plan", async () => {
     const core = await openTriage();
     await saveTriage(core);
-    const recordFile = join(ws.dir, ".workflows", "triage_sentry.json");
-    const record = JSON.parse(await readFile(recordFile, "utf8"));
-    record.contract["sentry.listIssues"].push("issues[].gone");
-    await writeFile(recordFile, JSON.stringify(record));
+    await editWorkflow((source) =>
+      source.replace(
+        "description: issue.culprit,",
+        "description: issue.culprit + (issue as any).gone,"
+      )
+    );
 
     const result = await core.runWorkflow({ name: "triage_sentry", input });
 
     expect(!result.ok && result.error).toBe(
-      "Workflow triage_sentry not run: its Contract reads sentry.listIssues issues[].gone, which the Baseline of sentry.listIssues does not have."
+      "Workflow triage_sentry stopped before its Write Plan, so nothing was sent: it reads sentry.listIssues issues[].gone, which its Baseline does not have."
     );
+    expect(await ws.control("linear").receivedWrites()).toEqual([]);
   });
 
   it("runs a Workflow that reads a field its Baseline was pinned without", async () => {

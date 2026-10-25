@@ -299,6 +299,47 @@ describe("Field reads", () => {
   });
 });
 
+describe("Field reads of missing fields", () => {
+  const sdk = { s: { read: async () => ({ items: [{ a: 1 }], b: 2 }) } };
+
+  it("counts a field the program asks for that is missing", async () => {
+    const result = await run(
+      `export async function main() {
+        const r: any = await sdk.s.read();
+        const gone = r.renamed ?? r.items[0].gone;
+        return [gone, "absent" in r, r.items[5], r.toString === Object.prototype.toString, JSON.stringify(r.items)];
+      }`,
+      sdk
+    );
+
+    if (!result.ok) throw new Error(result.error);
+    expect([...result.reads["s.read"]!].sort()).toEqual([
+      "absent",
+      "items",
+      "items[]",
+      "items[].a",
+      "items[].gone",
+      "renamed",
+    ]);
+  });
+
+  it("keeps the reads of a program that fails", async () => {
+    const result = await run(
+      `export async function main() {
+        const r: any = await sdk.s.read();
+        return r.renamed.length;
+      }`,
+      sdk
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("TypeError"),
+      reads: { "s.read": ["renamed"] },
+    });
+  });
+});
+
 describe("Field reads the program hides", () => {
   const sdk = {
     s: { read: async () => ({ a: 1, b: 2, "x.y": 3, c: 4 }) },

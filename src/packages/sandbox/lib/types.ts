@@ -34,7 +34,8 @@ export type FieldReads = Record<string, string[]>;
 
 export type SandboxResult =
   | { ok: true; value: unknown; reads: FieldReads }
-  | { ok: false; error: string };
+  /** A failed run keeps the fields it read, if any, as they may show why. */
+  | { ok: false; error: string; reads?: FieldReads };
 
 /**
  * Runs untrusted code with no host access except its `sdk`.

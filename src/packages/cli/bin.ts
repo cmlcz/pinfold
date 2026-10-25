@@ -3,19 +3,22 @@
 //   node bin.ts plans [--config pinfold.json]
 //   node bin.ts approve|decline <plan-id> [--config pinfold.json]
 //   node bin.ts resume <run-id> [--config pinfold.json]
+//   node bin.ts resolve <run-id> <write> sent|not-sent [--config pinfold.json]
+//   node bin.ts baseline optional <server.tool> <field-path> [--config pinfold.json]
 //   node bin.ts list [--config pinfold.json]
 //   node bin.ts run <workflow> [<value> | --<field> <value>...] [--config pinfold.json]
 import { dirname, resolve } from "node:path";
 import {
   classifyTools,
-  formatPlan,
   formatResume,
   formatWorkflowRun,
   formatWorkflows,
   listWorkflows,
   loadConfig,
+  makeFieldOptional,
   openCore,
   openPlans,
+  reviewPlan,
   type CommandLineInput,
   type Core,
   type ToolKind,
@@ -26,12 +29,18 @@ const usage = `usage:
   pinfold plans [--config <path>]
   pinfold approve|decline <plan-id> [--config <path>]
   pinfold resume <run-id> [--config <path>]
+  pinfold resolve <run-id> <write> sent|not-sent [--config <path>]
+  pinfold baseline optional <server.tool> <field-path> [--config <path>]
   pinfold list [--config <path>]
   pinfold run <workflow> [<value> | --<field> <value>...] [--config <path>]
 
 pinfold run takes one value for a Workflow whose input is not an object, or
 else a flag per input field; a value starting with -- is given as
---<field>=<value>. It exits with 3 when the run pauses for Approval.`;
+--<field>=<value>. It exits with 3 when the run pauses for Approval.
+
+pinfold resolve records whether a write that an Apply stopped while sending
+reached its server. Check the server first, and only once no Apply is
+sending the write.`;
 
 // A Workflow Run that pauses for Approval exits with this code, so that cron
 // or CI can tell it from a failure.
@@ -66,7 +75,7 @@ async function main(): Promise<number> {
       }
       const pending = await plans.pending();
       if (pending.length === 0) console.log("No pending Write Plans.");
-      for (const plan of pending) console.log(formatPlan(plan));
+      for (const plan of pending) console.log(await reviewPlan(root, plan));
       return 0;
     }
     case "approve": {
@@ -74,7 +83,7 @@ async function main(): Promise<number> {
       if (id === undefined || rest.length > 1) return fail();
       const plans = openPlans(root);
       const plan = await plans.approve(id);
-      console.log(formatPlan(plan));
+      console.log(await reviewPlan(root, plan));
       console.log(
         `Approved Write Plan ${id}. It is sent when the same code runs again and rebuilds the same plan.`
       );
@@ -90,7 +99,9 @@ async function main(): Promise<number> {
           `Declined Write Plan ${id}. A run applying it stops before its next write, and no run sends it again; writes already sent stay sent.`
         );
       } else {
-        console.log(`Declined Write Plan ${id}. It will never be sent.`);
+        console.log(
+          `Declined Write Plan ${id}. It will never be sent; a later run that builds the same plan asks for Approval again.`
+        );
       }
       return 0;
     }
@@ -101,6 +112,30 @@ async function main(): Promise<number> {
         console.log(formatResume(await core.resume(run)));
         return 0;
       });
+    }
+    case "resolve": {
+      const [run, write, outcome] = rest;
+      if (run === undefined || rest.length !== 3) return fail();
+      if (!/^[1-9]\d*$/.test(write!)) return fail();
+      if (outcome !== "sent" && outcome !== "not-sent") return fail();
+      await openPlans(root).resolve(run, Number(write), outcome === "sent");
+      console.log(
+        outcome === "sent"
+          ? `Recorded write ${write} of run ${run} as sent; no resume sends it. \`pinfold resume ${run}\` sends the writes after it.`
+          : `Recorded write ${write} of run ${run} as not sent. \`pinfold resume ${run}\` sends it and the writes after it.`
+      );
+      return 0;
+    }
+    case "baseline": {
+      const [change, tool, path] = rest;
+      if (change !== "optional" || tool === undefined || path === undefined)
+        return fail();
+      if (rest.length > 3) return fail();
+      await makeFieldOptional(root, tool, path);
+      console.log(
+        `Made ${path} of ${tool} optional in its Baseline: it may now be missing or null. A gateway that is running uses it once restarted.`
+      );
+      return 0;
     }
     case "list":
       if (rest.length > 0) return fail();
@@ -123,8 +158,6 @@ async function main(): Promise<number> {
           case "pending":
           case "changed":
             return pausedExitCode;
-          case "declined":
-            return 1;
           default:
             return 0;
         }
