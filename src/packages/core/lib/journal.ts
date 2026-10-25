@@ -4,7 +4,7 @@
 // ever send the same write of a run.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
 
 /** The Apply Journal's entries for one run's Write Plan, by position from 0. */
 export type RunJournal = {
@@ -41,7 +41,10 @@ export function openJournal(root: string): Journal {
     mkdirSync(state, { recursive: true });
     // Nothing in the state directory belongs in version control.
     writeFileSync(join(state, ".gitignore"), "*\n");
-    db = new DatabaseSync(join(state, "journal.sqlite"));
+    // Loaded only here: on Node 22, loading node:sqlite prints a warning
+    // that it is experimental, which a run that sends no write never needs.
+    const sqlite = process.getBuiltinModule("node:sqlite");
+    db = new sqlite.DatabaseSync(join(state, "journal.sqlite"));
     db.exec(`
       PRAGMA busy_timeout = 5000;
       CREATE TABLE IF NOT EXISTS writes (
