@@ -187,6 +187,24 @@ export function checkRepair(
   return { ok: true, evidence };
 }
 
+/**
+ * The paths that default ops would make up values for: fields that held
+ * more than one value in the Fixtures, so no one default stands for them.
+ */
+export function madeUpDefaults(
+  drift: Pick<DriftedTool, "fixtures" | "responses">,
+  added: Op[]
+): string[] {
+  const history = historyOf(drift.fixtures, drift.responses);
+  return added.flatMap((op) => {
+    if (op.op !== "default") return [];
+    const values = valuesIn(history, op.path).map((value) =>
+      JSON.stringify(value)
+    );
+    return new Set(values).size > 1 ? [op.path] : [];
+  });
+}
+
 // The mismatches of the live responses through some ops that touch a field
 // a saved Workflow reads. One that touches none of the reads touches no
 // Contract, so responses without such mismatches satisfy every affected
