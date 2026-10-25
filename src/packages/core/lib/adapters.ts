@@ -12,9 +12,10 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as z from "zod";
-import { listJson, readJson, toolFileName } from "./baselines.ts";
+import { toolFileName, toolName } from "./baselines.ts";
+import { listJson, readJson } from "./files.ts";
 import { canonicalize, shortHash } from "./plan.ts";
-import { isRecord, parsePath, type Step } from "./paths.ts";
+import { isPrimitive, isRecord, parsePath, type Step } from "./paths.ts";
 
 // A field path that ends in a field, which an op can replace or remove.
 const fieldPath = z.string().refine(
@@ -114,8 +115,8 @@ export async function loadAdapters(root: string): Promise<Adapters> {
         `${path} is not a valid Response Adapter:\n${z.prettifyError(parsed.error)}`
       );
     }
-    const { server, tool, version, ops } = parsed.data;
-    const name = `${server}.${tool}`;
+    const { version, ops } = parsed.data;
+    const name = toolName(parsed.data);
     if (adapters.has(name)) {
       throw new Error(`${path} is a second Response Adapter for ${name}`);
     }
@@ -330,8 +331,4 @@ function lastEach(path: Step[]): number {
 
 function steps(path: string): Step[] {
   return parsePath(path) ?? [];
-}
-
-function isPrimitive(value: unknown): value is string | number | boolean {
-  return ["string", "number", "boolean"].includes(typeof value);
 }

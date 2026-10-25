@@ -2,13 +2,7 @@
 // TypeScript file the developer owns, beside a JSON file that records its
 // input schema, Tools and Contract. Its Fixtures go to the git-ignored
 // .workflows/fixtures/.
-import {
-  appendFile,
-  mkdir,
-  readdir,
-  readFile,
-  writeFile,
-} from "node:fs/promises";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as z from "zod";
 import {
@@ -19,7 +13,8 @@ import {
   type FieldReads,
   type JsonSchema,
 } from "../../sandbox/index.ts";
-import { listJson } from "./baselines.ts";
+import { splitToolName } from "./baselines.ts";
+import { listJson, prepareState, readOrNone, safeJson } from "./files.ts";
 import { deepestPaths, redact, shapeAllows, withoutDataKeys } from "./paths.ts";
 
 const defaultWriteBudget = 10;
@@ -220,9 +215,8 @@ export function redactionRules(
   rules: Record<string, Record<string, string[]>>,
   name: string
 ): string[] {
-  const [server, ...rest] = name.split(".");
-  const tool = rest.join(".");
-  const tools = Object.hasOwn(rules, server!) ? rules[server!]! : {};
+  const { server, tool } = splitToolName(name);
+  const tools = Object.hasOwn(rules, server) ? rules[server]! : {};
   return Object.hasOwn(tools, tool) ? tools[tool]! : [];
 }
 
@@ -287,15 +281,8 @@ export async function savedContracts(
 // is skipped.
 async function readRecords(root: string): Promise<WorkflowRecord[]> {
   const dir = join(root, ".workflows");
-  let files: string[];
-  try {
-    files = await readdir(dir);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
-  }
   const records = [];
-  for (const file of files.filter((name) => name.endsWith(".json")).sort()) {
+  for (const file of (await listJson(dir)).sort()) {
     const text = await readOrNone(join(dir, file));
     const parsed = recordSchema.safeParse(text && safeJson(text));
     if (parsed.success) records.push(parsed.data);
@@ -494,9 +481,7 @@ function historyFile(root: string): string {
 }
 
 export async function recordRun(root: string, entry: RunEntry): Promise<void> {
-  const state = join(root, ".pinfold");
-  await mkdir(state, { recursive: true });
-  await writeFile(join(state, ".gitignore"), "*\n");
+  await prepareState(root);
   await appendFile(historyFile(root), `${JSON.stringify(entry)}\n`);
 }
 
@@ -583,21 +568,4 @@ function describeType(schema: JsonSchema | boolean): string {
   }
   if (schema.type === "object") return `{ ${describeInput(schema)} }`;
   return typeof schema.type === "string" ? schema.type : "unknown";
-}
-
-async function readOrNone(path: string): Promise<string | undefined> {
-  try {
-    return await readFile(path, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw error;
-  }
-}
-
-function safeJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
 }

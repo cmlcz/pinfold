@@ -40,12 +40,9 @@ export function createGateway(
     async ({ code, input }) => {
       const result = await core.explore({ code, input });
       if (!result.ok) {
-        return {
-          content: [{ type: "text", text: result.error }],
-          isError: true,
-        };
+        return failure(result.error);
       }
-      return { content: [{ type: "text", text: formatOutcome(result) }] };
+      return reply(formatOutcome(result));
     }
   );
 
@@ -64,7 +61,7 @@ export function createGateway(
         signatures.length > 0
           ? signatures.join("\n\n")
           : `No Tools match ${JSON.stringify(query)}.`;
-      return { content: [{ type: "text", text }] };
+      return reply(text);
     }
   );
 
@@ -95,25 +92,12 @@ export function createGateway(
     async (request) => {
       const result = await core.saveWorkflow(request);
       if (!result.ok) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `${result.error}\nFailed check: ${result.check}`,
-            },
-          ],
-          isError: true,
-        };
+        return failure(`${result.error}\nFailed check: ${result.check}`);
       }
       const { workflow } = result;
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Saved Workflow ${workflow.name} as .workflows/${workflow.name}.ts.\n\n${formatWorkflows([workflow])}`,
-          },
-        ],
-      };
+      return reply(
+        `Saved Workflow ${workflow.name} as .workflows/${workflow.name}.ts.\n\n${formatWorkflows([workflow])}`
+      );
     }
   );
 
@@ -138,12 +122,9 @@ export function createGateway(
     async ({ name, input }) => {
       const result = await core.runWorkflow({ name, input: input ?? {} });
       if (!result.ok) {
-        return {
-          content: [{ type: "text", text: result.error }],
-          isError: true,
-        };
+        return failure(result.error);
       }
-      return { content: [{ type: "text", text: formatWorkflowRun(result) }] };
+      return reply(formatWorkflowRun(result));
     }
   );
 
@@ -167,7 +148,7 @@ export function createGateway(
           ].join("\n")
         );
       }
-      return { content: [{ type: "text", text: text.join("\n\n") }] };
+      return reply(text.join("\n\n"));
     }
   );
 
@@ -208,29 +189,27 @@ export function createGateway(
           tool === undefined
             ? tasks
             : tasks.filter((task) => task.tool === tool);
-        return { content: [{ type: "text", text: formatRepairTasks(shown) }] };
+        return reply(formatRepairTasks(shown));
       }
       if (tool === undefined) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Name the Tool the ops repair, as server.tool.",
-            },
-          ],
-          isError: true,
-        };
+        return failure("Name the Tool the ops repair, as server.tool.");
       }
       const result = await core.proposeRepair({ tool, ops });
       if (!result.ok) {
-        return {
-          content: [{ type: "text", text: result.error }],
-          isError: true,
-        };
+        return failure(result.error);
       }
-      return { content: [{ type: "text", text: formatProposal(result) }] };
+      return reply(formatProposal(result));
     }
   );
 
   return server;
+}
+
+// A tool's result: its text, or its text as an error.
+function reply(text: string) {
+  return { content: [{ type: "text" as const, text }] };
+}
+
+function failure(text: string) {
+  return { ...reply(text), isError: true };
 }

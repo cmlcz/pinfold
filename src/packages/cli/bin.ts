@@ -97,7 +97,7 @@ async function main(): Promise<number> {
     case "resume": {
       const [run] = rest;
       if (run === undefined || rest.length > 1) return fail();
-      return withCore(await openProjectCore(), async (core) => {
+      return withProjectCore(async (core) => {
         console.log(formatResume(await core.resume(run)));
         return 0;
       });
@@ -112,7 +112,7 @@ async function main(): Promise<number> {
       const flagged = Object.keys(input.flags).length > 0;
       if (name === undefined || rest.length > 2) return fail();
       if (input.value !== undefined && flagged) return fail();
-      return withCore(await openProjectCore(), async (core) => {
+      return withProjectCore(async (core) => {
         const result = await core.runWorkflow({ name, commandLine: input });
         if (!result.ok) {
           console.error(result.error);
@@ -191,10 +191,8 @@ async function classify([kind, ...names]: string[]): Promise<number> {
   if (kind !== undefined && names.length === 0) return fail();
   const choice = kind as ToolKind | undefined;
 
-  if (choice === undefined) return withCore(await openProjectCore(), show);
-  const tools = await withCore(await openProjectCore(), (core) =>
-    core.toolClassifications()
-  );
+  if (choice === undefined) return withProjectCore(show);
+  const tools = await withProjectCore((core) => core.toolClassifications());
   const choices = [];
   for (const name of names) {
     const match = tools.find((tool) => `${tool.server}.${tool.tool}` === name);
@@ -206,7 +204,7 @@ async function classify([kind, ...names]: string[]): Promise<number> {
   }
   await classifyTools(config, choices);
   // Opened once the first core has closed: its servers are started afresh.
-  return withCore(await openProjectCore(), show);
+  return withProjectCore(show);
 }
 
 function fail(): number {
@@ -214,14 +212,11 @@ function fail(): number {
   return 2;
 }
 
-async function openProjectCore(): Promise<Core> {
-  return openCore(await loadConfig(config), { root });
-}
-
-async function withCore<T>(
-  core: Core,
+// Opens a core on the project for one use, and closes it after.
+async function withProjectCore<T>(
   use: (core: Core) => Promise<T> | T
 ): Promise<T> {
+  const core = await openCore(await loadConfig(config), { root });
   try {
     return await use(core);
   } finally {

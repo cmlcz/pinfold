@@ -59,6 +59,12 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+export function isPrimitive(
+  value: unknown
+): value is string | number | boolean {
+  return ["string", "number", "boolean"].includes(typeof value);
+}
+
 /**
  * A path up to its first key that is data, such as an email address in a
  * map: Contracts are committed, and data must stay out of them. Empty when
