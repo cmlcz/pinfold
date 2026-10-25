@@ -98,7 +98,7 @@ When a run includes writes, `run_sandbox` returns the plan and reports that noth
 ```sh
 node src/packages/cli/bin.ts plans              # list pending plans
 node src/packages/cli/bin.ts approve <plan-id>  # approve the plan
-node src/packages/cli/bin.ts decline <plan-id>  # never send the plan
+node src/packages/cli/bin.ts decline <plan-id>  # do not send this plan; a later run asks again
 node src/packages/cli/bin.ts resume <run-id>    # finish a plan that stopped partway
 node src/packages/cli/bin.ts resolve <run-id> <write> sent|not-sent  # settle a write in doubt
 ```

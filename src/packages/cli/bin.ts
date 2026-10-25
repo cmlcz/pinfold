@@ -96,7 +96,9 @@ async function main(): Promise<number> {
           `Declined Write Plan ${id}. A run applying it stops before its next write, and no run sends it again; writes already sent stay sent.`
         );
       } else {
-        console.log(`Declined Write Plan ${id}. It will never be sent.`);
+        console.log(
+          `Declined Write Plan ${id}. It will never be sent; a later run that builds the same plan asks for Approval again.`
+        );
       }
       return 0;
     }
@@ -142,8 +144,6 @@ async function main(): Promise<number> {
           case "pending":
           case "changed":
             return pausedExitCode;
-          case "declined":
-            return 1;
           default:
             return 0;
         }
