@@ -92,14 +92,10 @@ export function searchRepair(drift: DriftedTool): RepairSearch {
     const before = driftedWith(base);
     // An op chosen for another field may have repaired this one too.
     if (!before.some((mismatch) => same(mismatch, target))) continue;
+    // The same check propose_repair makes of every proposal.
+    const paged = pagedReason(drift, base);
+    if (paged !== undefined) return { kind: "manual", reason: paged };
     const live = adaptedWith(base);
-    const cursor = pageCursor(baseline, target, live);
-    if (cursor !== undefined) {
-      return {
-        kind: "manual",
-        reason: `its responses now come in pages, with ${cursor}, and a Response Adapter maps one response without fetching the others`,
-      };
-    }
     const scored = candidates(baseline, target, live, history)
       .flatMap(({ op, name }) => {
         const trial = [...base, op];
@@ -188,20 +184,37 @@ export function checkRepair(
 }
 
 /**
- * The paths that default ops would make up values for: fields that held
- * more than one value in the Fixtures, so no one default stands for them.
+ * Why no Response Adapter can repair a drifted Tool through some ops, if
+ * none can: its responses now come in pages, and an Adapter maps one
+ * response without fetching the others.
+ */
+export function pagedReason(drift: DriftedTool, ops: Op[]): string | undefined {
+  const live = drift.responses.map(({ response }) => applyOps(ops, response));
+  for (const target of drifting(drift)(ops)) {
+    const cursor = pageCursor(drift.baseline, target, live);
+    if (cursor !== undefined) {
+      return `its responses now come in pages, with ${cursor}, and a Response Adapter maps one response without fetching the others`;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The paths that default ops would make up values for: fields the
+ * Fixtures hold another value of, so the default stands in for data.
  */
 export function madeUpDefaults(
   drift: Pick<DriftedTool, "fixtures" | "responses">,
   added: Op[]
 ): string[] {
   const history = historyOf(drift.fixtures, drift.responses);
+  const text = (value: unknown) => JSON.stringify(canonicalize(value));
   return added.flatMap((op) => {
     if (op.op !== "default") return [];
-    const values = valuesIn(history, op.path).map((value) =>
-      JSON.stringify(value)
-    );
-    return new Set(values).size > 1 ? [op.path] : [];
+    const given = text(op.value);
+    return valuesIn(history, op.path).some((value) => text(value) !== given)
+      ? [op.path]
+      : [];
   });
 }
 
