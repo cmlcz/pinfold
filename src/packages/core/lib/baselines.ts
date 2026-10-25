@@ -38,9 +38,7 @@ export async function openBaselines(root: string): Promise<Baselines> {
   const pinned = new Map<string, Baseline>();
   for (const file of await listJson(dir)) {
     const path = join(dir, file);
-    const parsed = baselineSchema.safeParse(
-      JSON.parse(await readFile(path, "utf8"))
-    );
+    const parsed = baselineSchema.safeParse(await readJson(path));
     if (!parsed.success) {
       throw new Error(
         `${path} is not a valid Baseline:\n${z.prettifyError(parsed.error)}`
@@ -66,11 +64,10 @@ export async function openBaselines(root: string): Promise<Baselines> {
     pinned.set(id, baseline);
     observed.delete(id);
     await mkdir(dir, { recursive: true });
-    // Tool names come from Downstream Servers, so keep them out of the path.
-    // Names that differ only in case would share a file on a file system
-    // that ignores case, so a hash of the exact names keeps them apart.
-    const file = `${baseline.server}.${encodeURIComponent(baseline.tool)}.${shortHash(id).slice(0, 8)}.json`;
-    await writeFile(join(dir, file), `${JSON.stringify(baseline, null, 2)}\n`);
+    await writeFile(
+      join(dir, toolFileName(baseline.server, baseline.tool)),
+      `${JSON.stringify(baseline, null, 2)}\n`
+    );
   }
 
   return {
@@ -93,7 +90,31 @@ function baselineKey(server: string, tool: string): string {
   return `${server}\0${tool}`;
 }
 
-async function listJson(dir: string): Promise<string[]> {
+/**
+ * The file name for a Tool's file. Tool names come from Downstream Servers,
+ * so only a short, safe part of the name is kept, for people to read; the
+ * file itself holds the exact name. A hash of the exact names keeps apart
+ * names that differ only in case, or in the characters left out.
+ */
+export function toolFileName(server: string, tool: string): string {
+  const readable = `${server}.${tool}`.replace(/[^\w.-]/g, "_").slice(0, 64);
+  return `${readable}.${shortHash(baselineKey(server, tool))}.json`;
+}
+
+/** A JSON file's value; an error names the file. */
+export async function readJson(path: string): Promise<unknown> {
+  const text = await readFile(path, "utf8");
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Error(`${path} is not valid JSON: ${(error as Error).message}`, {
+      cause: error,
+    });
+  }
+}
+
+/** The JSON files of a directory; none when it does not exist. */
+export async function listJson(dir: string): Promise<string[]> {
   try {
     return (await readdir(dir)).filter((file) => file.endsWith(".json"));
   } catch (error) {

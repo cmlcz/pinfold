@@ -5,7 +5,9 @@ import {
   quickJsSandbox,
   type Clock,
   type Sdk,
+  type SandboxResult,
 } from "../sandbox/index.ts";
+import { loadAdapters, type Adapters } from "./lib/adapters.ts";
 import { openBaselines } from "./lib/baselines.ts";
 import {
   resolveLimits,
@@ -13,6 +15,12 @@ import {
   type ToolKind,
 } from "./lib/config.ts";
 import { connectDownstream, type DownstreamTool } from "./lib/downstream.ts";
+import {
+  describeMismatch,
+  mismatches,
+  touchesContract,
+  type Mismatch,
+} from "./lib/drift.ts";
 import {
   canonicalize,
   containsPlaceholder,
@@ -39,6 +47,7 @@ import {
   loadWorkflow,
   recordRun,
   runHistory,
+  savedContracts,
   saveWorkflow,
   type CommandLineInput,
   type Exploration,
@@ -131,7 +140,7 @@ export async function openCore(
   options: { root: string }
 ): Promise<Core> {
   const baselines = await openBaselines(options.root);
-  const downstream = await connectDownstream(config.servers);
+  const downstream = await connectDownstream(config.servers, options.root);
   const classificationOf = (tool: DownstreamTool) => {
     const servers = config.classification ?? {};
     const tools = Object.hasOwn(servers, tool.server)
@@ -141,9 +150,16 @@ export async function openCore(
   };
   const isRead = (tool: DownstreamTool) => classificationOf(tool) === "read";
 
-  // During a Plan, Read Tools run live and Write Tool calls are recorded.
-  // Read Tool calls are kept with their responses, as Fixtures.
-  function planSdk(writes: PlannedWrite[], calls: RecordedCall[]): Sdk {
+  // During a Plan, Read Tools run live, their responses mapped by their
+  // Response Adapters, and Write Tool calls are recorded. Read Tool calls
+  // are kept with their adapted responses, as Fixtures. `check` sees each
+  // adapted response first, and may stop the call.
+  function planSdk(
+    writes: PlannedWrite[],
+    calls: RecordedCall[],
+    adapters: Adapters,
+    check?: (tool: DownstreamTool, response: unknown) => void
+  ): Sdk {
     // No prototype, so a server named like an Object member is just a name.
     const sdk: Sdk = Object.create(null);
     for (const tool of downstream.tools) {
@@ -157,7 +173,8 @@ export async function openCore(
                 `a Placeholder cannot be passed to the Read Tool ${name}`
               );
             }
-            const value = await tool.call(args);
+            const value = adapters.adapt(name, await tool.call(args));
+            check?.(tool, value);
             calls.push({ tool: name, arguments: args, response: value });
             await baselines.record(tool, value);
             return value;
@@ -326,8 +343,13 @@ export async function openCore(
 
   // Runs code as a Plan. A run after Approval sees the clock the approved
   // run saw, so a plan built from the time or Math.random is rebuilt as it
-  // was approved.
-  async function planRun(code: string, input: unknown) {
+  // was approved. Given a Contract, the run stops at the first response
+  // whose Drift touches it, and fails even if the program catches that.
+  async function planRun(
+    code: string,
+    input: unknown,
+    contract?: Record<string, string[]>
+  ) {
     const key = runKey(code, input);
     const approved = await plans.approvedFor(key);
     const clock = approved?.clock ?? {
@@ -336,15 +358,57 @@ export async function openCore(
     };
     const writes: PlannedWrite[] = [];
     const calls: RecordedCall[] = [];
-    const result = await quickJsSandbox.run({
-      source: code,
-      declarations: declarations(sdkTools()),
-      input,
-      sdk: planSdk(writes, calls),
-      limits,
+    const drift: Drift[] = [];
+    const check = (tool: DownstreamTool, response: unknown) => {
+      const name = `${tool.server}.${tool.tool}`;
+      const baseline = baselines.get(tool.server, tool.tool);
+      if (contract === undefined || baseline === undefined) return;
+      const found = mismatches(baseline.outputSchema, response);
+      if (!touchesContract(found, contract, name)) return;
+      drift.push({ tool: name, mismatches: found });
+      throw new Error(`${name} drifted from its Baseline`);
+    };
+    const loaded = await loadAdapters(options.root).catch(
+      (error: unknown) => error as Error
+    );
+    const result: SandboxResult =
+      loaded instanceof Error
+        ? { ok: false, error: loaded.message }
+        : await quickJsSandbox.run({
+            source: code,
+            declarations: declarations(sdkTools()),
+            input,
+            sdk: planSdk(writes, calls, loaded, check),
+            limits,
+            clock,
+          });
+    const adapters = loaded instanceof Error ? undefined : loaded;
+    return {
+      key,
+      approved,
       clock,
-    });
-    return { key, approved, clock, writes, calls, result };
+      writes,
+      calls,
+      result,
+      adapters,
+      drift: drift[0],
+    };
+  }
+
+  // What a run stopped by Drift reports: the Tool, its fields and every
+  // Workflow the Drift affects.
+  async function driftReport(workflow: string, drift: Drift): Promise<string> {
+    const affected = (await savedContracts(options.root))
+      .filter(({ contract }) =>
+        touchesContract(drift.mismatches, contract, drift.tool)
+      )
+      .map(({ name }) => name);
+    return [
+      `Workflow ${workflow} not run: the responses of ${drift.tool} drifted from its Baseline, so the run stopped before it made a Write Plan; nothing was sent.`,
+      ...drift.mismatches.map((mismatch) => `  ${describeMismatch(mismatch)}`),
+      `Affected Workflows: ${affected.join(", ")}.`,
+      `A Response Adapter for ${drift.tool} in .workflows/adapters/ that maps its responses back to the Baseline repairs every affected Workflow.`,
+    ].join("\n");
   }
 
   // A Workflow Run: the Workflow's checks, then a Plan that needs Approval if
@@ -353,8 +417,11 @@ export async function openCore(
   async function runWorkflow(
     name: string,
     given: { input: unknown } | { commandLine: CommandLineInput },
-    /** Receives which save of the Workflow ran, for the run history. */
-    ran: { saved?: string }
+    /**
+     * Receives which save of the Workflow ran and the Response Adapters its
+     * Tools went through, for the run history.
+     */
+    ran: { saved?: string; adapters?: Record<string, string> }
   ): Promise<WorkflowRunResult> {
     const loaded = await loadWorkflow(options.root, name, {
       declarations: declarations(sdkTools()),
@@ -377,24 +444,33 @@ export async function openCore(
     if (!checked.ok)
       return { ok: false, error: `Workflow ${name} not run. ${checked.error}` };
 
-    const { key, approved, clock, writes, result } = await planRun(
-      workflow.source,
-      input
-    );
+    const { key, approved, clock, writes, result, adapters, drift } =
+      await planRun(workflow.source, input, workflow.contract);
+    if (drift !== undefined) {
+      return { ok: false, error: await driftReport(name, drift) };
+    }
     if (!result.ok) return result;
+    const digests = adapters!.digests(workflow.tools);
+    ran.adapters = digests;
     const plan = writePlan(writes);
     const history = await runHistory(options.root);
     // Applied before means this very save: a Workflow saved again under the
     // name of a deleted one is approved afresh.
-    const appliedBefore = history.some(
+    const lastApplied = history.findLast(
       (entry) =>
         entry.workflow === name &&
         entry.saved === workflow.saved &&
         entry.status === "applied"
     );
+    // An Adapter added, changed or removed since then.
+    const changedAdapters = workflow.tools.filter(
+      (tool) => lastApplied?.adapters?.[tool] !== digests[tool]
+    );
     let approvalReason: string | undefined;
-    if (!appliedBefore) {
+    if (lastApplied === undefined) {
       approvalReason = `Workflow ${name} has never been applied`;
+    } else if (changedAdapters.length > 0) {
+      approvalReason = `the Response Adapter of ${changedAdapters.join(", ")} changed since Workflow ${name} was last applied`;
     } else if (plan.writes.length > workflow.writeBudget) {
       approvalReason = `the Write Plan has ${writeCount(plan)}, over the Write Budget of ${workflow.writeBudget}`;
     }
@@ -448,7 +524,7 @@ export async function openCore(
       return { ...outcome, exploration: run };
     },
     async runWorkflow({ name, ...given }) {
-      const ran: { saved?: string } = {};
+      const ran: { saved?: string; adapters?: Record<string, string> } = {};
       const result = await runWorkflow(name, given, ran);
       await recordRun(options.root, {
         workflow: name,
@@ -496,6 +572,9 @@ export async function openCore(
     },
   };
 }
+
+/** Drift that stopped a Workflow Run: the Tool, and where it drifted. */
+type Drift = { tool: string; mismatches: Mismatch[] };
 
 // The same code and input give the same run key, whatever the order of the
 // input's fields.

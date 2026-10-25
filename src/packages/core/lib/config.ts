@@ -3,19 +3,32 @@ import * as z from "zod";
 import type { Limits } from "../../sandbox/index.ts";
 import { parsePath } from "./paths.ts";
 
-const stdioServerSchema = z.strictObject({
-  command: z.string().min(1),
-  args: z.array(z.string()).optional(),
-});
-
-// A reference to an environment variable inside a header value: ${NAME}.
+// A reference to an environment variable inside a value: ${NAME}.
 const envReference = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
 
-const headerValue = z
+// A header or environment value, which may hold such references.
+const referencingValue = z
   .string()
   .refine((value) => !value.replace(envReference, "").includes("${"), {
     error: "must reference environment variables as ${NAME}",
   });
+
+const stdioServerSchema = z.strictObject({
+  command: z.string().min(1),
+  args: z.array(z.string()).optional(),
+  /**
+   * Environment variables set for the server, beside the few it inherits.
+   * A secret is passed through by reference, as in `"${SENTRY_TOKEN}"`.
+   */
+  env: z
+    .record(
+      z.string().regex(/^[^=\0]+$/, "must be a variable name"),
+      referencingValue
+    )
+    .optional(),
+  /** The server's working directory, relative to the project root. */
+  cwd: z.string().min(1).optional(),
+});
 
 const httpServerSchema = z.strictObject({
   url: z.url({ protocol: /^https?$/ }).refine((url) => {
@@ -27,7 +40,7 @@ const httpServerSchema = z.strictObject({
    * environment variable, as in `"Bearer ${LINEAR_API_KEY}"`, so it never
    * lives in the config file.
    */
-  headers: z.record(z.string().min(1), headerValue).optional(),
+  headers: z.record(z.string().min(1), referencingValue).optional(),
 });
 
 const serverSchema = z.union([stdioServerSchema, httpServerSchema], {
@@ -101,17 +114,17 @@ export function resolveLimits(config: PinfoldConfig): Limits {
 }
 
 /**
- * A server's headers with each environment variable reference filled in,
- * and the filled-in values, which are secrets.
+ * A server's headers or environment with each environment variable
+ * reference filled in, and the filled-in values, which are secrets.
  */
-export function resolveHeaders(
+export function resolveReferences(
   server: string,
-  headers: Record<string, string>,
+  values: Record<string, string>,
   env: NodeJS.ProcessEnv
-): { headers: Record<string, string>; secrets: string[] } {
+): { values: Record<string, string>; secrets: string[] } {
   const secrets: string[] = [];
   const resolved = Object.fromEntries(
-    Object.entries(headers).map(([name, value]) => [
+    Object.entries(values).map(([name, value]) => [
       name,
       value.replace(envReference, (_, variable: string) => {
         const secret = env[variable];
@@ -125,7 +138,7 @@ export function resolveHeaders(
       }),
     ])
   );
-  return { headers: resolved, secrets };
+  return { values: resolved, secrets };
 }
 
 /** Records the developer's Tool classification in the config file. */
@@ -153,7 +166,16 @@ export async function classifyTools(
 }
 
 export async function loadConfig(path: string): Promise<PinfoldConfig> {
-  const text = await readFile(path, "utf8");
+  let text: string;
+  try {
+    text = await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    throw new Error(
+      `${path} does not exist; create a pinfold config there, or pass --config <path>`,
+      { cause: error }
+    );
+  }
   let json: unknown;
   try {
     json = JSON.parse(text);
