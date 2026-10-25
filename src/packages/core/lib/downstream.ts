@@ -1,11 +1,13 @@
 // MCP client sessions to the configured Downstream Servers.
+import { stat } from "node:fs/promises";
+import { resolve } from "node:path";
 import {
   Client,
   SdkHttpError,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
-import { resolveHeaders, type ServerConfig } from "./config.ts";
+import { resolveReferences, type ServerConfig } from "./config.ts";
 import type { SdkTool } from "./sdk.ts";
 
 /** A Tool as its Downstream Server lists it now, before any Baseline. */
@@ -23,11 +25,13 @@ export type Downstream = {
   close(): Promise<void>;
 };
 
+/** `root` is the project root, which a stdio server's cwd is relative to. */
 export async function connectDownstream(
-  servers: Record<string, ServerConfig>
+  servers: Record<string, ServerConfig>,
+  root: string
 ): Promise<Downstream> {
   const sessions = await Promise.allSettled(
-    Object.entries(servers).map(([name, config]) => connect(name, config))
+    Object.entries(servers).map(([name, config]) => connect(name, config, root))
   );
   const connected = sessions.flatMap((s) =>
     s.status === "fulfilled" ? [s.value] : []
@@ -45,27 +49,51 @@ export async function connectDownstream(
   return { tools: connected.flatMap(({ tools }) => tools), close };
 }
 
-async function connect(server: string, config: ServerConfig) {
-  const client = new Client({ name: "pinfold", version: "0.0.0" });
+// Responses are taken as they come, even when they no longer fit the Tool's
+// listed output schema: telling them from the Tool's Baseline is Drift
+// detection's job, and a Response Adapter may map them back.
+const takeAsTheyCome = {
+  getValidator: () => (input: unknown) => ({
+    valid: true as const,
+    data: input as never,
+    errorMessage: undefined,
+  }),
+};
+
+async function connect(server: string, config: ServerConfig, root: string) {
+  const client = new Client(
+    { name: "pinfold", version: "0.0.0" },
+    { jsonSchemaValidator: takeAsTheyCome }
+  );
   const secrets = keepSecrets();
   try {
     if ("command" in config) {
+      const env = resolveReferences(server, config.env ?? {}, process.env);
+      secrets.values.push(...env.secrets);
+      const cwd = resolve(root, config.cwd ?? ".");
+      // Spawning in a missing directory fails as if the command were missing.
+      const directory = await stat(cwd).catch(() => undefined);
+      if (!directory?.isDirectory()) {
+        throw new Error(`its cwd ${cwd} is not a directory`);
+      }
       await client.connect(
         new StdioClientTransport({
           command: config.command,
           args: config.args ?? [],
+          env: env.values,
+          cwd,
         })
       );
     } else {
-      const resolved = resolveHeaders(
+      const headers = resolveReferences(
         server,
         config.headers ?? {},
         process.env
       );
-      secrets.values.push(...resolved.secrets);
+      secrets.values.push(...headers.secrets);
       await client.connect(
         new StreamableHTTPClientTransport(new URL(config.url), {
-          requestInit: { headers: resolved.headers },
+          requestInit: { headers: headers.values },
         })
       );
     }
@@ -104,7 +132,7 @@ async function connect(server: string, config: ServerConfig) {
 
 type Secrets = ReturnType<typeof keepSecrets>;
 
-// Header values filled in from the environment, kept out of every message.
+// Values filled in from the environment, kept out of every message.
 function keepSecrets() {
   const values: string[] = [];
   const scrub = (message: string) =>

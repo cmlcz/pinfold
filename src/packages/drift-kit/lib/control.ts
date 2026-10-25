@@ -23,6 +23,16 @@ export async function serveControl(
       }
       world.failWrite(call);
       res.writeHead(204).end();
+    } else if (
+      (req.method === "PUT" || req.method === "DELETE") &&
+      url.pathname.startsWith("/drift/")
+    ) {
+      const scenario = decodeURIComponent(url.pathname.slice("/drift/".length));
+      if (world.setDrift(scenario, req.method === "PUT")) {
+        res.writeHead(204).end();
+      } else {
+        res.writeHead(404).end(`no Drift Scenario ${scenario}`);
+      }
     } else if (route === "GET /writes") {
       res
         .writeHead(200, { "content-type": "application/json" })
@@ -85,6 +95,10 @@ export type ControlClient = {
    * result. A failed write changes nothing and is not logged as received.
    */
   failWrite(call: number): Promise<void>;
+  /** Turns a named Drift Scenario on, changing the server's responses. */
+  startDrift(scenario: string): Promise<void>;
+  /** Turns a Drift Scenario off again. */
+  stopDrift(scenario: string): Promise<void>;
 };
 
 export function connectControl(path: string): ControlClient {
@@ -100,6 +114,12 @@ export function connectControl(path: string): ControlClient {
         throw new Error(`failWrite takes a call from 1, not ${call}`);
       }
       await send(path, "POST", `/fail-write?call=${call}`);
+    },
+    async startDrift(scenario) {
+      await send(path, "PUT", `/drift/${encodeURIComponent(scenario)}`);
+    },
+    async stopDrift(scenario) {
+      await send(path, "DELETE", `/drift/${encodeURIComponent(scenario)}`);
     },
   };
 }

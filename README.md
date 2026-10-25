@@ -2,7 +2,7 @@
 
 pinfold is a local MCP server for coding agents. It sits between your agent and the MCP servers you use, such as Sentry, GitHub, or Linear. It runs the code your agent writes in an isolated sandbox, and it does not send any write to those servers until you approve it.
 
-> **Early version (0.0.0).** Only the features below work today. Running saved workflows and automatic repairs are planned but not available yet.
+> **Early version (0.0.0).** Only the features below work today. Automatic repairs are planned but not available yet.
 
 ## What works today
 
@@ -11,6 +11,8 @@ pinfold is a local MCP server for coding agents. It sits between your agent and 
 - **Writes wait for approval.** Tools that change something are recorded into a plan. Nothing is sent until you approve that exact plan.
 - **Resume.** If an approved plan stops partway through, `resume` sends the writes that were not sent yet. A write that may have reached the server is never sent again.
 - **Save workflows.** A successful run can be saved as a workflow: an ordinary TypeScript file in `.workflows/` that you own, with the response fields it reads and its recorded tool calls.
+- **Run workflows.** A saved workflow runs again from the terminal, cron or CI with no LLM.
+- **Drift detection and response adapters.** A run stops before any write when a tool's responses no longer fit the fields the workflow reads. A response adapter that you write maps the responses back, and every workflow that uses the tool works again without any edit.
 
 ## Requirements
 
@@ -34,7 +36,8 @@ Create a `pinfold.json` file in your project:
   "servers": {
     "sentry": {
       "command": "npx",
-      "args": ["-y", "<sentry-mcp-server-package>"]
+      "args": ["-y", "<sentry-mcp-server-package>"],
+      "env": { "SENTRY_ACCESS_TOKEN": "${SENTRY_ACCESS_TOKEN}" }
     },
     "linear": {
       "url": "https://<linear-mcp-host>/mcp",
@@ -52,7 +55,7 @@ Create a `pinfold.json` file in your project:
 }
 ```
 
-- **`servers`** lists the MCP servers pinfold connects to. Each server's tools appear in the sandbox as `sdk.<server>.<tool>`. Server names must be valid JavaScript identifiers. A server is either a `command` that pinfold starts and talks to over stdio, or a Streamable HTTP `url`. An HTTP server's `headers` are sent with every request. Write a secret as a reference to an environment variable, `${NAME}`, so it never sits in the file. pinfold refuses to start if a referenced variable is not set, and it keeps those values out of its errors.
+- **`servers`** lists the MCP servers pinfold connects to. Each server's tools appear in the sandbox as `sdk.<server>.<tool>`. Server names must be valid JavaScript identifiers. A server is either a `command` that pinfold starts and talks to over stdio, or a Streamable HTTP `url`. A stdio server inherits only a few safe environment variables, such as `PATH` and `HOME`. Give it others in `env`, and a working directory relative to the project in `cwd`. An HTTP server's `headers` are sent with every request. In `env` and `headers`, write a secret as a reference to an environment variable, `${NAME}`, so it never sits in the file. pinfold refuses to start if a referenced variable is not set, and it keeps those values out of its errors.
 - **`classification`** marks tools as `"read"`. Any tool you leave out is a write tool.
 - **`redact`** is optional. It lists, by server and tool, the fields that are replaced with `[redacted]` before a saved workflow's recorded calls are written to disk. A path starts with `arguments` or `response`, and `[]` stands for every element of an array, as in `"response.issues[].assignee.email"`.
 - **`limits`** is optional. The values above are the defaults: 30 seconds, 64 MiB of memory, and 100 tool calls per run.
@@ -136,10 +139,38 @@ Each run builds a plan. Its writes are sent without asking you, unless the workf
 
 Every run is recorded in `.pinfold/runs.jsonl`, and `list` shows each workflow's last run.
 
+## Repair drift
+
+Each tool's response shape is pinned in its baseline the first time the tool is called. When a server later answers differently, say it renames `count` to `eventCount`, a run of a workflow that reads `count` stops before it makes a plan. It reports the tool, the fields that drifted and every workflow the drift affects. A workflow that does not read the drifted fields runs as before.
+
+Repair the drift with a response adapter in `.workflows/adapters/`, one file per tool. It maps the tool's live responses back to the baseline, so the workflow code never changes:
+
+```json
+{
+  "server": "sentry",
+  "tool": "listIssues",
+  "version": 1,
+  "ops": [
+    { "op": "rename", "from": "issues[].eventCount", "to": "issues[].count" }
+  ]
+}
+```
+
+The ops run in order. A path such as `issues[].count` names the `count` of every element of `issues`.
+
+- **`rename`** moves the field at `from` to `to`, within the same array elements.
+- **`wrap`** puts the value at `at` under `field`, and **`unwrap`** replaces the value at `at` with its `field`. Without `at`, they act on the whole response.
+- **`convert`** turns the value at `path` into a `number` or a `string`, or an ISO date into `epoch-ms` and back with `iso-date`.
+- **`map`** replaces enum values at `path` by the `values` they map to.
+- **`default`** gives a missing field at `path` the `value`.
+
+A new or changed adapter makes the next run of every workflow that uses the tool pause for approval. Some drift, such as a response that is now paged, cannot be mapped back by an adapter and needs an edit to the workflow.
+
 ## Where pinfold keeps its state
 
 - **`.pinfold/`** holds the write plans, a journal of the writes already sent, and the run history. It is git-ignored.
 - **`.workflows/baselines/`** holds the recorded response shape of each tool.
+- **`.workflows/adapters/`** holds the response adapters.
 - **`.workflows/`** also holds the saved workflows. **`.workflows/fixtures/`** is git-ignored.
 
 ## License

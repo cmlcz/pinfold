@@ -3,7 +3,7 @@
 // the first name has no dot. Contracts and redaction rules use them.
 import { isDataKey, type JsonSchema } from "./schema.ts";
 
-type Step = { key: string } | { each: true };
+export type Step = { key: string } | { each: true };
 
 /** The steps of a field path, or undefined if it is not one. */
 export function parsePath(path: string): Step[] | undefined {

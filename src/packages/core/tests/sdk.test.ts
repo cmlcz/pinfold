@@ -1,5 +1,6 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { classifyTools, type Core } from "../index.ts";
 import { createWorkspace, sentryReads, type Workspace } from "./workspace.ts";
@@ -26,6 +27,42 @@ async function readBaseline(tool: string) {
 }
 
 describe("Baselines", () => {
+  it("pins a Tool whose name is too long for a file name", async () => {
+    // The name of names-server.ts.
+    const longName = "問".repeat(100);
+    const core = await ws.open({
+      servers: {
+        names: {
+          command: process.execPath,
+          args: [fileURLToPath(new URL("names-server.ts", import.meta.url))],
+        },
+      },
+      classification: { names: { [longName]: "read" } },
+    });
+
+    const result = await core.explore({
+      code: `export async function main() {
+        return await (sdk.names as any)[${JSON.stringify(longName)}]({});
+      }`,
+    });
+
+    expect(result).toMatchObject({ ok: true, value: { ok: true } });
+    const [file] = await readdir(baselines());
+    expect(Buffer.byteLength(file!)).toBeLessThan(100);
+    expect(await readBaseline(`names.${longName}`)).toMatchObject({
+      tool: longName,
+    });
+  });
+
+  it("names the Baseline file that is not valid JSON", async () => {
+    await mkdir(baselines(), { recursive: true });
+    await writeFile(join(baselines(), "sentry.listIssues.json"), "{");
+
+    await expect(ws.open()).rejects.toThrow(
+      `${join(baselines(), "sentry.listIssues.json")} is not valid JSON`
+    );
+  });
+
   it("pins a Tool's Baseline in a committed file the first time a run calls it", async () => {
     const core = await ws.open();
 
@@ -41,8 +78,8 @@ describe("Baselines", () => {
 
     expect(result).toMatchObject({ ok: true, value: ["web", "api"] });
     expect((await readdir(baselines())).sort()).toEqual([
-      expect.stringMatching(/^sentry\.listIssues\.[0-9a-f]{8}\.json$/),
-      expect.stringMatching(/^sentry\.listProjects\.[0-9a-f]{8}\.json$/),
+      expect.stringMatching(/^sentry\.listIssues\.[0-9a-f]{12}\.json$/),
+      expect.stringMatching(/^sentry\.listProjects\.[0-9a-f]{12}\.json$/),
     ]);
     expect(await readBaseline("sentry.listIssues")).toMatchObject({
       server: "sentry",
