@@ -192,8 +192,12 @@ function workflowSource(name: string, exploration: Exploration): string {
   ].join("\n");
 }
 
-// Rules name fields of the recorded call: its arguments or its response.
-function redactCall(
+/**
+ * A recorded call with the fields its Tool's redaction rules name replaced
+ * by `[redacted]`. Rules name fields of the call: its arguments or its
+ * response.
+ */
+export function redactCall(
   call: RecordedCall,
   rules: Record<string, Record<string, string[]>>
 ): RecordedCall {

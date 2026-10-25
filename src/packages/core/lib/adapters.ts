@@ -73,6 +73,16 @@ const adapterSchema = z.strictObject({
 
 export type Op = z.infer<typeof opSchema>;
 
+/** Reads ops of the closed set, as an Adapter file holds them. */
+export function parseOps(
+  value: unknown
+): { ok: true; ops: Op[] } | { ok: false; error: string } {
+  const parsed = z.array(opSchema).safeParse(value);
+  return parsed.success
+    ? { ok: true, ops: parsed.data }
+    : { ok: false, error: z.prettifyError(parsed.error) };
+}
+
 type ResponseAdapter = z.infer<typeof adapterSchema> & {
   /** Changes whenever the Adapter does, by its version or its ops. */
   digest: string;

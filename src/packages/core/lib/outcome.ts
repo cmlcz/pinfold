@@ -1,7 +1,9 @@
-// The outcome of an Exploration Run or a Workflow Run, and its readable form.
+// The outcome of an Exploration Run, a Workflow Run or a proposed Repair,
+// and its readable form.
 import { Placeholder } from "../../sandbox/index.ts";
+import { describeMismatch } from "./drift.ts";
 import type { WritePlan } from "./plan.ts";
-import type { RepairRecord } from "./repair.ts";
+import type { RepairRecord, RepairTask } from "./repair.ts";
 
 /**
  * An Exploration Run ran as a Plan. Without writes it is complete. Otherwise
@@ -30,6 +32,14 @@ export type WorkflowRunResult =
     });
 
 export type Failed = { ok: false; error: string };
+
+/**
+ * A Repair an agent proposed was written as the next version of its Tool's
+ * Adapter, for the developer to approve on the next run of each affected
+ * Workflow.
+ */
+export type ProposalResult =
+  Failed | { ok: true; repair: RepairRecord; affected: string[] };
 
 /** What became of a successful run's Write Plan. */
 export type PlanOutcome =
@@ -87,12 +97,59 @@ export function formatWorkflowRun(
 // A Repair as the Approval view shows it: the Adapter diff, then the value
 // evidence.
 function formatRepair(repair: RepairRecord): string {
+  const who =
+    repair.by === "agent" ? "An agent, through propose_repair," : "pinfold";
   return [
-    `pinfold repaired the Response Adapter of ${repair.tool}, now version ${repair.version}:`,
+    `${who} repaired the Response Adapter of ${repair.tool}, now version ${repair.version}:`,
     ...repair.diff.map((line) => `  ${line}`),
     "Value evidence, the live responses through this version next to the Fixtures:",
     ...repair.evidence.map((line) => `  ${line}`),
   ].join("\n");
+}
+
+/** What the agent reads after proposing a Repair. */
+export function formatProposal(
+  result: Extract<ProposalResult, { ok: true }>
+): string {
+  const { repair, affected } = result;
+  return [
+    formatRepair(repair),
+    "",
+    `Wrote it to .workflows/adapters/. It is not approved: the next run of ${affected.length === 1 ? "Workflow" : "each of the Workflows"} ${affected.join(", ")} pauses for the developer to approve it in a terminal, with this diff and evidence beside the Write Plan.`,
+  ].join("\n");
+}
+
+// A live response is shown for its shape, so its arrays are cut short.
+const shownElements = 3;
+
+/** The pending Drift, as propose_repair shows it to the agent. */
+export function formatRepairTasks(tasks: RepairTask[]): string {
+  if (tasks.length === 0) return "No pending Drift.";
+  const shown = tasks.map((task) =>
+    [
+      `Pending Drift of ${task.tool}, found by a run of Workflow ${task.workflow} at ${task.at}:`,
+      ...task.mismatches.map((mismatch) => `  ${describeMismatch(mismatch)}`),
+      `Deterministic Repair proposed nothing: ${task.reason}.`,
+      `Fields the saved Workflows read: ${task.reads.join(", ")}`,
+      `Baseline, the response shape every Workflow sees: ${JSON.stringify(task.baseline)}`,
+      `Response Adapter ops now: ${JSON.stringify(task.ops)}`,
+      `A live response, as the server sent it, with arrays cut to ${shownElements} elements: ${JSON.stringify(cut(task.responses[0]?.response))}`,
+      "Values in the Fixtures of the fields the Drift touches:",
+      ...task.fixtureValues.map((line) => `  ${line}`),
+    ].join("\n")
+  );
+  return [
+    ...shown,
+    'Fields kept out of Fixtures hold "[redacted]". To repair a Tool, call propose_repair with it and the ops to add after its Adapter\'s ops.',
+  ].join("\n\n");
+}
+
+function cut(value: unknown): unknown {
+  if (Array.isArray(value)) return value.slice(0, shownElements).map(cut);
+  if (typeof value !== "object" || value === null) return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, inner]) => [key, cut(inner)])
+  );
 }
 
 function describePlanOutcome(result: PlanOutcome, again: string): string {

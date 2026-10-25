@@ -97,7 +97,7 @@ describe("Drift detection", () => {
         "Workflow triage_sentry not run: the responses of sentry.listIssues drifted from its Baseline, so the run stopped before it made a Write Plan; nothing was sent.",
         "  issues[].userCount is missing",
         "Affected Workflows: triage_sentry.",
-        "pinfold found no Repair to propose: no op of the closed set maps the live responses back to issues[].userCount. The Drift is recorded as pending.",
+        "pinfold found no Repair to propose: no op of the closed set maps the live responses back to issues[].userCount. The Drift is recorded as pending: the agent can see it and propose a Response Adapter with propose_repair, which the developer then approves.",
         "A Response Adapter for sentry.listIssues in .workflows/adapters/ that maps its responses back to the Baseline repairs every affected Workflow.",
       ].join("\n"),
     });

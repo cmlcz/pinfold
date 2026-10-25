@@ -7,7 +7,13 @@ import {
   type Sdk,
   type SandboxResult,
 } from "../sandbox/index.ts";
-import { loadAdapters, writeAdapter, type Adapters } from "./lib/adapters.ts";
+import {
+  loadAdapters,
+  parseOps,
+  writeAdapter,
+  type Adapters,
+  type Op,
+} from "./lib/adapters.ts";
 import { openBaselines } from "./lib/baselines.ts";
 import {
   resolveLimits,
@@ -34,11 +40,14 @@ import { ApplyStopped, resolvePlaceholders, sendWrites } from "./lib/apply.ts";
 import { openJournal } from "./lib/journal.ts";
 import { openPlanStore, type PlanRecord } from "./lib/plans.ts";
 import {
+  checkRepair,
   openRepairs,
+  repairTask,
   searchRepair,
   type PendingDrift,
   type RepairRecord,
   type RepairSearch,
+  type RepairTask,
 } from "./lib/repair.ts";
 import type { JsonSchema } from "./lib/schema.ts";
 import {
@@ -46,6 +55,7 @@ import {
   type ExploreResult,
   type Failed,
   type PlanOutcome,
+  type ProposalResult,
   type ResumeResult,
   type WorkflowRunResult,
 } from "./lib/outcome.ts";
@@ -55,6 +65,7 @@ import {
   inputFromCommandLine,
   loadWorkflow,
   recordRun,
+  redactCall,
   runHistory,
   savedContracts,
   saveWorkflow,
@@ -72,7 +83,7 @@ export {
   type ToolKind,
 } from "./lib/config.ts";
 export type { PlannedWrite, WritePlan } from "./lib/plan.ts";
-export type { PendingDrift, RepairRecord } from "./lib/repair.ts";
+export type { PendingDrift, RepairRecord, RepairTask } from "./lib/repair.ts";
 export {
   openPlans,
   type PlanRecord,
@@ -82,9 +93,12 @@ export {
 export {
   formatOutcome,
   formatPlan,
+  formatProposal,
+  formatRepairTasks,
   formatResume,
   formatWorkflowRun,
   type ExploreResult,
+  type ProposalResult,
   type ResumeResult,
   type WorkflowRunResult,
 } from "./lib/outcome.ts";
@@ -143,6 +157,22 @@ export type Core = {
   ): Promise<WorkflowRunResult>;
   /** The Drift that deterministic Repair could not settle, by Tool. */
   pendingDrift(): Promise<PendingDrift[]>;
+  /**
+   * The pending Drift, by Tool, with what an agent needs to propose a
+   * Response Adapter for it. Fixture values are redacted.
+   */
+  repairTasks(): Promise<RepairTask[]>;
+  /**
+   * Checks ops an agent proposes to add to a Tool's Response Adapter for its
+   * pending Drift, as deterministic Repair checks its own, and writes the
+   * new Adapter version if they repair it. Like any changed Adapter, it
+   * waits for the developer's Approval on the next run of each Workflow
+   * that uses the Tool.
+   */
+  proposeRepair(request: {
+    tool: string;
+    ops: unknown;
+  }): Promise<ProposalResult>;
   close(): Promise<void>;
 };
 
@@ -435,15 +465,11 @@ export async function openCore(
     | { kind: "repaired"; record: RepairRecord }
     | Exclude<RepairSearch, { kind: "repaired" }>
   > {
-    const current = adapters.get(drift.tool);
+    const input = await repairInput(drift.offered, adapters);
     const found = searchRepair({
+      ...input,
       baseline: drift.baseline,
-      ops: current?.ops ?? [],
       responses: drift.responses,
-      contracts: (await savedContracts(options.root)).flatMap(({ contract }) =>
-        Object.hasOwn(contract, drift.tool) ? [contract[drift.tool]!] : []
-      ),
-      fixtures: await fixtureCalls(options.root, drift.tool),
     });
     if (found.kind === "pending") {
       await repairs.pend({
@@ -452,32 +478,76 @@ export async function openCore(
         at: new Date().toISOString(),
         mismatches: drift.mismatches,
         reason: found.reason,
+        // Kept on disk, so redacted like Fixtures.
+        responses: drift.responses.map((call) => {
+          const { arguments: args, response } = redactCall(
+            { tool: drift.tool, ...call },
+            config.redact ?? {}
+          );
+          return { arguments: args, response };
+        }),
       });
     }
     if (found.kind !== "repaired") return found;
+    const added = found.ops.slice(input.ops.length);
+    const record = await writeRepair(drift.offered, adapters, added, {
+      by: "pinfold",
+      evidence: found.evidence,
+    });
+    return { kind: "repaired", record };
+  }
+
+  // Writes the next version of a Tool's Adapter, its ops followed by those
+  // a Repair added, and keeps the Repair for the Approval view. That
+  // settles the Tool's pending Drift.
+  async function writeRepair(
+    tool: DownstreamTool,
+    adapters: Adapters,
+    added: Op[],
+    found: Pick<RepairRecord, "by" | "evidence">
+  ): Promise<RepairRecord> {
+    const name = `${tool.server}.${tool.tool}`;
+    const current = adapters.get(name);
+    const kept = current?.ops ?? [];
     const version = (current?.version ?? 0) + 1;
-    const kept = current?.ops.length ?? 0;
     const digest = await writeAdapter(
       options.root,
       {
-        server: drift.offered.server,
-        tool: drift.offered.tool,
+        server: tool.server,
+        tool: tool.tool,
         version,
-        ops: found.ops,
+        ops: [...kept, ...added],
       },
       current?.path
     );
     const record: RepairRecord = {
-      tool: drift.tool,
+      tool: name,
+      ...found,
       digest,
       version,
-      diff: found.ops.map(
-        (op, index) => `${index < kept ? " " : "+"} ${JSON.stringify(op)}`
-      ),
-      evidence: found.evidence,
+      diff: [
+        ...kept.map((op) => `  ${JSON.stringify(op)}`),
+        ...added.map((op) => `+ ${JSON.stringify(op)}`),
+      ],
     };
     await repairs.record(record);
-    return { kind: "repaired", record };
+    return record;
+  }
+
+  // What Repair works from for a Tool: its Baseline, its Adapter's ops, the
+  // field paths each saved Workflow reads of it, and its Fixture calls,
+  // redacted by the rules as they are now.
+  async function repairInput(tool: DownstreamTool, adapters: Adapters) {
+    const name = `${tool.server}.${tool.tool}`;
+    const fixtures = await fixtureCalls(options.root, name);
+    return {
+      baseline: baselines.get(tool.server, tool.tool)?.outputSchema,
+      ops: adapters.get(name)?.ops ?? [],
+      contracts: (await savedContracts(options.root)).flatMap(({ contract }) =>
+        Object.hasOwn(contract, name) ? [contract[name]!] : []
+      ),
+      fixtures: fixtures.map((call) => redactCall(call, config.redact ?? {})),
+    };
   }
 
   // What a run stopped by Drift reports: the Tool, its fields, every
@@ -502,7 +572,7 @@ export async function openCore(
     }
     if (found?.kind === "pending") {
       lines.push(
-        `pinfold found no Repair to propose: ${found.reason}. The Drift is recorded as pending.`
+        `pinfold found no Repair to propose: ${found.reason}. The Drift is recorded as pending: the agent can see it and propose a Response Adapter with propose_repair, which the developer then approves.`
       );
     }
     lines.push(
@@ -661,6 +731,83 @@ export async function openCore(
       return result;
     },
     pendingDrift: () => repairs.pending(),
+    async repairTasks() {
+      const adapters = await loadAdapters(options.root);
+      const tasks: RepairTask[] = [];
+      for (const pending of await repairs.pending()) {
+        const tool = toolsByName.get(pending.tool);
+        const input = tool && (await repairInput(tool, adapters));
+        // A Tool no longer offered, or never pinned, has no Baseline to
+        // repair against.
+        if (input?.baseline === undefined) continue;
+        tasks.push(repairTask(pending, { ...input, baseline: input.baseline }));
+      }
+      return tasks;
+    },
+    async proposeRepair({ tool: name, ops }) {
+      const refuse = (error: string) => ({
+        ok: false as const,
+        error: `Repair of ${name} not proposed: ${error}.`,
+      });
+      const pending = (await repairs.pending()).find(
+        (drift) => drift.tool === name
+      );
+      const tool = toolsByName.get(name);
+      if (pending === undefined || tool === undefined) {
+        return refuse(
+          "it has no pending Drift; propose_repair with no ops lists the Tools that have"
+        );
+      }
+      const parsed = parseOps(ops);
+      if (!parsed.ok) {
+        return refuse(`the ops are not of the closed set:\n${parsed.error}`);
+      }
+      if (parsed.ops.length === 0) return refuse("it adds no ops");
+      if (pending.responses.length === 0) {
+        return refuse(
+          "its pending Drift holds no live response to check the ops against; run an affected Workflow again to record one"
+        );
+      }
+      let adapters: Adapters;
+      try {
+        adapters = await loadAdapters(options.root);
+      } catch (error) {
+        return refuse((error as Error).message);
+      }
+      const input = await repairInput(tool, adapters);
+      if (input.baseline === undefined) return refuse("it has no Baseline");
+      const drift = {
+        ...input,
+        baseline: input.baseline,
+        responses: pending.responses,
+      };
+      // The live responses on disk are redacted.
+      const recorded = { redactedFits: true };
+      if (checkRepair(drift, [], recorded).ok) {
+        return refuse(
+          "its live responses fit its Baseline through its Response Adapter as it is now; run an affected Workflow again"
+        );
+      }
+      const checked = checkRepair(drift, parsed.ops, recorded);
+      if (!checked.ok) {
+        return refuse(
+          [
+            "through its Response Adapter and these ops, its live responses still do not fit the Baseline where a saved Workflow reads them:",
+            ...checked.drifted.map(
+              (mismatch) => `  ${describeMismatch(mismatch)}`
+            ),
+          ].join("\n")
+        );
+      }
+      const record = await writeRepair(tool, adapters, parsed.ops, {
+        by: "agent",
+        evidence: checked.evidence,
+      });
+      const affected = (await savedContracts(options.root))
+        .filter(({ contract }) => Object.hasOwn(contract, name))
+        .map(({ name }) => name);
+      return { ok: true, repair: record, affected };
+    },
     async resume(run) {
       const record = await plans.get(run);
       if (record === undefined) throw new Error(`no run ${run}`);
