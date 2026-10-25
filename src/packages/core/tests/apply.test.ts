@@ -300,6 +300,58 @@ describe("Approval and Apply", () => {
     );
   });
 
+  it("maps a write's real result through its Tool's Response Adapter", async () => {
+    const core = await openTriage();
+    const dir = join(ws.dir, ".workflows", "adapters");
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, "linear.createIssue.json"),
+      JSON.stringify({
+        server: "linear",
+        tool: "createIssue",
+        version: 1,
+        ops: [{ op: "rename", from: "url", to: "link" }],
+      })
+    );
+    const code = {
+      code: `export async function main() {
+        const first: any = await sdk.linear.createIssue({ title: "One" });
+        await sdk.linear.createIssue({ title: "Two", description: first.link });
+        return first.link;
+      }`,
+    };
+    await openPlans(ws.dir).approve(planId(await core.explore(code)));
+
+    const result = await core.explore(code);
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "applied",
+      value: "https://linear.example/issue/ENG-102",
+    });
+    expect((await ws.control("linear").receivedWrites())[1]!.arguments).toEqual(
+      { title: "Two", description: "https://linear.example/issue/ENG-102" }
+    );
+  });
+
+  it("says no resume can send a write that needs what an earlier result lacks", async () => {
+    const core = await openTriage();
+    const code = {
+      code: `export async function main() {
+        const first: any = await sdk.linear.createIssue({ title: "One" });
+        await sdk.linear.createIssue({ title: "Two", description: first.link });
+      }`,
+    };
+    await openPlans(ws.dir).approve(planId(await core.explore(code)));
+
+    const result = await core.explore(code);
+
+    expect(!result.ok && result.error).toMatch(
+      /^Apply stopped at write 2 of 2 \(linear\.createIssue\): <write 1>\.link has no value in the real result\. Sent: write 1\. Not sent: write 2\. The real result of an earlier write lacks what this write needs, as its Tool's response drifted, so no resume can send it\./
+    );
+    expect(await sentTitles()).toEqual(["One"]);
+  });
+
   it("lets the developer decline a plan whose Apply stopped half-way", async () => {
     const core = await openTriage();
     const code = {
