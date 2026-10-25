@@ -99,7 +99,7 @@ describe("pinfold plans, approve and decline", () => {
 
     expect(code).toBe(0);
     expect(stdout).toContain(
-      `Declined Write Plan ${id}. It will never be sent.`
+      `Declined Write Plan ${id}. It will never be sent; a later run that builds the same plan asks for Approval again.`
     );
     expect((await pinfold("approve", id)).stderr).toMatch(
       /is declined, not pending/

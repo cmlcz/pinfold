@@ -36,8 +36,6 @@ export async function planOutcome(
     return { ok: true, status: "complete", value, plan };
   const record = await plans.latest(plan.id);
   switch (record?.status) {
-    case "declined":
-      return { ok: true, status: "declined", value, plan };
     case "approved":
       return apply(project, record, plan, value);
     case "applying":
@@ -50,7 +48,8 @@ export async function planOutcome(
     case "pending":
       break;
     default: {
-      // New, or applied before: the developer approves this run afresh.
+      // New, or applied or declined before: the developer approves this run
+      // afresh. A decline answered one request, not every run to come.
       const status = run.needsApproval ? "pending" : "approved";
       const added = await plans.add(plan, run.key, run.clock, status);
       if (status === "approved") {
@@ -64,9 +63,17 @@ export async function planOutcome(
       }
     }
   }
-  return run.approved === undefined
-    ? { ok: true, status: "pending", value, plan }
-    : { ok: true, status: "changed", value, plan, approved: run.approved };
+  if (run.approved !== undefined) {
+    return { ok: true, status: "changed", value, plan, approved: run.approved };
+  }
+  const declined = record?.status === "declined";
+  return {
+    ok: true,
+    status: "pending",
+    value,
+    plan,
+    ...(declined && { declined }),
+  };
 }
 
 /** Sends the writes a stopped run's Apply did not send, and no others. */

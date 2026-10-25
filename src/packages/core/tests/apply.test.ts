@@ -4,7 +4,12 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { openPlans, type Core, type ExploreResult } from "../index.ts";
+import {
+  formatOutcome,
+  openPlans,
+  type Core,
+  type ExploreResult,
+} from "../index.ts";
 import { createWorkspace, sentryReads, type Workspace } from "./workspace.ts";
 
 let ws: Workspace;
@@ -149,20 +154,28 @@ describe("Approval and Apply", () => {
     ]);
   });
 
-  it("never sends a declined plan", async () => {
+  it("never sends a declined plan, and asks again on a later run", async () => {
     const core = await openTriage();
     const declined = planId(await core.explore(triage));
-    await openPlans(ws.dir).decline(declined);
+    const plans = openPlans(ws.dir);
+    await plans.decline(declined);
 
     const result = await core.explore(triage);
 
     expect(result).toMatchObject({
       ok: true,
-      status: "declined",
+      status: "pending",
+      declined: true,
       plan: { id: declined },
     });
+    expect(!result.ok || formatOutcome(result)).toContain(
+      `The developer declined Write Plan ${declined} before, so nothing was sent; it waits for Approval again.`
+    );
     expect(await ws.control("linear").receivedWrites()).toEqual([]);
-    expect(await openPlans(ws.dir).pending()).toEqual([]);
+    expect((await plans.pending()).map((plan) => plan.id)).toEqual([declined]);
+
+    await plans.approve(declined);
+    expect(await core.explore(triage)).toMatchObject({ status: "applied" });
   });
 
   it("refuses to approve a plan that is not pending", async () => {
@@ -313,7 +326,11 @@ describe("Approval and Apply", () => {
     expect(!stuck.ok && stuck.error).toMatch(
       new RegExp(`pinfold decline ${id}`)
     );
-    expect(after).toMatchObject({ ok: true, status: "declined" });
+    expect(after).toMatchObject({
+      ok: true,
+      status: "pending",
+      declined: true,
+    });
     expect(await ws.control("linear").receivedWrites()).toEqual([]);
   });
 
@@ -330,7 +347,8 @@ describe("Approval and Apply", () => {
     expect(declined.status).toBe("fulfilled");
     expect(await core.explore(triage)).toMatchObject({
       ok: true,
-      status: "declined",
+      status: "pending",
+      declined: true,
     });
     expect(await ws.control("linear").receivedWrites()).toEqual([]);
   });
@@ -689,7 +707,7 @@ describe("Declining a Write Plan that is being applied", () => {
     await expect(core.resume(`${id}-1`)).rejects.toThrow(
       `Write Plan ${id} is declined; there is nothing to resume.`
     );
-    expect(await core.explore(code)).toMatchObject({ status: "declined" });
+    expect(await core.explore(code)).toMatchObject({ status: "pending" });
     expect(existsSync(join(gate, "sent-3"))).toBe(false);
   });
 });

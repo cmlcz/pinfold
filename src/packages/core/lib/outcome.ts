@@ -45,10 +45,12 @@ export type ProposalResult =
 export type PlanOutcome =
   | {
       ok: true;
-      status: "complete" | "pending" | "declined";
+      status: "complete" | "pending";
       /** May hold Placeholders, since nothing was sent. */
       value: unknown;
       plan: WritePlan;
+      /** The developer declined the same plan before; it asks again. */
+      declined?: true;
     }
   | {
       ok: true;
@@ -160,13 +162,22 @@ function describePlanOutcome(result: PlanOutcome, again: string): string {
       return value;
     case "applied":
       return `${value}\n\nApplied Write Plan ${plan.id}: ${writeCount(plan)} sent.`;
-    case "declined":
-      return `${value}\n\nThe developer declined Write Plan ${plan.id}; nothing was sent.`;
-    case "pending":
+    case "pending": {
       if (plan.writes.length === 0) return heldBack(plan, again);
-      return [value, "", formatPlan(plan), "", approval(plan, again)].join(
-        "\n"
-      );
+      const declined = result.declined
+        ? [
+            `The developer declined Write Plan ${plan.id} before, so nothing was sent; it waits for Approval again.`,
+          ]
+        : [];
+      return [
+        value,
+        "",
+        ...declined,
+        formatPlan(plan),
+        "",
+        approval(plan, again),
+      ].join("\n");
+    }
     case "changed":
       if (plan.writes.length === 0) return heldBack(plan, again);
       return [
