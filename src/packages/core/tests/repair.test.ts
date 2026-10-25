@@ -825,7 +825,7 @@ describe("Repair through the repair model", () => {
     expect(result).toMatchObject({
       ok: false,
       error: expect.stringContaining(
-        "The Repair Model repaired nothing: Repair of sentry.listIssues not proposed: a default op would make up values for issues[].userCount, which held varied values in the Fixtures."
+        "The Repair Model repaired nothing: Repair of sentry.listIssues not proposed: a default op would make up values for issues[].userCount, which the Fixtures hold other values of."
       ),
     });
     expect(await core.pendingDrift()).toHaveLength(1);

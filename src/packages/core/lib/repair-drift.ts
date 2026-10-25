@@ -25,6 +25,7 @@ import type { Project } from "./project.ts";
 import {
   checkRepair,
   madeUpDefaults,
+  pagedReason,
   redactUnlisted,
   repairTask,
   searchRepair,
@@ -226,11 +227,13 @@ export async function proposeRepair(
       "its live responses fit its Baseline through its Response Adapter as it is now; run an affected Workflow again"
     );
   }
+  const paged = pagedReason(drift, drift.ops);
+  if (paged !== undefined) return refuse(`it needs a manual fix: ${paged}`);
   // Unattended, nobody stands by to see a default that makes data up.
   const madeUp = by === "model" ? madeUpDefaults(drift, parsed.ops) : [];
   if (madeUp.length > 0) {
     return refuse(
-      `a default op would make up values for ${madeUp.join(", ")}, which held varied values in the Fixtures`
+      `a default op would make up values for ${madeUp.join(", ")}, which the Fixtures hold other values of`
     );
   }
   const checked = checkRepair(drift, parsed.ops, recorded);
