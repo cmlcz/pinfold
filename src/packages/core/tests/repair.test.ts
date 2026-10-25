@@ -195,6 +195,7 @@ describe("Deterministic Repair", () => {
         workflow: "triage_sentry",
         at: expect.any(String),
         mismatches: [{ path: "issues[].userCount", problem: "is missing" }],
+        reads: expect.arrayContaining(["issues[].userCount"]),
         reason:
           "no op of the closed set maps the live responses back to issues[].userCount",
         responses: [

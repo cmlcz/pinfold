@@ -1,14 +1,18 @@
 // A Workflow Run: the Workflow's checks, then a Plan that is applied
-// unattended unless Approval is required. Drift that stops the Plan is
-// repaired deterministically where it can be, and the run tried again.
+// unattended unless Approval is required. Drift in the fields the Plan read
+// stops the run before Apply; it is repaired deterministically where it can
+// be, and the run tried again.
 import { planOutcome } from "./apply.ts";
+import { toolName } from "./baselines.ts";
+import { touching } from "./drift.ts";
 import {
   shortHash,
   writePlan,
   type PlannedWrite,
   type WritePlan,
 } from "./plan.ts";
-import { planRun } from "./plan-run.ts";
+import { findDrift, planRun, type Observed } from "./plan-run.ts";
+import { shapeAllows, valuesAt } from "./paths.ts";
 import { writeCount, type WorkflowRunResult } from "./outcome.ts";
 import type { Project } from "./project.ts";
 import { driftReport, repairDrift } from "./repair-drift.ts";
@@ -16,6 +20,7 @@ import type { RepairRecord } from "./repair.ts";
 import { declarations } from "./sdk.ts";
 import {
   checkInput,
+  contractOf,
   inputFromCommandLine,
   loadWorkflow,
   recordRun,
@@ -67,13 +72,6 @@ async function runOnce(
   const loaded = await loadWorkflow(project.root, name, {
     declarations: declarations(project.sdkTools()),
     tools: new Set(project.tools.keys()),
-    outputSchema: (tool) => {
-      const offered = project.tools.get(tool);
-      return (
-        offered &&
-        project.baselines.get(offered.server, offered.tool)?.outputSchema
-      );
-    },
   });
   if (!loaded.ok) return loaded;
   const { workflow } = loaded;
@@ -88,8 +86,14 @@ async function runOnce(
   if (!checked.ok)
     return { ok: false, error: `Workflow ${name} not run. ${checked.error}` };
 
-  const { key, approved, clock, writes, result, adapters, drift, fitting } =
-    await planRun(project, workflow.source, input, workflow.contract);
+  const { key, approved, clock, writes, observed, result, adapters } =
+    await planRun(project, workflow.source, input);
+  // Nothing is sent before Apply, so the run is checked once its Plan is
+  // done, against the fields this very run read: the code may have been
+  // edited, and may read other fields for another input. A run that failed
+  // is checked too, since Drift may be why.
+  const reads = contractOf(result.reads ?? {});
+  const drift = findDrift(project, observed, reads);
   if (drift !== undefined) {
     // A run that follows a Repair reports any Drift left, and repairs no
     // more.
@@ -105,8 +109,15 @@ async function runOnce(
       error: await driftReport(project, name, drift, found),
     };
   }
-  if (!result.ok) return result;
-  for (const tool of fitting) await project.repairs.settle(tool);
+  if (!result.ok) return { ok: false, error: result.error };
+  const beyond = readsBeyondBaselines(project, reads);
+  if (beyond.length > 0) {
+    return {
+      ok: false,
+      error: `Workflow ${name} stopped before its Write Plan, so nothing was sent: it reads ${beyond.join(", ")}, which its Baseline does not have.`,
+    };
+  }
+  await settleDrift(project, observed);
   const digests = adapters!.digests(workflow.tools);
   ran.adapters = digests;
   const { plan, reason, changedAdapters } = approvalFor(
@@ -139,6 +150,42 @@ async function runOnce(
     ...(paused && reason !== undefined && { approvalReason: reason }),
     ...(shown.size > 0 && { repairs: [...shown.values()] }),
   };
+}
+
+// The fields a run read, as `server.tool path`, that the Tool's Baseline
+// does not allow, so no Drift there could be told.
+function readsBeyondBaselines(
+  project: Project,
+  reads: Record<string, string[]>
+): string[] {
+  return Object.entries(reads).flatMap(([name, paths]) => {
+    const tool = project.tools.get(name);
+    const baseline =
+      tool && project.baselines.get(tool.server, tool.tool)?.outputSchema;
+    if (baseline === undefined) return [];
+    return paths
+      .filter((path) => !shapeAllows(baseline, path))
+      .map((path) => `${name} ${path}`);
+  });
+}
+
+// Forgets a Tool's pending Drift once a run's responses of it fit the
+// Baseline where it drifted and hold values there: an empty list fits any
+// Baseline, and so shows nothing.
+async function settleDrift(project: Project, observed: Observed[]) {
+  for (const pending of await project.repairs.pending()) {
+    const calls = observed.filter(
+      ({ tool }) => toolName(tool) === pending.tool
+    );
+    const paths = pending.mismatches.map((mismatch) => mismatch.path);
+    const fits =
+      calls.length > 0 &&
+      calls.every((call) => touching(call.mismatches, paths).length === 0) &&
+      paths.every((path) =>
+        calls.some((call) => valuesAt(call.response, path).length > 0)
+      );
+    if (fits) await project.repairs.settle(pending.tool);
+  }
 }
 
 /**

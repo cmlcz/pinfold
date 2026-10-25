@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openPlans, type Core, type WorkflowRunResult } from "../index.ts";
@@ -105,6 +105,72 @@ describe("Drift detection", () => {
     expect(await openPlans(ws.dir).pending()).toEqual([]);
   });
 
+  it("stops a run that reads a drifted field the saved run never read", async () => {
+    const core = await openTriage();
+    const verbose = triage
+      .replace(
+        "description: issue.culprit",
+        'description: input.verbose ? issue.culprit + " affects " + issue.userCount + " users" : issue.culprit'
+      )
+      .replace(
+        "main(input: { project: string })",
+        "main(input: { project: string; verbose?: boolean })"
+      )
+      .replace(", users: issues.reduce((sum, i) => sum + i.userCount, 0)", "");
+    await saveApplied(core, "verbose_triage", verbose);
+    const sent = (await ws.control("linear").receivedWrites()).length;
+    await ws.control("sentry").startDrift("removed-field");
+
+    const result = await core.runWorkflow({
+      name: "verbose_triage",
+      input: { ...input, verbose: true },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("issues[].userCount is missing"),
+    });
+    expect(await ws.control("linear").receivedWrites()).toHaveLength(sent);
+  });
+
+  it("runs an edited Workflow that no longer reads the drifted field", async () => {
+    const core = await openTriage();
+    await saveApplied(core, "triage_sentry");
+    await ws.control("sentry").startDrift("removed-field");
+    expect((await core.runWorkflow({ name: "triage_sentry", input })).ok).toBe(
+      false
+    );
+    const file = join(ws.dir, ".workflows", "triage_sentry.ts");
+    const source = await readFile(file, "utf8");
+    await writeFile(
+      file,
+      source.replace(
+        ", users: issues.reduce((sum, i) => sum + i.userCount, 0)",
+        ""
+      )
+    );
+
+    const result = await core.runWorkflow({ name: "triage_sentry", input });
+
+    expect(result).toMatchObject({ ok: true, status: "pending" });
+  });
+
+  it("keeps pending Drift when a run sees nothing where it drifted", async () => {
+    const core = await openTriage();
+    await saveApplied(core, "triage_sentry");
+    await ws.control("sentry").startDrift("removed-field");
+    await core.runWorkflow({ name: "triage_sentry", input });
+
+    succeeded(
+      await core.runWorkflow({
+        name: "triage_sentry",
+        input: { project: "none" },
+      })
+    );
+
+    expect(await core.pendingDrift()).toHaveLength(1);
+  });
+
   it("leaves a Workflow alone whose Contract the Drift does not touch", async () => {
     const core = await openTriage();
     await save(core, "list_titles", titles);
@@ -118,7 +184,7 @@ describe("Drift detection", () => {
     expect(result.value).toHaveLength(3);
   });
 
-  it("fails the run even when the program catches the Drift", async () => {
+  it("stops a run that read drifted data, whatever the program made of it", async () => {
     const core = await openTriage();
     await save(
       core,

@@ -130,7 +130,7 @@ export function formatRepairTasks(tasks: RepairTask[]): string {
       `Pending Drift of ${task.tool}, found by a run of Workflow ${task.workflow} at ${task.at}:`,
       ...task.mismatches.map((mismatch) => `  ${describeMismatch(mismatch)}`),
       `Deterministic Repair proposed nothing: ${task.reason}.`,
-      `Fields the saved Workflows read: ${task.reads.join(", ")}`,
+      `Fields the Workflows read: ${task.reads.join(", ")}`,
       `Baseline, the response shape every Workflow sees: ${JSON.stringify(task.baseline)}`,
       `Response Adapter ops now: ${JSON.stringify(task.ops)}`,
       `A live response, as the server sent it, with arrays cut to ${shownElements} elements: ${JSON.stringify(cut(task.responses[0]?.response))}`,
