@@ -61,7 +61,7 @@ The second phase of a Workflow Run, which sends the approved Write Plan to the D
 _Avoid_: commit, flush, execute
 
 **Approval**:
-The developer's acceptance of a specific Write Plan, required before Apply when a Workflow has never been applied, when a Response Adapter it depends on is new or updated, or when the Write Plan exceeds the Workflow's Write Budget.
+The developer's acceptance of a specific Write Plan and the Response Adapters it was built through, required before Apply when the developer has never approved writes of a Workflow's code as it is now, when a Response Adapter it depends on is new or updated, or when the Write Plan exceeds the Workflow's Write Budget.
 _Avoid_: confirmation, sign-off
 
 **Apply Journal**:
@@ -79,11 +79,11 @@ The shape of a Tool, both what it accepts and what it returns, pinned the first 
 _Avoid_: schema version, snapshot, original schema
 
 **Contract**:
-The subset of a Tool's Baseline response shape that a specific Workflow actually reads.
+The subset of a Tool's Baseline response shape that a specific Workflow actually reads, as recorded from the run it was saved from. Each Workflow Run is checked against the fields it reads itself, which an edit or another input may change.
 _Avoid_: schema, assertion, expectation
 
 **Drift**:
-A discrepancy between a Tool as its Downstream Server offers it now (its responses after the current Response Adapter, or the inputs it accepts) and its pinned Baseline. A Workflow is affected only when Drift touches its Contract or the inputs it sends.
+A discrepancy between a Tool as its Downstream Server offers it now (its responses after the current Response Adapter, or the inputs it accepts) and its pinned Baseline. A Workflow Run is affected only when Drift touches the fields it reads or the inputs it sends.
 _Avoid_: breaking change, API change, schema mismatch
 
 **Response Adapter**:

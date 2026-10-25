@@ -7,6 +7,7 @@ import {
   formatRepairTasks,
   formatWorkflowRun,
   openPlans,
+  reviewPlan,
   type Core,
   type WorkflowRunResult,
 } from "../index.ts";
@@ -130,6 +131,34 @@ describe("Deterministic Repair", () => {
     expect(await readFile(workflowFile, "utf8")).toBe(source);
   });
 
+  it("asks again when the Adapter changed after the developer approved the plan", async () => {
+    const core = await openTriage();
+    const explored = await core.explore({ code: triage, input });
+    if (!explored.ok) throw new Error(explored.error);
+    await core.saveWorkflow({
+      run: explored.exploration,
+      name: "triage_sentry",
+      confirmed: true,
+    });
+    const first = succeeded(
+      await core.runWorkflow({ name: "triage_sentry", input })
+    );
+    await openPlans(ws.dir).approve(first.plan.id);
+    await ws.control("sentry").startDrift("rename");
+
+    const next = succeeded(
+      await core.runWorkflow({ name: "triage_sentry", input })
+    );
+
+    expect(next).toMatchObject({ status: "pending", repairs: [renameRepair] });
+    expect(next.plan.writes).toEqual(first.plan.writes);
+    expect(next.plan.id).not.toBe(first.plan.id);
+    expect(formatWorkflowRun(next)).toContain(
+      `Through the Response Adapters: sentry.listIssues ${next.repairs![0]!.digest}`
+    );
+    expect(await ws.control("linear").receivedWrites()).toEqual([]);
+  });
+
   it("shows the Repair in the Approval view of every other Workflow that uses the Tool", async () => {
     const core = await openTriage();
     await saveApplied(core, "triage_sentry");
@@ -166,6 +195,7 @@ describe("Deterministic Repair", () => {
         workflow: "triage_sentry",
         at: expect.any(String),
         mismatches: [{ path: "issues[].userCount", problem: "is missing" }],
+        reads: expect.arrayContaining(["issues[].userCount"]),
         reason:
           "no op of the closed set maps the live responses back to issues[].userCount",
         responses: [
@@ -311,6 +341,44 @@ describe("Repair through the agent", () => {
   const userCountDefault = [
     { op: "default", path: "issues[].userCount", value: 0 },
   ];
+
+  it("never applies an agent's Adapter through a plan approved before it", async () => {
+    const core = await openTriage();
+    const explored = await core.explore({ code: triage, input });
+    if (!explored.ok) throw new Error(explored.error);
+    await core.saveWorkflow({
+      run: explored.exploration,
+      name: "triage_sentry",
+      confirmed: true,
+    });
+    const first = succeeded(
+      await core.runWorkflow({ name: "triage_sentry", input })
+    );
+    await openPlans(ws.dir).approve(first.plan.id);
+    await ws.control("sentry").startDrift("removed-field");
+    expect((await core.runWorkflow({ name: "triage_sentry", input })).ok).toBe(
+      false
+    );
+    const proposed = await core.proposeRepair({
+      tool: "sentry.listIssues",
+      ops: userCountDefault,
+    });
+    if (!proposed.ok) throw new Error(proposed.error);
+
+    const next = succeeded(
+      await core.runWorkflow({ name: "triage_sentry", input })
+    );
+    const review = await reviewPlan(ws.dir, next.plan);
+
+    expect(next.status).toBe("pending");
+    expect(await ws.control("linear").receivedWrites()).toEqual([]);
+    expect(review).toContain(
+      "An agent, through propose_repair, repaired the Response Adapter of sentry.listIssues, now version 1:"
+    );
+    expect(review).toContain(
+      "issues[].userCount: now median 0, range 0–0; in the Fixtures median 61, range 12–88"
+    );
+  });
 
   it("has no repair task without pending Drift", async () => {
     const core = await openTriage();

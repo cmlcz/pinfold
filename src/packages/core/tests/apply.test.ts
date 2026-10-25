@@ -4,7 +4,12 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { openPlans, type Core, type ExploreResult } from "../index.ts";
+import {
+  formatOutcome,
+  openPlans,
+  type Core,
+  type ExploreResult,
+} from "../index.ts";
 import { createWorkspace, sentryReads, type Workspace } from "./workspace.ts";
 
 let ws: Workspace;
@@ -149,20 +154,28 @@ describe("Approval and Apply", () => {
     ]);
   });
 
-  it("never sends a declined plan", async () => {
+  it("never sends a declined plan, and asks again on a later run", async () => {
     const core = await openTriage();
     const declined = planId(await core.explore(triage));
-    await openPlans(ws.dir).decline(declined);
+    const plans = openPlans(ws.dir);
+    await plans.decline(declined);
 
     const result = await core.explore(triage);
 
     expect(result).toMatchObject({
       ok: true,
-      status: "declined",
+      status: "pending",
+      declined: true,
       plan: { id: declined },
     });
+    expect(!result.ok || formatOutcome(result)).toContain(
+      `The developer declined Write Plan ${declined} before, so nothing was sent; it waits for Approval again.`
+    );
     expect(await ws.control("linear").receivedWrites()).toEqual([]);
-    expect(await openPlans(ws.dir).pending()).toEqual([]);
+    expect((await plans.pending()).map((plan) => plan.id)).toEqual([declined]);
+
+    await plans.approve(declined);
+    expect(await core.explore(triage)).toMatchObject({ status: "applied" });
   });
 
   it("refuses to approve a plan that is not pending", async () => {
@@ -193,7 +206,7 @@ describe("Approval and Apply", () => {
 
     expect(failed).toMatchObject({ ok: false });
     expect(!failed.ok && failed.error).toMatch(
-      /^Apply stopped at write 2 of 2 \(linear\.createIssue\): .*Sent: write 1\. Not sent: write 2\. `pinfold resume \S+` sends the writes not sent\.$/s
+      /^Apply stopped at write 2 of 2 \(linear\.createIssue\): .*Sent: write 1\. May have been sent: write 2\. Not sent: none\. Then check whether write 2 reached its server, then `pinfold resolve (\S+) 2 sent` or `pinfold resolve \1 2 not-sent`; after that, `pinfold resume \1` sends the writes not sent\.$/s
     );
     expect(again).toMatchObject({ ok: false });
     expect(!again.ok && again.error).toMatch(/stopped after a failed write/);
@@ -287,6 +300,58 @@ describe("Approval and Apply", () => {
     );
   });
 
+  it("maps a write's real result through its Tool's Response Adapter", async () => {
+    const core = await openTriage();
+    const dir = join(ws.dir, ".workflows", "adapters");
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, "linear.createIssue.json"),
+      JSON.stringify({
+        server: "linear",
+        tool: "createIssue",
+        version: 1,
+        ops: [{ op: "rename", from: "url", to: "link" }],
+      })
+    );
+    const code = {
+      code: `export async function main() {
+        const first: any = await sdk.linear.createIssue({ title: "One" });
+        await sdk.linear.createIssue({ title: "Two", description: first.link });
+        return first.link;
+      }`,
+    };
+    await openPlans(ws.dir).approve(planId(await core.explore(code)));
+
+    const result = await core.explore(code);
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "applied",
+      value: "https://linear.example/issue/ENG-102",
+    });
+    expect((await ws.control("linear").receivedWrites())[1]!.arguments).toEqual(
+      { title: "Two", description: "https://linear.example/issue/ENG-102" }
+    );
+  });
+
+  it("says no resume can send a write that needs what an earlier result lacks", async () => {
+    const core = await openTriage();
+    const code = {
+      code: `export async function main() {
+        const first: any = await sdk.linear.createIssue({ title: "One" });
+        await sdk.linear.createIssue({ title: "Two", description: first.link });
+      }`,
+    };
+    await openPlans(ws.dir).approve(planId(await core.explore(code)));
+
+    const result = await core.explore(code);
+
+    expect(!result.ok && result.error).toMatch(
+      /^Apply stopped at write 2 of 2 \(linear\.createIssue\): <write 1>\.link has no value in the real result\. Sent: write 1\. Not sent: write 2\. The real result of an earlier write lacks what this write needs, as its Tool's response drifted, so no resume can send it\./
+    );
+    expect(await sentTitles()).toEqual(["One"]);
+  });
+
   it("lets the developer decline a plan whose Apply stopped half-way", async () => {
     const core = await openTriage();
     const code = {
@@ -313,7 +378,11 @@ describe("Approval and Apply", () => {
     expect(!stuck.ok && stuck.error).toMatch(
       new RegExp(`pinfold decline ${id}`)
     );
-    expect(after).toMatchObject({ ok: true, status: "declined" });
+    expect(after).toMatchObject({
+      ok: true,
+      status: "pending",
+      declined: true,
+    });
     expect(await ws.control("linear").receivedWrites()).toEqual([]);
   });
 
@@ -330,7 +399,8 @@ describe("Approval and Apply", () => {
     expect(declined.status).toBe("fulfilled");
     expect(await core.explore(triage)).toMatchObject({
       ok: true,
-      status: "declined",
+      status: "pending",
+      declined: true,
     });
     expect(await ws.control("linear").receivedWrites()).toEqual([]);
   });
@@ -439,7 +509,7 @@ describe("Apply Journal and resume", () => {
     const result = await core.explore(fourWrites);
 
     expect(!result.ok && result.error).toMatch(
-      /^Apply stopped at write 3 of 4 \(linear\.createIssue\): .*Sent: writes 1–2\. Not sent: writes 3–4\. `pinfold resume \S+` sends the writes not sent\.$/s
+      /^Apply stopped at write 3 of 4 \(linear\.createIssue\): .*Sent: writes 1–2\. May have been sent: write 3\. Not sent: write 4\./s
     );
     expect(await sentTitles()).toEqual(["One", "Two"]);
   });
@@ -450,6 +520,7 @@ describe("Apply Journal and resume", () => {
     await openPlans(ws.dir).approve(id);
     await ws.control("linear").failWrite(3);
     const run = stoppedRun(await core.explore(fourWrites));
+    await openPlans(ws.dir).resolve(run, 3, false);
 
     const resumed = await core.resume(run);
 
@@ -468,11 +539,13 @@ describe("Apply Journal and resume", () => {
     await openPlans(ws.dir).approve(planId(await core.explore(fourWrites)));
     await ws.control("linear").failWrite(2);
     const run = stoppedRun(await core.explore(fourWrites));
+    await openPlans(ws.dir).resolve(run, 2, false);
     await ws.control("linear").failWrite(2);
 
     await expect(core.resume(run)).rejects.toThrow(
-      /Apply stopped at write 3 of 4 .*Sent: writes 1–2\. Not sent: writes 3–4\./s
+      /Apply stopped at write 3 of 4 .*Sent: writes 1–2\. May have been sent: write 3\. Not sent: write 4\./s
     );
+    await openPlans(ws.dir).resolve(run, 3, false);
     expect(await core.resume(run)).toMatchObject({ sent: [3, 4] });
     expect(await sentTitles()).toEqual(["One", "Two", "Three", "Four"]);
   });
@@ -482,6 +555,7 @@ describe("Apply Journal and resume", () => {
     await openPlans(ws.dir).approve(planId(await core.explore(fourWrites)));
     await ws.control("linear").failWrite(4);
     const run = stoppedRun(await core.explore(fourWrites));
+    await openPlans(ws.dir).resolve(run, 4, false);
     await core.resume(run);
 
     const again = await core.resume(run);
@@ -495,6 +569,7 @@ describe("Apply Journal and resume", () => {
     await openPlans(ws.dir).approve(planId(await core.explore(fourWrites)));
     await ws.control("linear").failWrite(1);
     const run = stoppedRun(await core.explore(fourWrites));
+    await openPlans(ws.dir).resolve(run, 1, false);
 
     await Promise.allSettled([core.resume(run), core.resume(run)]);
     await Promise.allSettled([core.resume(run)]);
@@ -567,12 +642,59 @@ describe("Run keys and resume", () => {
     expect(again).toMatchObject({ ok: true, status: "applied" });
   });
 
+  it("keeps a write in doubt when its server answered with an error, until the developer resolves it", async () => {
+    const core = await openTriage();
+    await openPlans(ws.dir).approve(planId(await core.explore(fourWrites)));
+    await ws.control("linear").failWrite(3);
+    const run = stoppedRun(await core.explore(fourWrites));
+
+    await expect(core.resume(run)).rejects.toThrow(
+      `Write 3 of run ${run} is being sent by another Apply, or an Apply stopped while sending it`
+    );
+    await expect(openPlans(ws.dir).resolve(run, 2, true)).rejects.toThrow(
+      `Write 2 of run ${run} is not in doubt`
+    );
+    await openPlans(ws.dir).resolve(run, 3, true);
+
+    expect(await core.resume(run)).toMatchObject({ sent: [4] });
+    expect(await sentTitles()).toEqual(["One", "Two", "Four"]);
+  });
+
+  it("never sends again a write whose server made the change and then answered with an error", async () => {
+    const log = join(ws.dir, "created.txt");
+    const core = await ws.open({
+      servers: {
+        partial: {
+          command: process.execPath,
+          args: [
+            fileURLToPath(new URL("partial-server.ts", import.meta.url)),
+            log,
+          ],
+        },
+      },
+      classification: {},
+    });
+    const code = {
+      code: `export async function main() {
+        await sdk.partial.create({ title: "once" });
+      }`,
+    };
+    await openPlans(ws.dir).approve(planId(await core.explore(code)));
+    const run = stoppedRun(await core.explore(code));
+
+    await expect(core.resume(run)).rejects.toThrow(
+      /may have reached its server/
+    );
+    expect(await readFile(log, "utf8")).toBe("once\n");
+  });
+
   it("stops a resume before any write when a Tool is no longer offered", async () => {
     const core = await openTriage();
     const id = planId(await core.explore(fourWrites));
     await openPlans(ws.dir).approve(id);
     await ws.control("linear").failWrite(3);
     const run = stoppedRun(await core.explore(fourWrites));
+    await openPlans(ws.dir).resolve(run, 3, false);
     const withoutLinear = await ws.open({
       servers: { sentry: ws.sentry("other") },
       classification: sentryReads,
@@ -637,7 +759,7 @@ describe("Declining a Write Plan that is being applied", () => {
     await expect(core.resume(`${id}-1`)).rejects.toThrow(
       `Write Plan ${id} is declined; there is nothing to resume.`
     );
-    expect(await core.explore(code)).toMatchObject({ status: "declined" });
+    expect(await core.explore(code)).toMatchObject({ status: "pending" });
     expect(existsSync(join(gate, "sent-3"))).toBe(false);
   });
 });

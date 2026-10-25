@@ -11,7 +11,7 @@ import {
 } from "./adapters.ts";
 import { toolName } from "./baselines.ts";
 import type { DownstreamTool } from "./downstream.ts";
-import { describeMismatch, touchesContract } from "./drift.ts";
+import { describeMismatch, mayBeOptional, touchesContract } from "./drift.ts";
 import type { ProposalResult } from "./outcome.ts";
 import type { Drift } from "./plan-run.ts";
 import type { Project } from "./project.ts";
@@ -47,7 +47,12 @@ export async function repairDrift(
   drift: Drift,
   adapters: Adapters
 ): Promise<RepairOutcome> {
-  const input = await repairInput(project, drift.offered, adapters);
+  const input = await repairInput(
+    project,
+    drift.offered,
+    adapters,
+    drift.reads
+  );
   const found = searchRepair({
     ...input,
     baseline: drift.baseline,
@@ -63,6 +68,7 @@ export async function repairDrift(
       workflow,
       at: new Date().toISOString(),
       mismatches: drift.mismatches,
+      reads: drift.reads,
       reason: found.reason,
       responses: drift.responses.map((call) => {
         const { arguments: args, response } = redactCall(
@@ -102,6 +108,8 @@ export async function driftReport(
       touchesContract(drift.mismatches, contract, drift.tool)
     )
     .map(({ name }) => name);
+  // The run's own reads touched the Drift, whatever its saved Contract says.
+  if (!affected.includes(workflow)) affected.unshift(workflow);
   const lines = [
     `Workflow ${workflow} not run: the responses of ${drift.tool} drifted from its Baseline, so the run stopped before it made a Write Plan; nothing was sent.`,
     ...drift.mismatches.map((mismatch) => `  ${describeMismatch(mismatch)}`),
@@ -109,6 +117,13 @@ export async function driftReport(
   ];
   if (found?.kind === "manual") {
     return [...lines, `It needs a manual fix: ${found.reason}.`].join("\n");
+  }
+  // One response cannot show that a field is optional, so the Baseline may
+  // require one the server leaves out at times.
+  for (const { path } of drift.mismatches.filter(mayBeOptional)) {
+    lines.push(
+      `If the server leaves out ${path} at times, rather than having dropped it, \`pinfold baseline optional ${drift.tool} ${path}\` makes it optional in the Baseline.`
+    );
   }
   if (found?.kind === "pending") {
     lines.push(
@@ -127,7 +142,8 @@ export async function repairTasks(project: Project): Promise<RepairTask[]> {
   const tasks: RepairTask[] = [];
   for (const pending of await project.repairs.pending()) {
     const tool = project.tools.get(pending.tool);
-    const input = tool && (await repairInput(project, tool, adapters));
+    const input =
+      tool && (await repairInput(project, tool, adapters, pending.reads));
     // A Tool no longer offered, or never pinned, has no Baseline to repair
     // against.
     if (input?.baseline === undefined) continue;
@@ -174,7 +190,7 @@ export async function proposeRepair(
   } catch (error) {
     return refuse((error as Error).message);
   }
-  const input = await repairInput(project, tool, adapters);
+  const input = await repairInput(project, tool, adapters, pending.reads);
   if (input.baseline === undefined) return refuse("it has no Baseline");
   const drift = {
     ...input,
@@ -246,12 +262,13 @@ async function writeRepair(
 }
 
 // What Repair works from for a Tool: its Baseline, its Adapter's ops, the
-// field paths each saved Workflow reads of it, and its Fixture calls,
-// redacted by the rules as they are now.
+// field paths each saved Workflow reads of it, and the run that drifted
+// read, and its Fixture calls, redacted by the rules as they are now.
 async function repairInput(
   project: Project,
   tool: DownstreamTool,
-  adapters: Adapters
+  adapters: Adapters,
+  reads: string[]
 ) {
   const name = toolName(tool);
   const fixtures = await fixtureCalls(project.root, name);
@@ -259,9 +276,12 @@ async function repairInput(
   return {
     baseline: project.baselines.get(tool.server, tool.tool)?.outputSchema,
     ops: adapters.get(name)?.ops ?? [],
-    contracts: (await savedContracts(project.root)).flatMap(({ contract }) =>
-      Object.hasOwn(contract, name) ? [contract[name]!] : []
-    ),
+    contracts: [
+      ...(await savedContracts(project.root)).flatMap(({ contract }) =>
+        Object.hasOwn(contract, name) ? [contract[name]!] : []
+      ),
+      reads,
+    ],
     fixtures: fixtures.map((call) => redactCall(call, rules)),
   };
 }

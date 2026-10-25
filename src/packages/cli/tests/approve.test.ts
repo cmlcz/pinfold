@@ -99,7 +99,7 @@ describe("pinfold plans, approve and decline", () => {
 
     expect(code).toBe(0);
     expect(stdout).toContain(
-      `Declined Write Plan ${id}. It will never be sent.`
+      `Declined Write Plan ${id}. It will never be sent; a later run that builds the same plan asks for Approval again.`
     );
     expect((await pinfold("approve", id)).stderr).toMatch(
       /is declined, not pending/
@@ -139,9 +139,17 @@ describe("pinfold resume", () => {
   it("sends the writes a stopped run did not send, then does nothing", async () => {
     const { run, id } = await stoppedRun();
 
+    const inDoubt = await pinfold("resume", run);
+    const resolved = await pinfold("resolve", run, "1", "not-sent");
     const resumed = await pinfold("resume", run);
     const again = await pinfold("resume", run);
 
+    expect(inDoubt.code).toBe(1);
+    expect(inDoubt.stderr).toContain(`pinfold resolve ${run} 1 not-sent`);
+    expect(resolved).toMatchObject({
+      code: 0,
+      stdout: `Recorded write 1 of run ${run} as not sent. \`pinfold resume ${run}\` sends it and the writes after it.\n`,
+    });
     expect(resumed).toMatchObject({
       code: 0,
       stdout: `Resumed run ${run}: sent write 1 of Write Plan ${id}.\n`,
@@ -157,6 +165,20 @@ describe("pinfold resume", () => {
 
     expect(code).toBe(1);
     expect(stderr).toMatch(/no run nope/);
+  });
+});
+
+describe("pinfold baseline optional", () => {
+  it("names a Tool that has no Baseline", async () => {
+    const { code, stderr } = await pinfold(
+      "baseline",
+      "optional",
+      "linear.createIssue",
+      "url"
+    );
+
+    expect(code).toBe(1);
+    expect(stderr).toBe("linear.createIssue has no Baseline\n");
   });
 });
 
