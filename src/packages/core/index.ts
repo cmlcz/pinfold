@@ -3,7 +3,11 @@
 import { randomUUID } from "node:crypto";
 import { planOutcome, resume } from "./lib/apply.ts";
 import type { PinfoldConfig, ToolKind } from "./lib/config.ts";
-import { configuredModel, type ModelClient } from "./lib/model.ts";
+import {
+  configuredModel,
+  withPickedModel,
+  type ModelClient,
+} from "./lib/model.ts";
 import { writePlan } from "./lib/plan.ts";
 import { planRun } from "./lib/plan-run.ts";
 import { openProject } from "./lib/project.ts";
@@ -134,10 +138,11 @@ export async function openCore(
   config: PinfoldConfig,
   options: { root: string; model?: ModelClient }
 ): Promise<Core> {
+  const picked = withPickedModel(config, process.env);
   const project = await openProject(
-    config,
+    picked,
     options.root,
-    options.model ?? configuredModel(config, process.env)
+    options.model ?? configuredModel(picked, process.env)
   );
 
   // The latest successful Exploration Runs, which save_workflow can save.

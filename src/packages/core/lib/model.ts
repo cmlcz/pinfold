@@ -1,7 +1,7 @@
 // The Repair Model: a small model unattended Repair asks for ops when
 // deterministic search finds none. It is any OpenAI-compatible chat API,
-// OpenRouter by default, and is used only when the config names a model
-// and OPENROUTER_API_KEY is set.
+// OpenRouter by default, and is used only when the config or
+// PINFOLD_REPAIR_MODEL names a model and OPENROUTER_API_KEY is set.
 // Each call's token usage and cost are kept in .pinfold/model-usage.jsonl.
 import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -77,6 +77,15 @@ export function chatClient({
       };
     },
   };
+}
+
+/** The config, with the Repair Model PINFOLD_REPAIR_MODEL picks, if set. */
+export function withPickedModel(
+  config: PinfoldConfig,
+  env: NodeJS.ProcessEnv
+): PinfoldConfig {
+  const picked = env.PINFOLD_REPAIR_MODEL;
+  return picked ? { ...config, repairModel: picked } : config;
 }
 
 /**
