@@ -34,6 +34,10 @@ _Avoid_: sandbox run, first run, code-mode run
 A saved, parameterized program derived from a successful Exploration Run and kept as a source file the developer owns and may edit.
 _Avoid_: skill, compiled workflow, script, recipe
 
+**Exposed Workflow**:
+A Workflow whose settings opt it into appearing as its own tool of the Gateway, named after it and taking main's input as its arguments. Its runs are Workflow Runs, as through run_workflow.
+_Avoid_: workflow tool, published workflow
+
 **Workflow Run**:
 One execution of a saved Workflow with specific inputs, consisting of a Plan followed by an Apply.
 _Avoid_: replay, invocation
@@ -63,6 +67,10 @@ _Avoid_: commit, flush, execute
 **Approval**:
 The developer's acceptance of a specific Write Plan and the Response Adapters it was built through, required before Apply when the developer has never approved writes of a Workflow's code as it is now, when a Response Adapter it depends on is new or updated, or when the Write Plan exceeds the Workflow's Write Budget.
 _Avoid_: confirmation, sign-off
+
+**Approval Dialog**:
+The dialog in which the developer's MCP client asks for Approval of a paused run through MCP elicitation, showing the Write Plan and the Repair behind each Response Adapter it was built through. Approving runs the same request again, which applies the plan only if it rebuilds the same one.
+_Avoid_: confirmation prompt, popup
 
 **Apply Journal**:
 The persistent record of which calls in a Write Plan have already been sent, allowing an interrupted Apply to resume without sending any call twice.

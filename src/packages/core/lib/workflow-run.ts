@@ -74,7 +74,9 @@ async function runOnce(
     declarations: declarations(project.sdkTools()),
     tools: new Set(project.tools.keys()),
   });
-  if (!loaded.ok) return loaded;
+  if (!loaded.ok) {
+    return { ok: false, error: `Workflow ${name} not run: ${loaded.reason}.` };
+  }
   const { workflow } = loaded;
   const source = shortHash(workflow.source);
   ran.saved = workflow.saved;

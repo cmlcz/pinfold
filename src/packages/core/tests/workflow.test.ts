@@ -355,3 +355,80 @@ describe("list_workflows", () => {
     expect(names).toEqual(["noop"]);
   });
 });
+
+describe("exposed Workflows", () => {
+  async function save(
+    core: Core,
+    name: string,
+    run: { code: string; input?: unknown },
+    settings: string
+  ) {
+    const exploration = explorationOf(await core.explore(run));
+    await core.saveWorkflow({ run: exploration, name, confirmed: true });
+    const file = join(ws.dir, ".workflows", `${name}.ts`);
+    const source = await readFile(file, "utf8");
+    await writeFile(
+      file,
+      source.replace("export const settings = { writeBudget: 10 };", settings)
+    );
+  }
+
+  it("offers the Workflows that set expose: true, with main's input as their arguments", async () => {
+    const core = await openTriage();
+    await save(
+      core,
+      "triage_sentry",
+      triage,
+      "export const settings = { writeBudget: 10, expose: true };"
+    );
+    await save(
+      core,
+      "count",
+      { code: "export async function main() { return 1; }" },
+      "export const settings = { writeBudget: 10 };"
+    );
+
+    const { workflows, skipped } = await core.exposedWorkflows();
+
+    expect(skipped).toEqual([]);
+    expect(workflows).toEqual([
+      {
+        name: "triage_sentry",
+        description: "Runs Workflow triage_sentry, as run_workflow does.",
+        input: expect.objectContaining({
+          type: "object",
+          required: ["project"],
+        }),
+      },
+    ]);
+  });
+
+  it("says why it leaves out an opted-in Workflow it cannot offer", async () => {
+    const core = await openTriage();
+    await save(
+      core,
+      "shout",
+      {
+        code: "export async function main(input: string) { return input.toUpperCase(); }",
+        input: "web",
+      },
+      "export const settings = { writeBudget: 10, expose: true };"
+    );
+    await save(
+      core,
+      "unbudgeted",
+      { code: "export async function main() { return 1; }" },
+      "export const settings = { expose: true };"
+    );
+
+    const { workflows, skipped } = await core.exposedWorkflows();
+
+    expect(workflows).toEqual([]);
+    expect(skipped).toEqual([
+      "Workflow shout not exposed as an MCP tool: its input is not an object, as the arguments of a tool are.",
+      expect.stringMatching(
+        /^Workflow unbudgeted not exposed as an MCP tool: it must export const settings = .*some text\.$/
+      ),
+    ]);
+  });
+});
