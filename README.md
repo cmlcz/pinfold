@@ -16,6 +16,9 @@ pinfold is a local MCP server for coding agents. It sits between your agent and 
 - **Deterministic repair.** pinfold searches for that adapter itself, with no model, and proposes it only when one mapping stands out. You approve it after seeing its diff, how its values compare with the recorded ones, and the write plan.
 - **Repair through your agent.** When pinfold finds no mapping, your agent can propose one through `propose_repair`, with no API key. pinfold checks it the same way and you approve it the same way.
 - **Baseline migration.** When you want a tool's new shape, for example to read a field its server added, `baseline migrate` shows how the live shape differs from the baseline and which workflows it breaks, then re-pins it.
+- **Approval in your agent's client.** Where the client supports MCP elicitation, a run that waits for approval asks you in a dialog that shows the plan, instead of sending you to the terminal.
+- **Workflows as their own tools.** A workflow you opt in appears to your agent as its own MCP tool.
+- **Stats.** `stats` shows what pinfold measured: runs, tool calls, the bytes of tool responses kept in the sandbox, repairs, and the repair model's tokens.
 - **Unattended repair through a model.** If you name an OpenRouter model, pinfold asks it for a mapping when it finds none itself, so a cron or CI run can repair drift with no agent. The mapping is checked and approved like any other.
 
 ## Requirements
@@ -157,7 +160,7 @@ Every run is recorded in `.pinfold/runs.jsonl`, and `list` shows each workflow's
 
 ## Repair drift
 
-Each tool's response shape is pinned in its baseline the first time the tool is called. For a tool that declares no output schema, pinfold infers the shape from that response, so it cannot know yet which fields are optional. Within an array, a field that some elements leave out or hold as null, while others have it, is not drift. A field missing from a single response is: if the server leaves it out at times, mark it optional in the baseline:
+Each tool's response shape is pinned in its baseline the first time a call shows its full shape, which is usually the first call. For a tool that declares no output schema, pinfold infers the shape from that response, waiting while an array in it is still empty, so it cannot know yet which fields are optional. Within an array, a field that some elements leave out or hold as null, while others have it, is not drift. A field missing from a single response is: if the server leaves it out at times, mark it optional in the baseline:
 
 ```sh
 node src/packages/cli/bin.ts baseline optional sentry.getIssue assignee
