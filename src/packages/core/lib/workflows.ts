@@ -280,12 +280,18 @@ export async function fixtureCalls(
   return calls;
 }
 
-/** The Contract of every saved Workflow, by name. */
-export async function savedContracts(
-  root: string
-): Promise<{ name: string; contract: Record<string, string[]> }[]> {
-  return (await readRecords(root)).map(({ name, contract }) => ({
+/** The Tools and Contract of every saved Workflow, by name. */
+export async function savedContracts(root: string): Promise<
+  {
+    name: string;
+    /** Every Tool the Workflow calls, as `server.tool`. */
+    tools: string[];
+    contract: Record<string, string[]>;
+  }[]
+> {
+  return (await readRecords(root)).map(({ name, tools, contract }) => ({
     name,
+    tools,
     contract,
   }));
 }

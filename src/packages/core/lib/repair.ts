@@ -576,13 +576,17 @@ function isNumber(value: unknown): value is number {
   return typeof value === "number";
 }
 
-/** A Repair pinfold wrote, kept for the Approval view of later runs. */
+/**
+ * A Repair pinfold wrote, or the reset of an Adapter by a Baseline
+ * Migration, kept for the Approval view of later runs.
+ */
 export type RepairRecord = {
   /** The Tool, as `server.tool`. */
   tool: string;
   /**
-   * Who found it: deterministic search, an agent through propose_repair, or
-   * the Repair Model.
+   * Who found it: deterministic search, an agent through propose_repair,
+   * the Repair Model, or a Baseline Migration, whose evidence is the
+   * Baseline's changes.
    */
   by: (typeof repairers)[number];
   /** The digest of the Adapter version it wrote. */
@@ -618,7 +622,7 @@ export type PendingDrift = {
 
 const callSchema = z.object({ arguments: z.json(), response: z.json() });
 
-const repairers = ["pinfold", "agent", "model"] as const;
+const repairers = ["pinfold", "agent", "model", "migration"] as const;
 
 const recordSchema = z.object({
   tool: z.string(),

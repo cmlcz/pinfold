@@ -164,6 +164,44 @@ function hasSteps(schema: JsonSchema | boolean, steps: Step[]): boolean {
   return hasSteps(schema.additionalProperties ?? true, rest);
 }
 
+/**
+ * Whether a JSON Schema lists the field a path names: each step a property
+ * it lists, the elements of an array or the values of a map. Unlike
+ * shapeAllows, a field an object leaves unlisted is not there, but a part
+ * of the shape that says nothing of its fields, such as `{}`, lists them all.
+ */
+export function shapeLists(schema: JsonSchema, path: string): boolean {
+  const steps = parsePath(path);
+  return steps !== undefined && listsSteps(schema, steps);
+}
+
+function listsSteps(schema: JsonSchema | boolean, steps: Step[]): boolean {
+  if (typeof schema === "boolean") return schema;
+  const [step, ...rest] = steps;
+  if (step === undefined) return true;
+  if (Array.isArray(schema.anyOf)) {
+    return schema.anyOf.some((option) => listsSteps(option, steps));
+  }
+  if ("each" in step) {
+    const prefix = Array.isArray(schema.prefixItems) ? schema.prefixItems : [];
+    if (schema.items === undefined && prefix.length === 0) {
+      return schema.type === undefined;
+    }
+    return [...prefix, schema.items ?? true].some((items) =>
+      listsSteps(items, rest)
+    );
+  }
+  const { properties, additionalProperties: additional } = schema;
+  if (properties !== undefined && Object.hasOwn(properties, step.key)) {
+    return listsSteps(properties[step.key]!, rest);
+  }
+  if (additional !== undefined) return listsSteps(additional, rest);
+  return (
+    properties === undefined &&
+    (schema.type === undefined || schema.type === "object")
+  );
+}
+
 /** The schemas a path reaches in a JSON Schema, through unions and arrays. */
 export function schemasAt(
   schema: JsonSchema | boolean,

@@ -15,6 +15,7 @@ pinfold is a local MCP server for coding agents. It sits between your agent and 
 - **Drift detection and response adapters.** A run stops before any write when a tool's responses no longer fit the fields the workflow reads. A response adapter maps the responses back, and every workflow that uses the tool works again without any edit.
 - **Deterministic repair.** pinfold searches for that adapter itself, with no model, and proposes it only when one mapping stands out. You approve it after seeing its diff, how its values compare with the recorded ones, and the write plan.
 - **Repair through your agent.** When pinfold finds no mapping, your agent can propose one through `propose_repair`, with no API key. pinfold checks it the same way and you approve it the same way.
+- **Baseline migration.** When you want a tool's new shape, for example to read a field its server added, `baseline migrate` shows how the live shape differs from the baseline and which workflows it breaks, then re-pins it.
 - **Unattended repair through a model.** If you name an OpenRouter model, pinfold asks it for a mapping when it finds none itself, so a cron or CI run can repair drift with no agent. The mapping is checked and approved like any other.
 
 ## Requirements
@@ -193,7 +194,33 @@ The ops run in order. A path such as `issues[].count` names the `count` of every
 - **`map`** replaces enum values at `path` by the `values` they map to.
 - **`default`** gives a missing field at `path` the `value`.
 
-Whoever proposes a `default`, the approval view says the server sends no value there and names the value given. A new or changed adapter makes the next run of every workflow that uses the tool pause for approval. That includes a workflow that sends no writes: its result is held back until you approve. Some drift, such as a response that is now paged, cannot be mapped back by an adapter: pinfold reports that it needs a manual fix. Edit the workflow to read the new shape, and migrate the tool's baseline to it: delete the tool's file in `.workflows/baselines/`, and the next call pins the shape the server has now.
+Whoever proposes a `default`, the approval view says the server sends no value there and names the value given. A new or changed adapter makes the next run of every workflow that uses the tool pause for approval. That includes a workflow that sends no writes: its result is held back until you approve. Some drift, such as a response that is now paged, cannot be mapped back by an adapter: pinfold reports that it needs a manual fix. Edit the workflow to read the new shape, and migrate the tool's baseline to it.
+
+## Migrate a baseline
+
+A field a server adds stays out of the baseline, so no workflow can read it until you migrate the tool's baseline on purpose:
+
+```sh
+node src/packages/cli/bin.ts baseline migrate sentry.listIssues
+```
+
+pinfold calls the tool again with the arguments of its calls in the saved fixtures, and infers the shape the server gives it now. Where the server still lists an output schema that every response fits, it keeps that schema. A field whose values all still fit its old schema, an enum for one, keeps that schema too. Arguments that redaction kept out of the fixtures are not sent, and a write tool is never called: only the output schema its server lists can say its shape.
+
+The command shows each field whose shape changes, and checks every workflow that calls the tool against the new baseline: its code must type-check, and every field it reads must be there. Nothing changes until you run it again with `--yes`:
+
+```text
+Baseline of sentry.listIssues, against the shape its server gives it now:
+  - response.issues[].count: number
+  + response.issues[].eventCount: number
+Workflow short_ids: checks against the new Baseline.
+Workflow triage_sentry: does not check against the new Baseline:
+  TS2339: Property 'count' does not exist on type '{ id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: "fatal" | "error" | "warning" | "info"; firstSeen: string; lastSeen: string; eventCount: number; userCount: number; status: "unresolved" | ... 1 more ... | "ignored"; }'.
+    at program.ts:9:46
+  it reads issues[].count, which the new Baseline does not have
+Nothing changed yet. `pinfold baseline migrate sentry.listIssues --yes` re-pins the Baseline.
+```
+
+With `--yes`, pinfold re-pins the baseline and resets the tool's response adapter as a new version with no ops, since the baseline is now the live shape. Like any changed adapter, that makes the next run of every workflow that uses the tool pause for approval, with the baseline's changes in the approval view. Pending drift of the tool is dropped, as it was drift from the old baseline. Edit each workflow that no longer checks before you run it again.
 
 ## Where pinfold keeps its state
 
