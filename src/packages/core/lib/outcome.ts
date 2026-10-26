@@ -99,8 +99,11 @@ export function formatWorkflowRun(
 // A Repair as the Approval view shows it: the Adapter diff, then the value
 // evidence.
 function formatRepair(repair: RepairRecord): string {
-  const who =
-    repair.by === "agent" ? "An agent, through propose_repair," : "pinfold";
+  const who = {
+    pinfold: "pinfold",
+    agent: "An agent, through propose_repair,",
+    model: "The Repair Model, unattended,",
+  }[repair.by];
   return [
     `${who} repaired the Response Adapter of ${repair.tool}, now version ${repair.version}:`,
     ...repair.diff.map((line) => `  ${line}`),
@@ -121,29 +124,34 @@ export function formatProposal(
   ].join("\n");
 }
 
+/** How a repair task says which values redaction kept out. */
+export const redactedNote = 'Fields kept out of Fixtures hold "[redacted]".';
+
 // A live response is shown for its shape, so its arrays are cut short.
 const shownElements = 3;
 
 /** The pending Drift, as propose_repair shows it to the agent. */
 export function formatRepairTasks(tasks: RepairTask[]): string {
   if (tasks.length === 0) return "No pending Drift.";
-  const shown = tasks.map((task) =>
-    [
-      `Pending Drift of ${task.tool}, found by a run of Workflow ${task.workflow} at ${task.at}:`,
-      ...task.mismatches.map((mismatch) => `  ${describeMismatch(mismatch)}`),
-      `Deterministic Repair proposed nothing: ${task.reason}.`,
-      `Fields the Workflows read: ${task.reads.join(", ")}`,
-      `Baseline, the response shape every Workflow sees: ${JSON.stringify(task.baseline)}`,
-      `Response Adapter ops now: ${JSON.stringify(task.ops)}`,
-      `A live response, as the server sent it, with arrays cut to ${shownElements} elements: ${JSON.stringify(cut(task.responses[0]?.response))}`,
-      "Values in the Fixtures of the fields the Drift touches:",
-      ...task.fixtureValues.map((line) => `  ${line}`),
-    ].join("\n")
-  );
   return [
-    ...shown,
-    'Fields kept out of Fixtures hold "[redacted]". To repair a Tool, call propose_repair with it and the ops to add after its Adapter\'s ops.',
+    ...tasks.map(formatRepairTask),
+    `${redactedNote} To repair a Tool, call propose_repair with it and the ops to add after its Adapter's ops.`,
   ].join("\n\n");
+}
+
+/** One Tool's pending Drift, with what is needed to repair it. */
+export function formatRepairTask(task: RepairTask): string {
+  return [
+    `Pending Drift of ${task.tool}, found by a run of Workflow ${task.workflow} at ${task.at}:`,
+    ...task.mismatches.map((mismatch) => `  ${describeMismatch(mismatch)}`),
+    `Deterministic Repair proposed nothing: ${task.reason}.`,
+    `Fields the Workflows read: ${task.reads.join(", ")}`,
+    `Baseline, the response shape every Workflow sees: ${JSON.stringify(task.baseline)}`,
+    `Response Adapter ops now: ${JSON.stringify(task.ops)}`,
+    `A live response, as the server sent it, with arrays cut to ${shownElements} elements: ${JSON.stringify(cut(task.responses[0]?.response))}`,
+    "Values in the Fixtures of the fields the Drift touches:",
+    ...task.fixtureValues.map((line) => `  ${line}`),
+  ].join("\n");
 }
 
 function cut(value: unknown): unknown {

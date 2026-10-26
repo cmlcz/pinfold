@@ -2,6 +2,7 @@
 // the git-ignored state directory .pinfold/.
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type * as z from "zod";
 
 /** A file's text, or undefined when it does not exist. */
 export async function readOrNone(path: string): Promise<string | undefined> {
@@ -23,6 +24,19 @@ export async function readJson(path: string): Promise<unknown> {
       cause: error,
     });
   }
+}
+
+/**
+ * A JSON file's value, read by a schema; undefined when the file does not
+ * exist, is not JSON or does not fit, so a damaged file reads as none.
+ */
+export async function readParsed<T>(
+  path: string,
+  schema: z.ZodType<T>
+): Promise<T | undefined> {
+  const text = await readOrNone(path);
+  const parsed = schema.safeParse(text && safeJson(text));
+  return parsed.success ? parsed.data : undefined;
 }
 
 /** A text's JSON value, or undefined when it is not JSON. */

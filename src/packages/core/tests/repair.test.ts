@@ -1,14 +1,17 @@
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sentryDriftScenarios } from "../../drift-kit/index.ts";
 import {
+  chatClient,
   formatProposal,
   formatRepairTasks,
   formatWorkflowRun,
   openPlans,
   reviewPlan,
   type Core,
+  type ModelClient,
+  type PinfoldConfig,
   type WorkflowRunResult,
 } from "../index.ts";
 import { createWorkspace, sentryReads, type Workspace } from "./workspace.ts";
@@ -21,14 +24,30 @@ beforeEach(async () => {
 
 afterEach(() => ws.close());
 
-function openTriage(workspace = ws): Promise<Core> {
-  return workspace.open({
-    servers: { sentry: workspace.sentry(), linear: workspace.linear() },
-    classification: {
-      ...sentryReads,
-      linear: { searchIssues: "read", createIssue: "write" },
+function openTriage(
+  workspace = ws,
+  {
+    model,
+    repairModel,
+    redact,
+  }: {
+    model?: ModelClient;
+    repairModel?: string;
+    redact?: PinfoldConfig["redact"];
+  } = {}
+): Promise<Core> {
+  return workspace.open(
+    {
+      servers: { sentry: workspace.sentry(), linear: workspace.linear() },
+      classification: {
+        ...sentryReads,
+        linear: { searchIssues: "read", createIssue: "write" },
+      },
+      ...(repairModel !== undefined && { repairModel }),
+      ...(redact !== undefined && { redact }),
     },
-  });
+    model === undefined ? {} : { model }
+  );
 }
 
 // Reads count, status and userCount of every issue, and files a ticket for
@@ -269,6 +288,26 @@ describe("Deterministic Repair", () => {
       ),
     });
     expect(await core.pendingDrift()).toHaveLength(1);
+  });
+
+  it("lists pending Drift files that parse, and skips the others", async () => {
+    const core = await openTriage();
+    const drift = join(ws.dir, ".pinfold", "drift");
+    await mkdir(drift, { recursive: true });
+    await writeFile(join(drift, "broken.json"), "{");
+    await writeFile(join(drift, "other.json"), "{}");
+    const pending = {
+      tool: "sentry.listIssues",
+      workflow: "triage_sentry",
+      at: "2026-10-26T00:00:00.000Z",
+      mismatches: [{ path: "issues[].count", problem: "is missing" }],
+      reason: "no op fits",
+    };
+    await writeFile(join(drift, "kept.json"), JSON.stringify(pending));
+
+    expect(await core.pendingDrift()).toEqual([
+      { ...pending, reads: [], responses: [] },
+    ]);
   });
 
   it("reports a pagination change as needing a manual fix", async () => {
@@ -567,6 +606,7 @@ describe("Repair through the agent", () => {
       version: 1,
       diff: ['+ {"op":"default","path":"issues[].userCount","value":0}'],
       evidence: [
+        "issues[].userCount: the server sends no value here; the default op gives it 0",
         "issues[].userCount: now median 0, range 0–0; in the Fixtures median 61, range 12–88",
       ],
     };
@@ -676,6 +716,294 @@ describe("Approval of changed Adapters without writes", () => {
       status: "pending",
       approvalReason:
         "the Response Adapter of sentry.listIssues changed since Workflow counts was saved",
+    });
+  });
+});
+
+describe("Repair through the repair model", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  /** A model that gives the same answer to every prompt, and keeps them. */
+  function scriptedModel(answer: string) {
+    const prompts: string[] = [];
+    const model: ModelClient = {
+      async complete(prompt) {
+        prompts.push(prompt);
+        return {
+          text: answer,
+          usage: {
+            model: "test/small",
+            promptTokens: 1200,
+            completionTokens: 40,
+            cost: 0.0003,
+          },
+        };
+      },
+    };
+    return { model, prompts };
+  }
+
+  it("repairs pending Drift unattended, and its Repair waits for Approval", async () => {
+    const userCountDefault = [
+      { op: "default", path: "issues[].userCount", value: 0 },
+    ];
+    const { model, prompts } = scriptedModel(
+      `\`\`\`json\n${JSON.stringify(userCountDefault)}\n\`\`\``
+    );
+    // With userCount kept out of the Fixtures, nothing shows the default
+    // makes data up, so it is left to the developer's Approval.
+    const core = await openTriage(ws, {
+      model,
+      redact: { sentry: { listIssues: ["response.issues[].userCount"] } },
+    });
+    const before = await saveApplied(core, "triage_sentry");
+    const sent = await ws.control("linear").receivedWrites();
+    await ws.control("sentry").startDrift("removed-field");
+
+    const paused = succeeded(
+      await core.runWorkflow({ name: "triage_sentry", input })
+    );
+
+    expect(paused).toMatchObject({
+      status: "pending",
+      repairs: [
+        {
+          tool: "sentry.listIssues",
+          by: "model",
+          version: 1,
+          diff: ['+ {"op":"default","path":"issues[].userCount","value":0}'],
+        },
+      ],
+    });
+    expect(paused.plan.writes).toEqual(before.plan.writes);
+    expect(await ws.control("linear").receivedWrites()).toEqual(sent);
+    expect(formatWorkflowRun(paused)).toContain(
+      "The Repair Model, unattended, repaired the Response Adapter of sentry.listIssues, now version 1:"
+    );
+    expect(formatWorkflowRun(paused)).toContain(
+      "issues[].userCount: the server sends no value here; the default op gives it 0"
+    );
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("issues[].userCount is missing");
+    expect(await core.pendingDrift()).toEqual([]);
+    const usage = await readFile(
+      join(ws.dir, ".pinfold", "model-usage.jsonl"),
+      "utf8"
+    );
+    expect(JSON.parse(usage)).toEqual({
+      at: expect.any(String),
+      tool: "sentry.listIssues",
+      model: "test/small",
+      promptTokens: 1200,
+      completionTokens: 40,
+      cost: 0.0003,
+    });
+  });
+
+  it("keeps the Drift pending when the model's ops do not repair it, and asks no more", async () => {
+    const { model, prompts } = scriptedModel(
+      '[{"op":"rename","from":"issues[].users","to":"issues[].userCount"}]'
+    );
+    const core = await openTriage(ws, { model });
+    await saveApplied(core, "triage_sentry");
+    await ws.control("sentry").startDrift("removed-field");
+    const refusal =
+      "Repair of sentry.listIssues not proposed: through its Response Adapter and these ops";
+
+    const first = await core.runWorkflow({ name: "triage_sentry", input });
+    const second = await core.runWorkflow({ name: "triage_sentry", input });
+
+    expect(first).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(
+        `The Repair Model repaired nothing: ${refusal}`
+      ),
+    });
+    expect(second).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(
+        `The Repair Model repaired nothing: it is not asked again while the Drift stays the same. When asked: ${refusal}`
+      ),
+    });
+    expect(prompts).toHaveLength(1);
+    expect(await core.pendingDrift()).toHaveLength(1);
+  });
+
+  it("refuses a default that makes up a field the Fixtures hold varied values of", async () => {
+    const { model } = scriptedModel(
+      '[{"op":"default","path":"issues[].userCount","value":61}]'
+    );
+    const core = await openTriage(ws, { model });
+    await saveApplied(core, "triage_sentry");
+    await ws.control("sentry").startDrift("removed-field");
+
+    const result = await core.runWorkflow({ name: "triage_sentry", input });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(
+        "The Repair Model repaired nothing: Repair of sentry.listIssues not proposed: a default op would make up values for issues[].userCount, which the Fixtures hold other values of."
+      ),
+    });
+    expect(await core.pendingDrift()).toHaveLength(1);
+  });
+
+  it("keeps the Drift pending when the model finds no faithful ops", async () => {
+    const { model, prompts } = scriptedModel("[]");
+    const core = await openTriage(ws, { model });
+    await saveApplied(core, "triage_sentry");
+    await ws.control("sentry").startDrift("removed-field");
+
+    const result = await core.runWorkflow({ name: "triage_sentry", input });
+
+    expect(prompts[0]).toContain("Never make up a value");
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(
+        "The Repair Model repaired nothing: it found no ops that map the live responses back faithfully."
+      ),
+    });
+    expect(await core.pendingDrift()).toHaveLength(1);
+  });
+
+  it("refuses an answer that holds no ops", async () => {
+    const { model } = scriptedModel("I cannot map this response.");
+    const core = await openTriage(ws, { model });
+    await saveApplied(core, "triage_sentry");
+    await ws.control("sentry").startDrift("removed-field");
+
+    const result = await core.runWorkflow({ name: "triage_sentry", input });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(
+        "The Repair Model repaired nothing: Repair of sentry.listIssues not proposed: the ops are not of the closed set"
+      ),
+    });
+  });
+
+  it("asks again on the next run when the model could not be reached", async () => {
+    let calls = 0;
+    const model: ModelClient = {
+      async complete() {
+        calls += 1;
+        throw new Error("fetch failed");
+      },
+    };
+    const core = await openTriage(ws, { model });
+    await saveApplied(core, "triage_sentry");
+    await ws.control("sentry").startDrift("removed-field");
+
+    const result = await core.runWorkflow({ name: "triage_sentry", input });
+    await core.runWorkflow({ name: "triage_sentry", input });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(
+        "The Repair Model repaired nothing: it could not be asked: fetch failed."
+      ),
+    });
+    expect(calls).toBe(2);
+    expect(await core.pendingDrift()).toHaveLength(1);
+  });
+
+  it("calls no model when none is configured", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    vi.stubGlobal("fetch", fetch);
+    const core = await openTriage();
+    await saveApplied(core, "triage_sentry");
+    await ws.control("sentry").startDrift("removed-field");
+
+    const result = await core.runWorkflow({ name: "triage_sentry", input });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("The Drift is recorded as pending"),
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("works without a model when its key is not set, and says so", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "");
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    vi.stubGlobal("fetch", fetch);
+    const core = await openTriage(ws, { repairModel: "openai/gpt-4o-mini" });
+    await saveApplied(core, "triage_sentry");
+    await ws.control("sentry").startDrift("removed-field");
+
+    const result = await core.runWorkflow({ name: "triage_sentry", input });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(
+        "The Repair Model repaired nothing: it was not asked, as OPENROUTER_API_KEY is not set."
+      ),
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("calls the model PINFOLD_REPAIR_MODEL picks, over the config's", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "sk-test");
+    vi.stubEnv("PINFOLD_REPAIR_MODEL", "test/picked");
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({
+        choices: [{ message: { content: "[]" } }],
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      })
+    );
+    vi.stubGlobal("fetch", fetch);
+    const core = await openTriage(ws, { repairModel: "test/configured" });
+    await saveApplied(core, "triage_sentry");
+    await ws.control("sentry").startDrift("removed-field");
+
+    await core.runWorkflow({ name: "triage_sentry", input });
+
+    expect(fetch).toHaveBeenCalledOnce();
+    const [, init] = fetch.mock.calls[0]!;
+    expect(JSON.parse(init?.body as string)).toMatchObject({
+      model: "test/picked",
+    });
+  });
+
+  it("asks an OpenAI-compatible API and reads OpenRouter's usage fields", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({
+        model: "openai/gpt-4o-mini-2024-07-18",
+        choices: [{ message: { content: "[]" } }],
+        usage: {
+          prompt_tokens: 10,
+          completion_tokens: 2,
+          total_tokens: 12,
+          cost: 0.00001,
+        },
+      })
+    );
+    vi.stubGlobal("fetch", fetch);
+    const client = chatClient({
+      model: "openai/gpt-4o-mini",
+      apiKey: "sk-test",
+    });
+
+    const answer = await client.complete("Propose ops.");
+
+    expect(answer).toEqual({
+      text: "[]",
+      usage: {
+        model: "openai/gpt-4o-mini-2024-07-18",
+        promptTokens: 10,
+        completionTokens: 2,
+        cost: 0.00001,
+      },
+    });
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(url).toBe("https://openrouter.ai/api/v1/chat/completions");
+    expect(init?.headers).toMatchObject({ authorization: "Bearer sk-test" });
+    expect(JSON.parse(init?.body as string)).toEqual({
+      model: "openai/gpt-4o-mini",
+      messages: [{ role: "user", content: "Propose ops." }],
     });
   });
 });
