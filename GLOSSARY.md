@@ -91,7 +91,7 @@ The subset of a Tool's Baseline response shape that a specific Workflow actually
 _Avoid_: schema, assertion, expectation
 
 **Drift**:
-A discrepancy between a Tool as its Downstream Server offers it now (its responses after the current Response Adapter, or the inputs it accepts) and its pinned Baseline. A Workflow Run checks the responses, and is affected only when Drift touches the fields it reads; a change in the inputs a Tool accepts shows only in a Baseline Migration, or as a failed call.
+A discrepancy between a Tool as its Downstream Server offers it now (its responses after the current Response Adapter, or the inputs it accepts) and its pinned Baseline. A Workflow Run is affected only when Drift touches the fields it reads, or when a Write Tool it plans to call no longer accepts the arguments it would send.
 _Avoid_: breaking change, API change, schema mismatch
 
 **Response Adapter**:

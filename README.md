@@ -227,7 +227,7 @@ The ops run in order. A path such as `issues[].count` names the `count` of every
 - **`map`** replaces enum values at `path` by the `values` they map to.
 - **`default`** gives a missing field at `path` the `value`.
 
-Whoever proposes a `default`, the approval view says the server sends no value there and names the value given. A new or changed adapter makes the next run of every workflow that uses the tool pause for approval. That includes a workflow that sends no writes: its result is held back until you approve. Some drift, such as a response that is now paged, cannot be mapped back by an adapter: pinfold reports that it needs a manual fix. Edit the workflow to read the new shape, and migrate the tool's baseline to it.
+Whoever proposes a `default`, the approval view says the server sends no value there and names the value given. A new or changed adapter makes the next run of every workflow that uses the tool pause for approval. That includes a workflow that sends no writes: its result is held back until you approve. A write tool can change too: when its server lists other arguments than its baseline and a planned write no longer fits them, the run stops before approval, with nothing sent, and says which argument no longer fits. `baseline migrate` shows the change. Some drift, such as a response that is now paged, cannot be mapped back by an adapter: pinfold reports that it needs a manual fix. Edit the workflow to read the new shape, and migrate the tool's baseline to it.
 
 ## Migrate a baseline
 
