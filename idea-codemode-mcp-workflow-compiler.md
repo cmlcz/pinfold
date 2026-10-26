@@ -1,39 +1,78 @@
 # pinfold: plan-first workflows that survive API drift
 
-pinfold is a local MCP **Gateway** for coding agents (Claude Code, Codex CLI, Antigravity CLI). An agent solves a multi-tool task once by writing a short TypeScript program during an **Exploration Run**; pinfold saves that program as a **Workflow** the developer owns, and runs it again without an LLM. Two ideas distinguish pinfold from existing tools:
+_Design document for pinfold v1. Status: the Gateway, Plan and Apply, Repair, Baseline Migration, Approval in the client and `pinfold stats` are built. The benchmark is not built yet (§10.2). Last reviewed 2026-10-27._
 
-1. **Every Workflow Run is a Plan followed by an Apply.** **Read Tools** run live, calls to **Write Tools** are recorded into a **Write Plan**, and only that exact plan is ever sent.
-2. **Drift is repaired at the boundary, not in your code.** Each **Tool** is pinned to a **Baseline** response shape. When a **Downstream Server** changes its responses, pinfold updates the Tool's **Response Adapter**—a small declarative mapping back to the Baseline—so every Workflow that uses the Tool keeps working. No LLM ever edits a Workflow file.
+pinfold is a local MCP (Model Context Protocol) **Gateway** for coding agents such as Claude Code, Codex CLI and Antigravity CLI. An agent solves a multi-tool task once by writing a short TypeScript program during an **Exploration Run**. pinfold saves that program as a **Workflow** the developer owns, and runs it again without an LLM. Two ideas distinguish pinfold from existing tools:
 
-In one line: _your agent writes the workflow once; pinfold keeps it running as APIs change, and never sends a write you have not seen in a plan._
+1. **Every Workflow Run is a Plan followed by an Apply.** **Read Tools** run live, and calls to **Write Tools** are recorded into a **Write Plan** instead of being sent. Apply sends that Write Plan and nothing else.
+2. **Drift is repaired at the boundary, not in the Workflow's code.** Each **Tool** is pinned to a **Baseline** response shape. When a **Downstream Server** changes its responses, pinfold proposes a new version of the Tool's **Response Adapter**, a declarative mapping back to the Baseline. Once the developer approves it, every Workflow that uses the Tool runs again unchanged. No LLM ever edits a Workflow file.
 
-Capitalized terms introduced in **bold** are defined in [GLOSSARY.md](GLOSSARY.md). Architectural decisions and their rationale live in [docs/adr/](docs/adr/).
+In one sentence: an agent writes the Workflow once; pinfold runs it as Downstream Servers change, and sends no write outside a Write Plan that the developer approved or that meets the conditions for running unattended (§4.3).
+
+Capitalized terms introduced in **bold** are defined in [GLOSSARY.md](GLOSSARY.md). Architectural decisions live in [docs/adr/](docs/adr/). Configuration and commands are documented in the [README](README.md).
 
 ---
 
 ## 1. The problem
 
-- **Repeating solved work.** An agent that triaged yesterday's CI failures must plan the same task from scratch today. Every repeat consumes tokens (or subscription quota), takes the time of a full agent loop, and can fail in new ways.
-- **Saved code goes stale.** The obvious remedy—saving the agent's code and reusing it—has already been proposed by Anthropic and implemented by several tools (§2). In practice, saved code breaks as soon as a Downstream Server renames a field or wraps a response. Tools that repair such breaks by letting an LLM edit the code risk altering business logic just to make checks pass: a 2026 study of autonomous test repair found agents converging through "assertion weakening and test-case deletion" (arXiv 2605.01471).
-- **Writes are the dangerous part.** A reused program that crashes halfway through, retries, or runs after a faulty repair can create duplicate tickets or post wrong messages. Existing tools mostly avoid this by disabling writes when re-running saved work.
+- **Repeating solved work.** An agent that triaged yesterday's CI failures plans the same task from scratch today. Every repeat consumes tokens or subscription quota, takes the time of a full agent loop, and can fail in new ways.
+- **Saved code goes stale.** Saving the agent's code and reusing it has already been proposed by Anthropic and implemented by several tools (§3). Saved code that reads a Downstream Server's responses breaks when the server renames a field or wraps a response. Tools that repair such breaks by letting an LLM edit the code can alter business logic to make checks pass. A 2026 study of autonomous test repair found agents converging through "assertion weakening and test-case deletion" (arXiv 2605.01471).
+- **Writes are the dangerous part.** A reused program that crashes halfway through, retries, or runs after a faulty repair can create duplicate tickets or post wrong messages. Reelier, the closest existing tool (§3), avoids this by running saved work read-only by default.
 
-How large these costs are in practice is what the benchmark (§8) measures; this document makes no numeric claim it does not test.
+How large these costs are is what the benchmark measures (§10). This document makes no numeric claim that it does not test.
 
 ---
 
-## 2. Prior art and what is new
+## 2. Goals and non-goals
+
+### 2.1 Goals
+
+1. Reuse an agent's solved multi-tool task as a Workflow that runs with no LLM (tested by H1, §10.3).
+2. Keep Workflows running through Drift without editing their code: repair deterministically where one mapping stands out, and otherwise through the developer's agent or a Repair Model (tested by H2).
+3. Send no write outside a Write Plan that the developer approved or that meets the conditions for running unattended (tested by H3).
+4. Run from a fresh clone on a CI runner, and later from npm (tested by H4; publishing is tracked in [#23](https://github.com/cmlcz/pinfold/issues/23)).
+
+### 2.2 Scope of v1
+
+| Item                                                                                                                                                                                                                           | Status                                                                                                       |
+| :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------- |
+| Gateway with six fixed tools (`search_sdk`, `run_sandbox`, `save_workflow`, `list_workflows`, `run_workflow`, `propose_repair`) and opt-in Exposed Workflows; stdio and Streamable HTTP Downstream Servers with static headers | Built                                                                                                        |
+| Per-Tool Read/Write classification, TypeScript SDK generation from Baselines, SDK signature search                                                                                                                             | Built                                                                                                        |
+| QuickJS/Wasm sandbox with time, memory and Tool-call limits                                                                                                                                                                    | Built                                                                                                        |
+| Exploration Runs and the `save_workflow` checks                                                                                                                                                                                | Built                                                                                                        |
+| Plan and Apply with Placeholders, Approval in the terminal and in an **Approval Dialog**, the Apply Journal, `pinfold resume` and `pinfold resolve`                                                                            | Built                                                                                                        |
+| Baselines, Contracts, Response Adapters; deterministic Repair, Repair through the agent, and an optional Repair Model                                                                                                          | Built                                                                                                        |
+| Developer-initiated **Baseline Migration** and marking a Baseline field optional ([ADR 0008](docs/adr/0008-baseline-migration-from-live-responses.md))                                                                         | Built                                                                                                        |
+| Redacted, git-ignored Fixtures                                                                                                                                                                                                 | Built                                                                                                        |
+| `pinfold stats`                                                                                                                                                                                                                | Built                                                                                                        |
+| **Drift Kit** with Sentry- and Linear-shaped servers and six **Drift Scenarios**                                                                                                                                               | Built                                                                                                        |
+| GitHub-shaped Drift Kit server, the six benchmark tasks, `pinfold bench`, the real-CLI drivers and the lifecycle experiment                                                                                                    | Planned: [#19](https://github.com/cmlcz/pinfold/issues/19)–[#22](https://github.com/cmlcz/pinfold/issues/22) |
+| npm publication with a `pinfold` command                                                                                                                                                                                       | Planned: [#23](https://github.com/cmlcz/pinfold/issues/23)                                                   |
+
+### 2.3 Non-goals
+
+- Downstream Servers that require OAuth flows.
+- `sdk.ai.extract` or any LLM call inside a Workflow.
+- Team, hosted, or multi-tenant deployments.
+- Response Adapters that execute arbitrary code.
+- Baseline Migration that runs without the developer.
+- Full benchmark runs on Antigravity CLI.
+
+---
+
+## 3. Prior art and what is new
 
 Checked against primary sources on 2026-10-18. Items marked † come from a background literature scan and were not read in full.
 
 | Work                                                   | What it does                                                                                                    | Relation to pinfold                                                                            |
 | :----------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------- |
-| Cloudflare Code Mode (2025-09-26)                      | Exposes MCP tools as a TypeScript API inside a throwaway isolate                                                | Same first step; nothing is saved across runs                                                  |
+| Cloudflare Code Mode (2025-09-26)                      | Exposes MCP tools as a TypeScript API inside a short-lived V8 isolate                                           | Same first step; nothing is saved across runs                                                  |
 | Anthropic, _Code execution with MCP_ (2025-11-04)      | Proposes code mode where agents "persist their own code as reusable functions" (skills)                         | Suggests saving code, without execution guarantees, drift handling, or write control           |
 | Anthropic programmatic tool calling (2025-11-24)       | Lets the model write code that calls tools inside a sandbox                                                     | Code mode inside the API; nothing is persisted                                                 |
 | `datalayer/agent-codemode`                             | Implements code mode with `save_skill` and `run_skill`                                                          | Persists scripts, without validation, write control, or drift handling                         |
 | Reelier (`seldonframe/reelier`)                        | Records MCP tool-call traces into skills with assertions; read-only by default; `diff` reports `SAME`/`DRIFTED` | Closest match: detects drift, but has no plans, no adapters, and undocumented repair mechanics |
 | ASI, _Inducing Programmatic Skills_ (arXiv 2504.06821) | Induces programmatic skills for web agents and re-induces them when sites change                                | Repairs by regenerating code, without fixtures or a human gate                                 |
-| TraceCompiler (arXiv 2608.02680)†                      | Compiles agent traces into mostly deterministic workflows; refuses underdetermined irreversible effects         | Similar stance to our Placeholder rules                                                        |
+| TraceCompiler (arXiv 2608.02680)†                      | Compiles agent traces into mostly deterministic workflows; refuses underdetermined irreversible effects         | Similar stance to pinfold's Placeholder rules                                                  |
 | Atomix (arXiv 2602.14849)†                             | Buffers agent effects until commit and gates irreversible ones                                                  | Stages effects, but is not MCP-specific and produces no reviewable plan                        |
 | UiPath Healing Agent                                   | Repairs broken RPA UI selectors, optionally in recommend-only mode                                              | Human-gated repair, scoped to UI selectors                                                     |
 | Ink & Switch, Cambria                                  | Translates between document schema versions using bidirectional lenses                                          | Direct inspiration for Response Adapters                                                       |
@@ -43,24 +82,24 @@ Checked against primary sources on 2026-10-18. Items marked † come from a back
 **What pinfold adds:**
 
 - A reviewable **Write Plan** built with opaque **Placeholders** and applied exactly as reviewed.
-- **Repair** via a per-Tool **Response Adapter** against a pinned **Baseline**: verified against each Workflow's frozen **Contract**, shared across every Workflow that uses the Tool, and backed by value evidence for ambiguous renames.
-- A **Drift Kit** and benchmark suite that measure whether saved Workflows survive **Drift** and what they actually save. Our literature scan found no existing benchmark for this.
+- **Repair** through a per-Tool Response Adapter against a pinned Baseline. A Repair is checked against the fields the Workflows read, shared by every Workflow that uses the Tool, and shown with value evidence from the **Fixtures**.
+- A Drift Kit and benchmark that measure whether saved Workflows survive **Drift** and what they cost compared with an agent. The literature scan found no existing benchmark for this.
 
 ---
 
-## 3. How it works: an end-to-end example
+## 4. How it works: an end-to-end example
 
-Suppose a developer connects Claude Code to pinfold with three Downstream Servers configured: Sentry, GitHub, and Linear.
+A developer connects Claude Code to pinfold with three Downstream Servers configured: Sentry, GitHub and Linear. The developer has marked `sentry.listIssues`, `linear.searchIssues` and `github.getBlame` as Read Tools. Every other Tool, including `linear.createIssue`, stays a Write Tool ([ADR 0004](docs/adr/0004-tools-are-write-tools-by-default.md)).
 
-### 3.1 Exploration Run
+### 4.1 Exploration Run
 
 The developer asks: _"Find unresolved Sentry issues from the last 24 hours with at least 50 events, find who last changed the crashing line, and create a Linear issue assigned to them unless one exists."_
 
-The agent calls `search_sdk` to inspect the relevant TypeScript signatures, then calls `run_sandbox` once:
+The agent calls `search_sdk` to find the relevant TypeScript signatures, then calls `run_sandbox` once:
 
 ```typescript
 export async function main(input: { project: string; minEvents: number }) {
-  const issues = await sdk.sentry.listIssues({
+  const { issues } = await sdk.sentry.listIssues({
     project: input.project,
     statsPeriod: "24h",
   });
@@ -71,7 +110,7 @@ export async function main(input: { project: string; minEvents: number }) {
   const created = [];
   for (const issue of frequent) {
     const existing = await sdk.linear.searchIssues({ query: issue.culprit });
-    if (existing.length > 0) continue;
+    if (existing.issues.length > 0) continue;
 
     const blame = await sdk.github.getBlame({
       file: issue.filename,
@@ -79,6 +118,7 @@ export async function main(input: { project: string; minEvents: number }) {
     });
     const ticket = await sdk.linear.createIssue({
       title: `[Sentry] ${issue.title}`,
+      description: issue.culprit,
       assigneeEmail: blame.authorEmail,
     });
     created.push(ticket.id); // a Placeholder during a Plan; allowed because it is only returned
@@ -87,244 +127,286 @@ export async function main(input: { project: string; minEvents: number }) {
 }
 ```
 
-The code runs inside the sandbox, under the same Plan rules as any Workflow Run: the `createIssue` calls are recorded into a Write Plan and need Approval before Apply, so even freshly written code cannot send a write unseen. Large Sentry responses stay in the sandbox, and only the return value (with Placeholders replaced by real results after Apply) is sent back to the agent. Along the way, pinfold records the **Fixtures** (requests and responses) and tracks which response fields the code actually read.
+The code runs in the sandbox under the same Plan rules as any Workflow Run. The `createIssue` calls are recorded into a Write Plan and need Approval before Apply, so freshly written code cannot send a write unseen. `ticket.id` is itself a Placeholder, which may be returned or passed to another Write Tool, also nested inside its arguments. Large Sentry responses stay in the sandbox; only the return value reaches the agent, with Placeholders replaced by real results after Apply. pinfold records the Read Tool calls with their responses as Fixtures, and tracks which response fields the code read.
 
-### 3.2 Saving the Workflow
+The `searchIssues` call finds the tickets earlier runs filed, because each ticket's description holds the culprit it searches for. Deduplicating across runs is the Workflow's job: pinfold never deduplicates separate runs (§6.1).
+
+### 4.2 Saving the Workflow
 
 The developer says _"save that as `triage_sentry`"_. `save_workflow` succeeds only if every check passes:
 
 - the code exports a typed `main(input)` function;
-- the Exploration Run, which itself ran as a Plan, finished without error and respected the Placeholder rules;
+- the Exploration Run finished without error and respected the Placeholder rules;
 - the code type-checks against the generated SDK; and
-- the developer has confirmed the Exploration Run's result.
+- the agent passes the developer's confirmation of the run's result. pinfold cannot verify this confirmation; it only refuses a save without one.
 
-Each Tool's **Baseline** was already pinned during the Exploration Run, from the first response that showed its full shape. When those checks pass, pinfold writes:
+Saving works only from the Gateway session that ran the Exploration Run, which keeps unredacted responses in memory only.
+
+Each Tool's Baseline was already pinned during the Exploration Run. A Tool that lists an output schema is pinned to it. Otherwise pinfold infers the shape from the first response in which every array shows its elements. Until a Tool is pinned, the SDK types its result from its listed schema, or as `unknown`. When the checks pass, pinfold writes:
 
 - `.workflows/triage_sentry.ts`, an ordinary TypeScript file the developer owns and may edit;
-- the Workflow's **Contract**—the subset of Baseline fields the code actually reads (such as `count`, `status`, `culprit`, `filename`, `lineNumber`, and `title` on `sentry.listIssues`); and
-- the Fixtures under `.workflows/fixtures/`, redacted by configurable rules and git-ignored by default.
+- the Workflow's **Contract**: the Baseline fields the code read, such as `count`, `status`, `culprit`, `filename`, `lineNumber` and `title` on `sentry.listIssues`; and
+- the Fixtures under `.workflows/fixtures/`, git-ignored, with the fields named by the developer's redaction rules replaced. Without rules, nothing is redacted.
 
-### 3.3 Routine Workflow Runs
+### 4.3 Routine Workflow Runs
 
-A saved Workflow can be run from cron or CI (`pinfold run triage_sentry --project web --minEvents 50`; until pinfold is published, `pinfold` stands for `node src/packages/cli/bin.ts`) or triggered by the agent (`run_workflow`). Each **Workflow Run** has three steps:
+A saved Workflow runs from cron or CI (`pinfold run triage_sentry --project web --minEvents 50`), or when the agent calls `run_workflow`. Each **Workflow Run** has two phases, with Approval between them when it is required:
 
-1. **Plan.** Read Tools execute live against Downstream Servers; each Write Tool call is recorded and returns an opaque **Placeholder**. The output is a **Write Plan**:
+1. **Plan.** The code runs in the sandbox. Read Tools execute live. Each Write Tool call is recorded and returns an opaque Placeholder. `Date` stands still and `Math.random` is seeded for the whole run. The output is a Write Plan, identified by a hash of its writes and of the Response Adapters it was built through:
+
+   ```text
+   Write Plan 7f3c09a1b2c4: 2 writes, none sent yet
+     1. linear.createIssue {"assigneeEmail":"ana@…","title":"[Sentry] TypeError in checkout.ts"}
+     2. linear.createIssue {"assigneeEmail":"li@…","title":"[Sentry] Timeout in sync-worker"}
    ```
-   Plan 7f3c · triage_sentry · 2 writes (budget 10)
-     1. linear.createIssue  title="[Sentry] TypeError in checkout.ts"  assignee=ana@…
-     2. linear.createIssue  title="[Sentry] Timeout in sync-worker"     assignee=li@…
-   ```
-2. **Approval (only when required).** A run pauses for **Approval** if the developer has never approved writes of the Workflow's code as it is now (so any edit to the file asks again), if a Response Adapter it depends on is new or updated, or if the Write Plan exceeds the Workflow's **Write Budget**. Otherwise, the run proceeds unattended. Approval happens in the terminal with `pinfold approve`, or in an **Approval Dialog** of the agent's client where it supports MCP elicitation ([ADR 0009](docs/adr/0009-approval-through-mcp-elicitation.md)).
-3. **Apply.** pinfold re-runs the reads and rebuilds the Write Plan. It sends the writes only if the rebuilt plan matches the approved one, recording each completed call in the **Apply Journal**.
 
-No LLM is invoked at any point during a normal Workflow Run.
+2. **Approval, when required.** The run pauses for **Approval** when any of these holds; otherwise it meets the conditions for running unattended:
+   - the developer has never approved writes of the Workflow's code as it is now (any edit to the file requires Approval again);
+   - a Response Adapter the run read through is new or changed since its last finished run;
+   - the Write Plan has more writes than the Workflow's **Write Budget** (10 unless the file's settings say otherwise).
 
-### 3.4 Drift and Repair
+   A run without writes pauses too when an Adapter changed: its result is held back until the developer approves the Adapter.
+
+   The developer approves the paused plan in the terminal with `pinfold approve`, or in an Approval Dialog of the agent's client where the client supports MCP elicitation forms ([ADR 0009](docs/adr/0009-approval-through-mcp-elicitation.md)). Declining means no run sends that plan.
+
+3. **Apply.** A run that meets the conditions for running unattended sends its own Write Plan. After Approval, the same code and input must run again: the developer or cron reruns the Workflow, the agent calls the same tool again, or the Approval Dialog reruns it at once. That run reuses the approved run's clock and seed, so it rebuilds the same plan if the reads are unchanged. pinfold sends the writes only if the rebuilt plan's ID equals the approved one. Otherwise nothing is sent, and the run shows the approved and the new plan and asks for Approval again. Each sent write is recorded in the **Apply Journal**.
+
+No LLM runs during a Workflow Run, unless Drift makes pinfold ask a configured Repair Model (§4.4).
+
+Unattended runs on a CI runner need the state that `.pinfold/` holds (approvals and the Apply Journal) and the Fixtures in `.workflows/fixtures/`. Both are git-ignored, so a CI setup must keep them between jobs, for example in a cache. Otherwise every run with writes pauses, and deterministic Repair has no Fixture values to compare against.
+
+### 4.4 Drift and Repair
 
 Two months later, Sentry's MCP server renames `count` to `eventCount`.
 
-1. **Drift detection.** Once the Plan is done, the run's reads are checked against the Baseline: the adapted response from `sentry.listIssues` no longer has `count`, which this run read. The run stops before Apply, so no write is sent ([ADR 0007](docs/adr/0007-check-drift-against-each-runs-own-reads.md)).
-2. **Deterministic search.** pinfold compares the live response against the saved Fixtures. Because `eventCount` has values matching the historical distribution of `count`—and no other field does—pinfold proposes a new Response Adapter version:
+1. **Drift detection.** Once the Plan is done, the fields the run read are checked against the Baseline. The response from `sentry.listIssues`, after its Response Adapter, no longer has `count`, which this run read. The run stops before Apply, so no write is sent ([ADR 0007](docs/adr/0007-check-drift-against-each-runs-own-reads.md)). Only runs that read a drifted field stop.
+2. **Deterministic Repair.** pinfold searches for a mapping from the live responses back to the Baseline. It scores each candidate by how alike the field names are and how well its values agree with the Fixture values. `eventCount` holds values like the Fixtures' `count`, and no other field does, so pinfold writes a new version of the Response Adapter:
+
    ```json
    {
-     "tool": "sentry.listIssues",
-     "version": 2,
-     "ops": [{ "op": "rename", "from": "[].eventCount", "to": "[].count" }]
+     "server": "sentry",
+     "tool": "listIssues",
+     "version": 1,
+     "ops": [
+       { "op": "rename", "from": "issues[].eventCount", "to": "issues[].count" }
+     ]
    }
    ```
-   _(Illustrative format; exact syntax is left to the spec.)_
-3. **Fallback to agent or model.** If deterministic search finds no unambiguous match, pinfold records the Drift as pending and the Workflow's runs stop. `list_workflows` and the stopped run point the developer's coding agent to `propose_repair`, which shows the pending Drift and takes the agent's proposed ops. Alternatively, if a **Repair Model** is named (`repairModel` or `PINFOLD_REPAIR_MODEL`) and `OPENROUTER_API_KEY` is set, pinfold asks that model first, unattended.
-4. **Review and Approval.** A new or updated Response Adapter triggers Approval on the next run of every Workflow that uses that Tool. The approval view displays the Adapter diff, value evidence (e.g., "`eventCount`: median 112, range 50–3,400; historical `count`: median 108, range 51–2,900"), and the resulting Write Plan.
-5. **Fix once, share everywhere.** `triage_sentry.ts` is never modified, and every other Workflow that calls `sentry.listIssues` inherits the repaired Adapter automatically.
+
+   `issues[]` stands for every element of the `issues` array. The ops come from a closed set: `rename`, `wrap`, `unwrap`, `convert`, `map` and `default` (README).
+
+3. **When deterministic Repair finds nothing.** pinfold records the Drift as pending, and runs that read the drifted fields stop.
+   - If the developer configured a **Repair Model**, pinfold first asks it for ops, unattended, and checks them like its own. A proposal that fails keeps the Drift pending. The model is not asked again until the Drift changes, and each call's token use is logged.
+   - Otherwise, or if the model's ops fail, `list_workflows` and the stopped run point the developer's agent to `propose_repair`. That tool shows the pending Drift and takes the agent's proposed ops.
+4. **Review and Approval.** A new or changed Response Adapter makes the next run of every Workflow that uses the Tool pause for Approval. The Approval view shows:
+   - the Adapter diff;
+   - value evidence, for example "`issues[].count`: now median 112, range 50–3,400; in the Fixtures median 108, range 51–2,900";
+   - the Write Plan.
+5. **One Repair for every Workflow.** `triage_sentry.ts` is never modified. Every other Workflow that calls `sentry.listIssues` reads through the same Response Adapter version once the developer approves it.
 
 ---
 
-## 4. Architecture
+## 5. Architecture
 
 ```text
- Agent client (Claude Code / Codex CLI / Antigravity CLI)        pinfold CLI (cron, CI, approve, resume, stats; bench planned)
-                 │ MCP (stdio)                                                   │
-                 ▼                                                               ▼
- ┌──────────────────────────────────── pinfold ───────────────────────────────────────┐
- │  Gateway: fixed tool set: search_sdk, run_sandbox, save_workflow, list_workflows,  │
- │           run_workflow, propose_repair (per-Workflow tools opt-in)                 │
- │                                                                                    │
- │  SDK generator ── Tool classification (Read/Write) ── search index                 │
- │  Sandbox (QuickJS/Wasm) ◄── sdk.* bridge ── Plan engine (Placeholders, field use)  │
- │  Baselines · Contracts · Response Adapters ── Repair (deterministic → agent / LLM) │
- │  Approval (CLI; elicitation where supported) ── Apply + Apply Journal (SQLite)     │
- │  Model client (OpenRouter, optional)                                               │
- └────────────────────────────────────────────────────────────────────────────────────┘
+ Agent client (Claude Code / Codex CLI / Antigravity CLI)      pinfold CLI (run, list, classify, plans, approve, decline,
+                 │ MCP (stdio)                                   resume, resolve, baseline, stats; bench planned)
+                 ▼                                                               │
+ ┌──────────────────────────────────── pinfold ──────────────────────────────────┴─────┐
+ │  Gateway: search_sdk, run_sandbox, save_workflow, list_workflows, run_workflow,     │
+ │           propose_repair, and opt-in Exposed Workflows                              │
+ │                                                                                     │
+ │  SDK generator ── Tool classification (Read/Write) ── signature search              │
+ │  Sandbox (QuickJS/Wasm) ◄── sdk.* host functions ── Plan engine (Placeholders, reads)│
+ │  Baselines · Contracts · Response Adapters ── Repair (deterministic → model / agent) │
+ │  Approval (terminal; Approval Dialog where supported) ── Apply + Apply Journal       │
+ │  Model client (OpenRouter, optional)                                                │
+ └─────────────────────────────────────────────────────────────────────────────────────┘
                  │ MCP (stdio / Streamable HTTP with static headers)
                  ▼
  Downstream Servers (Sentry, GitHub, Linear, …)
 ```
 
-| Component               | Responsibility                                                                                                   | Key decisions                                                                                                                        |
-| :---------------------- | :--------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------- |
-| Gateway                 | Exposes a single MCP server to the agent with a small, fixed tool set registered at startup                      | [ADR 0003](docs/adr/0003-build-a-thin-gateway.md); per-Workflow tools are opt-in because Codex CLI ignores dynamic tool-list updates |
-| SDK generator           | Compiles Downstream Server tool schemas into TypeScript definitions via pinned Baselines                         | Generated types reflect the pinned Baseline, not the unadapted live schema                                                           |
-| Tool classification     | Treats every Tool as a Write Tool until the developer marks it as a Read Tool                                    | [ADR 0004](docs/adr/0004-tools-are-write-tools-by-default.md); MCP annotations only pre-fill a suggestion                            |
-| Sandbox                 | Executes transpiled TypeScript in QuickJS/Wasm with memory, time, and call limits; no host access except `sdk.*` | [ADR 0005](docs/adr/0005-quickjs-wasm-sandbox.md); runtime sits behind an interface                                                  |
-| Plan engine             | Records writes, issues opaque Placeholders, tracks field reads, and isolates reads from uncommitted writes       | [ADR 0002](docs/adr/0002-plan-apply-instead-of-outbox.md)                                                                            |
-| Contracts and Adapters  | Pins Baselines, derives per-Workflow Contracts, validates adapted responses, and versions Response Adapters      | [ADR 0001](docs/adr/0001-repair-drift-with-response-adapters.md)                                                                     |
-| Repair                  | Runs deterministic candidate search first, then falls back to the developer's agent or an optional model         | Restricted to a closed set of declarative Adapter operations                                                                         |
-| Approval                | Presents the Write Plan, Adapter diff, and value evidence; never exposed as an MCP tool the agent can call       | CLI everywhere; MCP elicitation where supported (Claude Code)                                                                        |
-| Apply and Apply Journal | Re-plans before sending writes, halts at the first failed write, and supports `pinfold resume`                   | Resumed runs skip calls already recorded in the Apply Journal                                                                        |
-| Model client            | Optional OpenRouter (OpenAI-compatible) client for unattended Repair and, once built, benchmarking               | Disabled unless a Repair Model is named and `OPENROUTER_API_KEY` is set                                                              |
+| Component                       | Responsibility                                                                                                                                                        | Key decisions                                                                                                                                                                                               |
+| :------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Gateway                         | Exposes one MCP server to the agent with six fixed tools, plus each Exposed Workflow as its own tool, registered at startup                                           | [ADR 0003](docs/adr/0003-build-a-thin-gateway.md); Exposed Workflows are opt-in and need a Gateway restart (§9)                                                                                             |
+| SDK generator                   | Compiles Downstream Server tool schemas into TypeScript definitions from pinned Baselines                                                                             | Types follow the pinned Baseline, not the live schema                                                                                                                                                       |
+| Tool classification             | Treats every Tool as a Write Tool until the developer marks it as a Read Tool                                                                                         | [ADR 0004](docs/adr/0004-tools-are-write-tools-by-default.md); MCP annotations only pre-fill a suggestion                                                                                                   |
+| Sandbox                         | Runs transpiled TypeScript in QuickJS/Wasm with no host access except `sdk.*`; by default 30 s, 64 MiB and 100 Tool calls per run, which the `limits` setting changes | [ADR 0005](docs/adr/0005-quickjs-wasm-sandbox.md); the runtime sits behind an interface                                                                                                                     |
+| Plan engine                     | Records writes, issues opaque Placeholders, tracks the fields each run reads, and keeps reads from seeing unapplied writes                                            | [ADR 0002](docs/adr/0002-plan-apply-instead-of-outbox.md)                                                                                                                                                   |
+| Contracts and Response Adapters | Pins Baselines, records per-Workflow Contracts, checks each run's reads, and versions Response Adapters                                                               | [ADR 0001](docs/adr/0001-repair-drift-with-response-adapters.md), [ADR 0007](docs/adr/0007-check-drift-against-each-runs-own-reads.md), [ADR 0008](docs/adr/0008-baseline-migration-from-live-responses.md) |
+| Repair                          | Runs deterministic Repair first, then the Repair Model if configured, then the developer's agent; all proposals are checked the same way                              | Limited to the closed set of declarative ops ([ADR 0001](docs/adr/0001-repair-drift-with-response-adapters.md))                                                                                             |
+| Approval                        | Shows the Write Plan, the Adapter diff and value evidence; no MCP tool approves                                                                                       | Terminal everywhere; Approval Dialog where the client supports elicitation forms ([ADR 0009](docs/adr/0009-approval-through-mcp-elicitation.md))                                                            |
+| Apply and Apply Journal         | Sends an approved or unattended plan, stops at the first failed write, and holds a write that may have been sent in doubt                                             | `pinfold resume` skips writes the journal records as sent; `pinfold resolve` settles a write in doubt                                                                                                       |
+| Model client                    | Optional OpenRouter client for the Repair Model and, once built, the benchmark                                                                                        | Off unless a Repair Model is named and `OPENROUTER_API_KEY` is set                                                                                                                                          |
 
-**On-disk layout and distribution.** Workflows, Baselines, Contracts, and Response Adapters live in `.workflows/` and are meant to be committed to version control. Redacted Fixtures live in `.workflows/fixtures/` (git-ignored by default). Run history and the SQLite Apply Journal live in `.pinfold/` (git-ignored). pinfold is to be distributed on npm for Node 22.18 or newer under the MIT license; it is not published yet, and runs from a clone.
-
----
-
-## 5. Guarantees and their limits
-
-**What pinfold guarantees**
-
-- **No unreviewed writes.** A write reaches a Downstream Server only if it belongs to a Write Plan that was either approved or eligible to run unattended, and the rebuilt Write Plan at Apply time is identical.
-- **Faithful plans.** Placeholders may only be passed to Write Tools or returned from `main`. Using a Placeholder's value—formatting it, calling it, or passing it to a Read Tool—fails the Plan, and any Workflow that does so cannot be saved. One gap remains: no proxy can observe truthiness, `===`, or `typeof`, so a Plan that branches on a Placeholder silently takes one branch ([#29](https://github.com/cmlcz/pinfold/issues/29)); the `run_sandbox` instructions warn against it.
-- **Pre-run read consistency.** A run never sees its own uncommitted writes, so the Write Plan surfaces potential duplicates instead of hiding them; deduplicating within a single run is the Workflow's responsibility.
-- **Safe resumption of interrupted Applies.** Apply stops at the first failed write. Running `pinfold resume <run>` continues the same Write Plan while skipping calls already recorded in the Apply Journal. A write that failed while being sent may still have reached its server, so it is held in doubt and never sent again until the developer checks the server and settles it with `pinfold resolve <run> <write> sent|not-sent`. Separate Workflow Runs are never deduplicated against each other.
-- **Business logic untouched by Repair.** Repairs can only update declarative Response Adapters, which must map live responses to satisfy a frozen Contract that the Repair process cannot edit.
-
-**What it does not guarantee**
-
-- **Semantic drift without structural drift.** If `count` keeps its name and type but starts counting something else, no Contract is violated. Value evidence helps only when a structural change triggers a Repair.
-- **Drift beyond a single-response mapping.** Pagination changes, or data that now requires an extra Tool call to fetch, cannot be expressed as a Response Adapter. pinfold flags these as requiring a manual edit or **Baseline Migration**.
-- **Data exfiltration via Read Tool arguments.** Although the sandbox has no network, filesystem, or environment access and all writes appear in the Write Plan, sensitive data can still leave through arguments passed to a Read Tool (such as a search query).
-- **Client-side auto-approval hooks.** If a developer configures their agent client to auto-accept MCP elicitations, that safeguard is bypassed. The documentation explicitly warns against this.
-- **Misclassified Write Tools.** If a developer mistakenly classifies a Write Tool as a Read Tool, it will execute live during Plan.
+**On-disk layout.** Workflows, Baselines, Contracts and Response Adapters live in `.workflows/` and are committed to version control. Fixtures live in `.workflows/fixtures/` and are git-ignored. Run history, approvals, the Apply Journal (SQLite through `node:sqlite`) and the logs that `stats` reads live in `.pinfold/`, also git-ignored. pinfold needs Node 22.18 or newer. It runs from a clone today; npm publication under the MIT license is planned (§2.2).
 
 ---
 
-## 6. Client compatibility
+## 6. Guarantees and their limits
 
-| Capability                                    | Claude Code             | Codex CLI                              | Antigravity CLI                   |
-| :-------------------------------------------- | :---------------------- | :------------------------------------- | :-------------------------------- |
-| Connect to pinfold as an MCP server (`stdio`) | Yes                     | Yes                                    | Yes                               |
-| In-client Approval via MCP elicitation dialog | Yes                     | Interactive mode only (`exec` cancels) | Undocumented                      |
-| CLI Approval via `pinfold approve`            | Yes                     | Yes                                    | Yes                               |
-| Exposed Workflows visible as tools            | After a Gateway restart | After a Gateway restart                | Undocumented (use `run_workflow`) |
-| Assisted Repair through the developer's agent | Yes                     | Yes                                    | Yes                               |
-| Included in benchmark measurements            | Yes, via OpenRouter     | Yes, via OpenRouter                    | Compatibility check only          |
+### 6.1 What pinfold guarantees
 
-_Sources: each CLI's official documentation, verified 2026-10-18. Exposed Workflows are registered when the Gateway starts, and the Gateway sends no tool-list updates, so no client sees a newly exposed Workflow until it restarts pinfold. Automated CI checks will continuously verify the rows that can be tested programmatically._
+These hold as long as only the developer, not the agent, runs `pinfold approve`, `classify` and `resolve`, and edits `.pinfold/` and the classification in `pinfold.json` (§7, risk R1).
 
----
+- **No write outside an approved or unattended plan.** A write reaches a Downstream Server only as part of a Write Plan that the developer approved, or that met the conditions for running unattended (§4.3). After Approval, a write is sent only if the rebuilt plan's ID equals the approved one.
+- **No Placeholder used as data.** A Placeholder may only be passed to a Write Tool or returned from `main`. Formatting a Placeholder, calling it, or passing it to a Read Tool fails the Plan, and a Workflow that does so cannot be saved.
+- **Reads from before the run.** A run never sees its own unapplied writes, so the Write Plan shows possible duplicates instead of hiding them. Deduplicating within one run is the Workflow's job.
+- **Safe resumption.** Apply stops at the first failed write. `pinfold resume <run>` continues the same Write Plan and skips the writes the Apply Journal records as sent. A write that failed while being sent may still have reached its server. It is held in doubt and never sent again until the developer checks the server and settles it with `pinfold resolve`. Separate Workflow Runs are never deduplicated against each other.
+- **Business logic untouched by Repair.** A Repair changes only a declarative Response Adapter. Its mapped responses must fit the Baseline wherever the Workflows read them, and Repair cannot change the Workflows or their Contracts.
 
-## 7. Scope
+### 6.2 What it does not guarantee
 
-**In v1:**
-
-- MCP Gateway with the fixed tool set (`search_sdk`, `run_sandbox`, `save_workflow`, `list_workflows`, `run_workflow`, `propose_repair`), supporting `stdio` and Streamable HTTP Downstream Servers with static headers.
-- Per-Tool Read/Write classification, TypeScript SDK generation from Baselines, and SDK signature search.
-- Isolated QuickJS/Wasm sandbox with resource and call limits.
-- Exploration Runs and `save_workflow` validation gates.
-- Plan and Apply execution engine with Placeholders, Approval, the SQLite Apply Journal, and `pinfold resume`.
-- Baselines, Contracts, and declarative Response Adapters; deterministic Repair and agent-assisted Repair.
-- Developer-initiated Baseline Migration (`pinfold baseline migrate`, [ADR 0008](docs/adr/0008-baseline-migration-from-live-responses.md)) and marking a Baseline field optional (`pinfold baseline optional`).
-- Optional OpenRouter model client for unattended Repair.
-- Redacted, git-ignored Fixtures.
-- Local observability (`pinfold stats`), the **Drift Kit** (test Downstream Servers and **Drift Scenarios**), and the benchmark runner (`pinfold bench`).
-
-**Out of v1:**
-
-- Downstream Servers requiring OAuth flows.
-- `sdk.ai.extract` or any LLM call inside a Workflow.
-- Team, hosted, or multi-tenant deployments.
-- Response Adapters that execute arbitrary code.
-- Automated **Baseline Migration**, run without the developer.
-- Full benchmark runs on Antigravity CLI.
+- **Every unattended write seen by the developer.** Approval is per version of a Workflow's code. Once approved, the code sends later Write Plans unattended, with other inputs and targets, as long as they stay within the Write Budget and no Response Adapter changed.
+- **Branches on Placeholders.** A JavaScript Proxy cannot observe truthiness, `===` or `typeof`. A Plan that branches on a Placeholder silently takes one branch, while the real value after Apply might lead to the other ([#29](https://github.com/cmlcz/pinfold/issues/29)). The `run_sandbox` instructions warn against it.
+- **Semantic drift without structural drift.** If `count` keeps its name and type but starts counting something else, no field is missing or mistyped, and nothing stops the run.
+- **Drift beyond a single-response mapping.** A response that is now paged, or data that needs an extra Tool call, cannot be mapped by a Response Adapter. pinfold reports that it needs a manual edit and a Baseline Migration.
+- **Data leaving through Read Tool arguments.** The sandbox has no network, filesystem or environment access, but data can still leave through the arguments of a Read Tool call, such as a search query.
+- **Approval when the client answers for the developer.** A client hook or setting that answers elicitations without showing them approves every plan unread. The README warns against it.
+- **A misclassified Write Tool.** A Write Tool that the developer marks as a Read Tool runs live during the Plan.
 
 ---
 
-## 8. Measurement
+## 7. Risks and mitigations
 
-### 8.1 Local stats (`pinfold stats`)
+| #   | Risk                                                                                                                                                                                                                  | Effect                                                                                          | Mitigation now                                                                                                                                                                 | Open step                                                                                                                                                                                                                                                                                                    |
+| :-- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1  | The agent bypasses Approval through its shell. It can run `pinfold approve`, `classify read` or `resolve … not-sent`, or edit `.pinfold/` or `pinfold.json`.                                                          | Writes the developer never saw. All three target clients give the agent a shell in the project. | The developer's client permission rules can deny these commands and paths.                                                                                                     | Chosen, not built: `approve`, `resolve` and `classify` ask for confirmation in an interactive terminal and refuse without one, and the README ships client deny rules for these commands and paths. Approval records signed with a key outside the project, or kept outside the project, are left for later. |
+| R2  | Per-code Approval lets approved code send unseen plans (§6.2).                                                                                                                                                        | Up to the Write Budget of unseen writes per run, for example after a new `--project` input.     | The Write Budget caps each run; any code edit or Adapter change asks again.                                                                                                    | —                                                                                                                                                                                                                                                                                                            |
+| R3  | A plan over fast-changing reads never rebuilds the same after Approval.                                                                                                                                               | A Workflow keeps asking for Approval. There is no lock between the rebuild and the send.        | The clock and seed are reused; the run shows the old and new plans.                                                                                                            | Accept for v1, and measure with the benchmark.                                                                                                                                                                                                                                                               |
+| R4  | Repair sends response data out: the Repair Model's prompt goes to OpenRouter, and `propose_repair` goes into the agent's context and model.                                                                           | Production data at a third party.                                                               | Redaction rules apply to the Fixtures and the Repair prompts. Without rules, nothing is redacted.                                                                              | —                                                                                                                                                                                                                                                                                                            |
+| R5  | Repair evidence is thin. Fixtures come from one run, are git-ignored, may be redacted on the drifted field, and stay at the old paths after a migration. The `default` op supplies values the server no longer sends. | A wrong mapping that the developer approves. Approving per Workflow invites rubber-stamping.    | Deterministic Repair proposes only a candidate that stands out. A Repair Model `default` that contradicts a Fixture value is refused. The Approval view names every `default`. | Set a minimum number of Fixture values (§11).                                                                                                                                                                                                                                                                |
+| R6  | The Apply Journal uses `node:sqlite`, which is experimental on Node 22.                                                                                                                                               | An API change could break resumption.                                                           | The module loads lazily, and CI runs on Node 22 and 24.                                                                                                                        | Pin the minimum Node version that keeps it stable.                                                                                                                                                                                                                                                           |
+| R7  | The benchmark (#19–#22) is a large build for one part-time developer (§12).                                                                                                                                           | v1 slips, or the benchmark ships thin.                                                          | H2 needs no LLM Arm, and the minimal agent loop alone can test H1.                                                                                                             | Decide the staging in the paused brainstorm on #19–#22.                                                                                                                                                                                                                                                      |
+| R8  | The other limits in §6.2: misclassification, semantic drift, and data leaving through Read Tool arguments.                                                                                                            | Unintended writes or leaked data.                                                               | Every Tool is a Write Tool until the developer classifies it ([ADR 0004](docs/adr/0004-tools-are-write-tools-by-default.md)).                                                  | —                                                                                                                                                                                                                                                                                                            |
 
-`pinfold stats` reports only quantities pinfold observes directly:
+---
 
-- Exploration Runs, Workflow Runs, and wall-clock duration;
-- Downstream Server Tool calls;
-- bytes of Tool responses kept inside the sandbox and out of the agent's context window; and
-- Repairs performed, along with any tokens pinfold itself spent via the optional model client.
+## 8. Alternatives considered
 
-It never estimates "tokens saved", because pinfold cannot observe the host agent's internal token consumption.
+| Decision                         | Chosen                                                                              | Rejected, and why                                                                                                                                                                                                                                    | Source                                                                      |
+| :------------------------------- | :---------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------- |
+| How Drift is repaired            | Per-Tool Response Adapters against a pinned Baseline                                | An LLM editing the Workflow code: it can change business logic, and the only check is the edited code. Per-Workflow Contracts with no shared Baseline: two Workflows could expect different shapes of one Tool, so one Adapter could not serve both. | [ADR 0001](docs/adr/0001-repair-drift-with-response-adapters.md)            |
+| How writes are held              | Plan then Apply with Placeholders                                                   | An in-memory outbox: it cannot pass a buffered write's result to later steps, and it is not a reviewable artifact.                                                                                                                                   | [ADR 0002](docs/adr/0002-plan-apply-instead-of-outbox.md)                   |
+| The Gateway                      | A thin Gateway of its own                                                           | Reusing a code-mode implementation: none exposes the sandbox-to-server boundary that Plan needs.                                                                                                                                                     | [ADR 0003](docs/adr/0003-build-a-thin-gateway.md)                           |
+| Default classification           | Every Tool is a Write Tool                                                          | Trusting `readOnlyHint`: MCP calls annotations untrusted hints.                                                                                                                                                                                      | [ADR 0004](docs/adr/0004-tools-are-write-tools-by-default.md)               |
+| Sandbox                          | QuickJS compiled to WebAssembly                                                     | A Deno subprocess, which needs a binary and relies on flags for isolation; `isolated-vm`, a native addon in maintenance mode; `node:vm`, not a security boundary.                                                                                    | [ADR 0005](docs/adr/0005-quickjs-wasm-sandbox.md)                           |
+| Benchmark access                 | OpenRouter API keys                                                                 | Consumer subscriptions: vendor terms forbid automated use.                                                                                                                                                                                           | [ADR 0006](docs/adr/0006-benchmark-through-openrouter-not-subscriptions.md) |
+| What Drift is checked against    | Each run's own reads, after its Plan                                                | The saved Contract alone: it misses fields read on other branches or after an edit.                                                                                                                                                                  | [ADR 0007](docs/adr/0007-check-drift-against-each-runs-own-reads.md)        |
+| Baseline Migration source        | Live responses                                                                      | The server's listed schema: it can lag behind what the server sends.                                                                                                                                                                                 | [ADR 0008](docs/adr/0008-baseline-migration-from-live-responses.md)         |
+| Approval outside the terminal    | MCP elicitation, trusting the client                                                | An `approve_plan` tool with a code shown in the terminal: the agent would hold the code once the developer types it into the chat.                                                                                                                   | [ADR 0009](docs/adr/0009-approval-through-mcp-elicitation.md)               |
+| What Approval covers             | A version of the Workflow's code, plus every changed Adapter, plus the Write Budget | Every plan: each cron run would need a human, which defeats unattended runs. Code plus input: not built yet (R2).                                                                                                                                    | This document                                                               |
+| Where approval state lives       | `.pinfold/` in the project, git-ignored                                             | A service, or the repository: pinfold is local-first, and plans hold live data. The cost is R1, and state a CI setup must keep (§4.3).                                                                                                               | This document                                                               |
+| A write that fails while sending | Held in doubt until the developer settles it                                        | Retrying with an idempotency key: MCP has no standard key, and Downstream Tools differ.                                                                                                                                                              | This document                                                               |
+| What a plan ID covers            | The writes and the digests of the Adapters the plan was built through               | Including the Workflow's code: code approval is tracked separately, by a hash of the source, so an Exploration Run and a Workflow Run can share a plan.                                                                                              | This document                                                               |
 
-### 8.2 Benchmark (`pinfold bench`)
+---
 
-_Not built yet: the six tasks, the harness and the lifecycle experiment are issues #19–#21. The Drift Kit has Sentry- and Linear-shaped servers so far._
+## 9. Client compatibility
+
+| Capability                                  | Claude Code                 | Codex CLI                                                                              | Antigravity CLI                   |
+| :------------------------------------------ | :-------------------------- | :------------------------------------------------------------------------------------- | :-------------------------------- |
+| Connect to pinfold as an MCP server (stdio) | Yes                         | Yes                                                                                    | Yes                               |
+| Approval Dialog through MCP elicitation     | Yes                         | Interactive mode only (`exec` cancels the dialog, and the plan waits for the terminal) | Undocumented                      |
+| Terminal Approval through `pinfold approve` | Yes                         | Yes                                                                                    | Yes                               |
+| Exposed Workflows visible as tools          | After a Gateway restart     | After a Gateway restart                                                                | Undocumented (use `run_workflow`) |
+| Repair through the developer's agent        | Yes                         | Yes                                                                                    | Yes                               |
+| Planned benchmark coverage                  | Measured through OpenRouter | Measured through OpenRouter                                                            | Compatibility check only          |
+
+_Sources: each CLI's official documentation, verified 2026-10-18. Exposed Workflows are registered when the Gateway starts, and the Gateway sends no tool-list updates, so no client sees a newly exposed Workflow until it restarts pinfold._
+
+---
+
+## 10. Measurement
+
+### 10.1 Local stats (`pinfold stats`)
+
+`pinfold stats` reports only quantities pinfold observes itself:
+
+- Exploration Runs and Workflow Runs, with their wall time;
+- Downstream Server Tool calls, and the bytes of Tool responses kept in the sandbox and out of the agent's context;
+- Repairs, by who made them; and
+- the tokens and cost pinfold spent through the Repair Model.
+
+It never estimates tokens saved, because pinfold cannot observe the host agent's token use.
+
+### 10.2 Benchmark (`pinfold bench`)
+
+_Not built yet._ The work is split across four issues:
+
+- [#19](https://github.com/cmlcz/pinfold/issues/19): the GitHub-shaped server and the six tasks;
+- [#20](https://github.com/cmlcz/pinfold/issues/20): the harness and the minimal agent loop;
+- [#21](https://github.com/cmlcz/pinfold/issues/21): the Claude Code and Codex CLI drivers;
+- [#22](https://github.com/cmlcz/pinfold/issues/22): the lifecycle experiment.
 
 The benchmark compares four **Arms** on identical tasks:
 
-| Arm                | Description                                                                                                                           |
-| :----------------- | :------------------------------------------------------------------------------------------------------------------------------------ |
-| **A1 Plain MCP**   | The agent has every Downstream Server tool loaded directly and calls them one at a time.                                              |
-| **A2 Code mode**   | The agent writes and runs a fresh program through `run_sandbox` on every task.                                                        |
-| **A3 Saved skill** | The agent reuses its earlier program as instructed by a single line in `CLAUDE.md` / `AGENTS.md`, with an LLM still driving each run. |
-| **A4 pinfold**     | A deterministic pinfold Workflow Run with no LLM.                                                                                     |
+| Arm                | Description                                                                                                                  |
+| :----------------- | :--------------------------------------------------------------------------------------------------------------------------- |
+| **A1 Plain MCP**   | The agent has every Downstream Server tool loaded and calls them one at a time.                                              |
+| **A2 Code mode**   | The agent writes and runs a fresh program through `run_sandbox` for every task.                                              |
+| **A3 Saved skill** | The agent reuses its earlier program, as told by one line in `CLAUDE.md` or `AGENTS.md`, with an LLM still driving each run. |
+| **A4 pinfold**     | A pinfold Workflow Run, with no LLM.                                                                                         |
 
-- **Tasks.** Six tasks built against the Drift Kit, each tested across three input variants: read-heavy, multi-server join, write-heavy, large paginated responses, in-run deduplication, and mixed.
-- **Drivers.** Claude Code and Codex CLI routed through OpenRouter, plus a minimal OpenRouter agent loop for evaluating smaller models. Every run pins the exact model and provider (with fallbacks disabled) and logs the CLI version, model ID, timestamp, and raw JSON event stream. Consumer subscription logins are used only for single-run compatibility checks at ordinary interactive scale ([ADR 0006](docs/adr/0006-benchmark-through-openrouter-not-subscriptions.md)).
-- **Metrics (per Arm and task).**
-  - Token counts (input, cached, cache-write, output, reasoning), normalized across CLI log formats;
-  - Direct API cost in USD from OpenRouter's `cost` field;
-  - Wall-clock latency (p50 and p95);
+- **Tasks.** Six tasks run against the Drift Kit: read-heavy, multi-server join, write-heavy, large paginated responses, in-run deduplication, and mixed. Each task is run with three different inputs.
+- **Drivers.** Claude Code and Codex CLI routed through OpenRouter, plus a minimal OpenRouter agent loop for other models. Every run pins the exact model and provider, with fallbacks disabled. Every run logs the CLI version, the model ID, the time and the raw JSON events. Subscription logins are used only for single compatibility runs ([ADR 0006](docs/adr/0006-benchmark-through-openrouter-not-subscriptions.md)).
+- **Metrics per Arm and task:**
+  - token counts (input, cached, cache-write, output, reasoning), normalized across CLI log formats;
+  - API cost in USD from OpenRouter's `cost` field;
+  - wall time, p50 and p95;
   - LLM round-trips;
-  - Task success rate, verified mechanically against Drift Kit state;
-  - $\text{pass}^k$ consistency across repeated runs;
-  - Unintended writes; and
-  - The **Break-even Point** of A4 compared against A2 and A3.
-- **Lifecycle experiment.** 100 sequential runs per Arm with three Drift Scenarios injected along the timeline. For each Arm, we report cumulative tokens and cost, failed runs, and human minutes spent on Approval.
-- **Budget.** A small pilot (1 task × 4 Arms × 3 runs) establishes per-run cost before running the full suite under a hard budget cap (starting at $50 and adjusted after the pilot).
-- **Publication standards.**
-  - All benchmark artefacts—tasks, state checkers, Drift Kit servers, pricing tables, raw logs, and analysis scripts—are committed to the repository.
-  - Published results carry explicit provenance: _"measured on `<date>` with `<versions>`"_.
-  - Unfavourable results are reported alongside favourable ones.
-  - Savings relevant to subscription users are stated in tokens rather than dollars.
+  - task success, checked mechanically against Drift Kit state;
+  - pass^k: the share of tasks for which all k repeated runs succeed;
+  - unintended writes;
+  - the **Break-even Point** of A4 against A2 and A3.
+- **Lifecycle experiment.** 100 sequential runs per Arm, with three Drift Scenarios injected along the way. For each Arm it reports cumulative tokens and cost, failed runs, and Approval pauses per run, and it tests H5. Human time per pause is not measured automatically.
+- **Budget.** A pilot of 1 task × 4 Arms × 3 runs sets the cost per run before the full suite runs under a hard budget cap, starting at $50 and adjusted after the pilot.
+- **Publication standards:**
+  - every benchmark artifact is committed to the repository: tasks, state checkers, Drift Kit servers, pricing tables, raw logs and analysis scripts;
+  - results carry their provenance: "measured on `<date>` with `<versions>`";
+  - unfavorable results are reported with favorable ones;
+  - savings for subscription users are stated in tokens, not dollars.
 
-### 8.3 Hypotheses for v1
+### 10.3 Hypotheses for v1
 
-| ID     | Hypothesis                                                                                                 | Evaluation method                                          |
-| :----- | :--------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------- |
-| **H1** | A Workflow Run consumes zero LLM tokens and completes at least 10× faster than A2 and A3 on the same task. | Benchmark across all six tasks                             |
-| **H2** | Deterministic search alone repairs at least 80% of mappable Drift Scenarios without an LLM.                | Drift Kit suite (LLM-assisted Repairs reported separately) |
-| **H3** | No write ever reaches a Downstream Server outside an approved (or budget-exempt) Write Plan.               | Property-based tests over the Drift Kit                    |
-| **H4** | `npx pinfold` runs cleanly on a fresh GitHub Actions runner with zero extra setup.                         | Automated CI workflow                                      |
+| ID     | Hypothesis                                                                                                                                                                                                                                 | Evaluation method                                                                                                      |
+| :----- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------- |
+| **H1** | A4's p50 wall time per task is at most one tenth of A2's and A3's on the same tasks. Approval pauses are excluded and reported separately.                                                                                                 | Benchmark across all six tasks                                                                                         |
+| **H2** | Deterministic Repair alone repairs at least 80% of the mappable Drift Scenarios. The scenario set and its mappable subset are fixed and committed before the run. Scenarios taken from real MCP server changelogs are reported separately. | Drift Kit suite; Repairs by the Repair Model or agent are reported separately                                          |
+| **H3** | No write reaches a Downstream Server outside a Write Plan that was approved or met the conditions for running unattended. The agent bypassing Approval through its shell (R1) is outside this test.                                        | Property-based tests over the Drift Kit ([#18](https://github.com/cmlcz/pinfold/issues/18))                            |
+| **H4** | On a fresh GitHub Actions runner, a clone with `npm ci` runs a saved Workflow to completion with exit code 0, given its `.workflows/` and a restored `.pinfold/`.                                                                          | A CI workflow, still to be written ([#23](https://github.com/cmlcz/pinfold/issues/23))                                 |
+| **H5** | Over the lifecycle experiment of 100 runs with three Drift Scenarios, A4 reaches its Break-even Point against A2 and A3, counting its Exploration Run, every Repair and every Approval pause.                                              | Lifecycle experiment ([#22](https://github.com/cmlcz/pinfold/issues/22)); Approval pauses per run are reported with it |
 
-These thresholds are initial targets. If an experiment falls short, we report the measured number rather than adjusting the hypothesis after the fact.
+These thresholds are initial targets. If an experiment falls short, the measured number is reported; the hypothesis is not adjusted after the fact.
 
 ---
 
-## 9. Architecture decision records
+## 11. Decided elsewhere, and still open
 
-| ADR                                                                     | Decision                                                                                               |
-| :---------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------- |
-| [0001](docs/adr/0001-repair-drift-with-response-adapters.md)            | Repair Drift with per-Tool Response Adapters against a pinned Baseline, never by editing Workflow code |
-| [0002](docs/adr/0002-plan-apply-instead-of-outbox.md)                   | Every Workflow Run is a Plan followed by an Apply, with opaque Placeholders and isolated pre-run reads |
-| [0003](docs/adr/0003-build-a-thin-gateway.md)                           | Build a thin Gateway instead of reusing an existing code-mode implementation                           |
-| [0004](docs/adr/0004-tools-are-write-tools-by-default.md)               | Treat every Tool as a Write Tool until the developer classifies it as a Read Tool                      |
-| [0005](docs/adr/0005-quickjs-wasm-sandbox.md)                           | Run Workflow and Exploration Run code in QuickJS compiled to WebAssembly                               |
-| [0006](docs/adr/0006-benchmark-through-openrouter-not-subscriptions.md) | Run benchmark measurements through OpenRouter; use subscriptions only for compatibility checks         |
-| [0007](docs/adr/0007-check-drift-against-each-runs-own-reads.md)        | Check Drift against each Workflow Run's own reads, after its Plan, not against the saved Contract      |
-| [0008](docs/adr/0008-baseline-migration-from-live-responses.md)         | Migrate a Baseline from live responses, and reset the Tool's Response Adapter                          |
-| [0009](docs/adr/0009-approval-through-mcp-elicitation.md)               | Take Approval through MCP elicitation, and trust the client to show it                                 |
+**Decided, documented in the README or the code:**
 
-## 10. Left for the specification
+- the closed set of Response Adapter ops and its syntax;
+- how deterministic Repair scores candidates;
+- the redaction rule format (`redact` in `pinfold.json`);
+- classification storage (`classification` in `pinfold.json`);
+- on-disk files in `.workflows/` and `.pinfold/`;
+- the Write Plan format and plan IDs;
+- the `search_sdk` ranking (BM25 over Tool names and descriptions).
 
-The following implementation details are deferred to the technical specification rather than treated as open architectural questions:
+**Still open:**
 
-- On-disk schemas for Baselines, Contracts, and Response Adapters;
-- Exact syntax and semantics of the closed Response Adapter operation set;
-- Matching heuristics and confidence thresholds for deterministic Repair;
-- Configuration format for Fixture redaction rules;
-- Terminal formatting and deterministic hashing for Write Plans and plan IDs;
-- Storage format for per-Tool Read/Write classifications; and
-- Indexing and ranking algorithm behind `search_sdk`.
+- the confidence threshold and minimum evidence for deterministic Repair (R5);
+- the staging of the benchmark (R7), now to be judged by which parts feed H1–H5.
 
-## 11. Constraints
+The open steps in §7 wait for evidence from the benchmark or from use; the reviewers' other suggestions (per-input Approval, per-target allow-lists, value-shift alarms) are not planned.
 
-- **Team and timeline:** Solo developer, roughly three months part-time.
-- **Deployment model:** Local-first, single developer.
-- **Zero-key core:** No external API key is required for any core feature.
-- **History:** The initial concept document is preserved in [docs/archive/](docs/archive/).
+---
+
+## 12. Constraints
+
+- **Team and timeline:** one developer, about three months part-time.
+- **Deployment model:** local-first, for a single developer.
+- **Zero-key core:** no external API key is required for any core feature.
+
+The initial concept document is preserved in [docs/archive/](docs/archive/).
