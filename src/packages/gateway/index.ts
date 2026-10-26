@@ -15,9 +15,7 @@ import {
   formatWorkflowRun,
   formatWorkflows,
   listWorkflows,
-  openPlans,
   opsGuide,
-  reviewPlan,
   type Core,
   type ExploreResult,
   type ExposedWorkflow,
@@ -27,61 +25,77 @@ import {
 /**
  * The MCP server the agent connects to. It holds no logic of its own; `root`
  * is the project directory that holds `.workflows/`, and `workflows` are the
- * saved Workflows that appear as their own tools.
+ * saved Workflows that appear as their own tools. `skipped` says why any of
+ * them could not.
  */
 export function createGateway(
   core: Core,
   options: { root: string; workflows?: ExposedWorkflow[] }
-): McpServer {
+): { server: McpServer; skipped: string[] } {
   // The plan an Approval dialog shows comes back from the client with the
   // answer, sealed so that no client can swap in another plan. One process
-  // serves every round of a call, so a key of its own does.
-  const sealed = createRequestStateCodec<string>({ key: randomBytes(32) });
+  // serves every round of a call, so a key of its own does. A developer may
+  // read a plan for a while, so the seal and a round last an hour.
+  const sealed = createRequestStateCodec<string>({
+    key: randomBytes(32),
+    ttlSeconds: 3600,
+  });
   const server = new McpServer(
     { name: "pinfold", version: "0.0.0" },
-    { requestState: { verify: sealed.verify } }
+    { inputRequired: { roundTimeoutMs: 3_600_000 } }
   );
+
+  // Whether the client can show a form dialog: an elicitation capability
+  // that names no mode means form (2025-11-25). The per-request envelope
+  // the SDK suggests instead of this deprecated accessor is untyped, and
+  // the accessor is filled per request on either protocol era.
+  function canAsk(): boolean {
+    const elicitation = server.server.getClientCapabilities()?.elicitation;
+    if (elicitation === undefined) return false;
+    return elicitation.form !== undefined || elicitation.url === undefined;
+  }
+
+  // The plan the dialog showed, or undefined if its seal does not hold, say
+  // because it expired: the answer then counts for nothing.
+  async function shownPlan(ctx: ServerContext): Promise<string | undefined> {
+    const state = ctx.mcpReq.requestState<string>();
+    if (state === undefined) return undefined;
+    return sealed.verify(state, ctx).catch(() => undefined);
+  }
 
   // A run paused for Approval asks the developer in a dialog of the client
   // when it can show one, and otherwise points to `pinfold approve`.
   // Approving runs the same request again, which sends the plan only if it
-  // rebuilds the same one.
+  // rebuilds the same one; if it builds another, the dialog asks again.
   async function withApproval<R extends ExploreResult | WorkflowRunResult>(
     ctx: ServerContext,
     run: () => Promise<R>,
     format: (result: Extract<R, { ok: true }>) => string
   ) {
     const answer = inputResponse(ctx.mcpReq.inputResponses, "approval");
-    const id = ctx.mcpReq.requestState<string>();
-    if (answer.kind === "elicit" && id !== undefined) {
-      const declined = await decide(options.root, id, answer.action);
-      if (declined !== undefined) return declined;
-      // Approved: the same request again sends the plan, with no new dialog.
-      return settle(await run(), false);
-    }
-    return settle(
-      await run(),
-      server.server.getClientCapabilities()?.elicitation !== undefined
-    );
+    if (answer.kind !== "elicit") return settle(await run());
+    const shown = await shownPlan(ctx);
+    if (shown === undefined) return settle(await run(), { ask: false });
+    const answered = await core.answerApproval(shown, answers[answer.action]);
+    if (!answered.ok) return failure(answered.error);
+    if (!answered.approved) return reply(answered.text);
+    return settle(await run(), { approved: shown });
 
-    async function settle(result: R, ask: boolean) {
+    // `approved` is the plan just approved in a dialog, never asked again.
+    async function settle(
+      result: R,
+      { ask = canAsk(), approved }: { ask?: boolean; approved?: string } = {}
+    ) {
       if (!result.ok) return failure(result.error);
       const ran = result as Extract<R, { ok: true }>;
-      if (!ask || (ran.status !== "pending" && ran.status !== "changed")) {
+      const paused = ran.status === "pending" || ran.status === "changed";
+      if (!paused || !ask || ran.plan.id === approved) {
         return reply(format(ran));
       }
-      const reason =
-        "approvalReason" in ran && ran.approvalReason !== undefined
-          ? [`Paused for Approval: ${ran.approvalReason}.`]
-          : [];
       return inputRequired({
         inputRequests: {
           approval: inputRequired.elicit({
-            message: [
-              ...reason,
-              await reviewPlan(options.root, ran.plan),
-              "Approve to send these writes now, through the Response Adapters it names; decline and no run sends this plan.",
-            ].join("\n\n"),
+            message: await core.approvalRequest(ran),
             requestedSchema: { type: "object", properties: {} },
           }),
         },
@@ -260,72 +274,38 @@ export function createGateway(
     }
   );
 
+  const skipped: string[] = [];
   for (const { name, description, input } of options.workflows ?? []) {
-    if (fixedTools.has(name)) {
-      // stderr is the log of a stdio MCP server.
-      console.error(
-        `pinfold: Workflow ${name} not exposed as an MCP tool: pinfold has a tool by that name.`
+    try {
+      server.registerTool(
+        name,
+        {
+          description,
+          inputSchema: fromJsonSchema<Record<string, unknown>>(input),
+        },
+        (args, ctx) =>
+          withApproval(
+            ctx,
+            () => core.runWorkflow({ name, input: args }),
+            formatWorkflowRun
+          )
       );
-      continue;
-    }
-    server.registerTool(
-      name,
-      {
-        description,
-        inputSchema: fromJsonSchema<Record<string, unknown>>(input),
-      },
-      (args, ctx) =>
-        withApproval(
-          ctx,
-          () => core.runWorkflow({ name, input: args }),
-          formatWorkflowRun
-        )
-    );
-  }
-
-  return server;
-}
-
-const fixedTools = new Set([
-  "run_sandbox",
-  "search_sdk",
-  "save_workflow",
-  "run_workflow",
-  "list_workflows",
-  "propose_repair",
-]);
-
-// The developer's answer in an Approval dialog: approving lets the run that
-// follows send the plan, and needs it; declining or closing the dialog does
-// not, and says so.
-async function decide(
-  root: string,
-  id: string,
-  action: "accept" | "decline" | "cancel"
-) {
-  const plans = openPlans(root);
-  try {
-    if (action === "accept") {
-      await plans.approve(id);
-      return undefined;
-    }
-    if (action === "decline") {
-      await plans.decline(id);
-      return reply(
-        `The developer declined Write Plan ${id} in the Approval dialog, so nothing was sent and no run sends it; a run that builds the same plan asks again.`
+    } catch (error) {
+      // Such as a name one of the tools above has.
+      skipped.push(
+        `Workflow ${name} not exposed as an MCP tool: ${(error as Error).message}.`
       );
     }
-  } catch (error) {
-    return failure(`Nothing was sent: ${(error as Error).message}.`);
   }
-  return reply(
-    [
-      `The developer closed the Approval dialog without deciding, so nothing was sent. Write Plan ${id} waits for Approval in a terminal:`,
-      `  pinfold approve ${id}`,
-      "Then make the same call again to apply it.",
-    ].join("\n")
-  );
+
+  return { server, skipped };
 }
+
+const answers = {
+  accept: "approve",
+  decline: "decline",
+  cancel: "dismiss",
+} as const;
 
 // A tool's result: its text, or its text as an error.
 function reply(text: string) {

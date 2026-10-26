@@ -2,6 +2,13 @@
 // Workflow Runs, Apply and Repair that the Gateway and the CLI offer.
 import { randomUUID } from "node:crypto";
 import { planOutcome, resume } from "./lib/apply.ts";
+import {
+  answerApproval,
+  approvalRequest,
+  type AnswerResult,
+  type ApprovalAnswer,
+  type PausedOutcome,
+} from "./lib/approval.ts";
 import type { PinfoldConfig, ToolKind } from "./lib/config.ts";
 import {
   configuredModel,
@@ -31,6 +38,11 @@ import {
 } from "./lib/workflows.ts";
 
 export { opsGuide } from "./lib/adapters.ts";
+export type {
+  AnswerResult,
+  ApprovalAnswer,
+  PausedOutcome,
+} from "./lib/approval.ts";
 export { makeFieldOptional } from "./lib/baselines.ts";
 export {
   classifyTools,
@@ -115,6 +127,16 @@ export type Core = {
     workflows: ExposedWorkflow[];
     skipped: string[];
   }>;
+  /**
+   * What a dialog of the client shows to ask for Approval of a paused run:
+   * why it paused, its Write Plan and the Repairs behind its Adapters.
+   */
+  approvalRequest(paused: PausedOutcome): Promise<string>;
+  /**
+   * Takes the developer's answer in that dialog. Once approved, the same
+   * request running again sends the plan if it rebuilds the same one.
+   */
+  answerApproval(id: string, answer: ApprovalAnswer): Promise<AnswerResult>;
   /** The Drift that deterministic Repair could not settle, by Tool. */
   pendingDrift(): Promise<PendingDrift[]>;
   /**
@@ -215,6 +237,8 @@ export async function openCore(
         declarations: declarations(project.sdkTools()),
         tools: new Set(project.tools.keys()),
       }),
+    approvalRequest: (paused) => approvalRequest(project.root, paused),
+    answerApproval: (id, answer) => answerApproval(project.plans, id, answer),
     pendingDrift: () => project.repairs.pending(),
     repairTasks: () => repairTasks(project),
     proposeRepair: (request) => proposeRepair(project, request),

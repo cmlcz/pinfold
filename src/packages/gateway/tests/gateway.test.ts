@@ -1,13 +1,12 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { Client } from "@modelcontextprotocol/client";
+import { Client, type ClientCapabilities } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { readFile } from "node:fs/promises";
 import { openPlans } from "../../core/index.ts";
 import { connectControl, driftKitCommand } from "../../drift-kit/index.ts";
 
@@ -15,34 +14,44 @@ let dir: string;
 let config: string;
 let client: Client;
 
-// A Gateway process with a client connected over stdio. A client that
-// answers elicitations declares the capability and answers each with
-// `answer`, after keeping its message in `asked`.
+type Answer = "accept" | "decline" | "cancel";
+
+// A Gateway process with a client connected over stdio. A client given
+// `answer` declares form elicitation, unless `capabilities` say otherwise,
+// and answers each Approval dialog with it. `stderr` collects the Gateway's.
 async function connectGateway(
-  answer?: (message: string) => "accept" | "decline" | "cancel",
-  asked: string[] = []
+  options: {
+    answer?: (message: string) => Answer | Promise<Answer>;
+    capabilities?: ClientCapabilities;
+    stderr?: string[];
+  } = {}
 ): Promise<Client> {
+  const { answer } = options;
   const connected = new Client(
     { name: "gateway-test", version: "0.0.0" },
-    answer ? { capabilities: { elicitation: { form: {} } } } : {}
+    {
+      capabilities:
+        options.capabilities ?? (answer ? { elicitation: { form: {} } } : {}),
+    }
   );
   if (answer) {
-    connected.setRequestHandler("elicitation/create", (request) => {
-      const { message } = request.params;
-      asked.push(message);
-      return Promise.resolve({ action: answer(message) });
-    });
+    connected.setRequestHandler("elicitation/create", async (request) => ({
+      action: await answer(request.params.message),
+    }));
   }
-  await connected.connect(
-    new StdioClientTransport({
-      command: process.execPath,
-      args: [
-        fileURLToPath(new URL("../bin.ts", import.meta.url)),
-        "--config",
-        config,
-      ],
-    })
-  );
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [
+      fileURLToPath(new URL("../bin.ts", import.meta.url)),
+      "--config",
+      config,
+    ],
+    stderr: options.stderr ? "pipe" : "inherit",
+  });
+  transport.stderr?.on("data", (chunk: Buffer) => {
+    options.stderr?.push(chunk.toString());
+  });
+  await connected.connect(transport);
   return connected;
 }
 
@@ -423,28 +432,61 @@ const writing = `export async function main() {
   return [ticket.identifier];
 }`;
 
+// The writes the Linear Drift Kit server received.
+const linearWrites = () => connectControl(join(dir, "l.sock")).receivedWrites();
+
+// Saves the run of `code` as Workflow `name`, its settings replaced by
+// `settings`, then starts the Gateway again so it sees them.
+async function saveWorkflow(
+  name: string,
+  run: { code: string; input?: unknown },
+  settings = "export const settings = { writeBudget: 10 };",
+  reconnect: Parameters<typeof connectGateway>[0] = {}
+) {
+  const ran = await client.callTool({ name: "run_sandbox", arguments: run });
+  const exploration = /Exploration Run ([0-9a-f]{8})/.exec(textOf(ran))![1]!;
+  await client.callTool({
+    name: "save_workflow",
+    arguments: { run: exploration, name, confirmed: true },
+  });
+  const file = join(dir, ".workflows", `${name}.ts`);
+  const source = await readFile(file, "utf8");
+  await writeFile(
+    file,
+    source.replace("export const settings = { writeBudget: 10 };", settings)
+  );
+  await client.close();
+  client = await connectGateway(reconnect);
+}
+
 describe("Approval in the client", () => {
   it("asks in a dialog with the Write Plan and applies the plan once approved", async () => {
     const asked: string[] = [];
     await client.close();
-    client = await connectGateway(() => "accept", asked);
+    client = await connectGateway({
+      answer: (message) => {
+        asked.push(message);
+        return "accept";
+      },
+    });
 
     const result = await client.callTool({
       name: "run_sandbox",
       arguments: { code: writing },
     });
 
-    expect(asked).toHaveLength(1);
-    expect(asked[0]).toMatch(
-      new RegExp(
-        [
-          String.raw`^Write Plan [0-9a-f]{12}: 1 write, none sent yet`,
-          String.raw`  1\. linear\.createIssue \{"title":"Fix totals"\}`,
-          "",
-          "Approve to send these writes now",
-        ].join("\n")
-      )
-    );
+    expect(asked).toEqual([
+      expect.stringMatching(
+        new RegExp(
+          [
+            String.raw`^Write Plan [0-9a-f]{12}: 1 write, none sent yet`,
+            String.raw`  1\. linear\.createIssue \{"title":"Fix totals"\}`,
+            "",
+            "Approve to send this write now; decline and no run sends this plan\\.$",
+          ].join("\n")
+        )
+      ),
+    ]);
     expect(result.isError).toBeFalsy();
     expect(textOf(result)).toMatch(
       /^\["ENG-\d+"\]\n\nApplied Write Plan [0-9a-f]{12}: 1 write sent\./
@@ -454,7 +496,7 @@ describe("Approval in the client", () => {
 
   it("never sends a plan the developer declines in the dialog", async () => {
     await client.close();
-    client = await connectGateway(() => "decline");
+    client = await connectGateway({ answer: () => "decline" });
 
     const result = await client.callTool({
       name: "run_sandbox",
@@ -463,17 +505,18 @@ describe("Approval in the client", () => {
 
     expect(result.isError).toBeFalsy();
     expect(textOf(result)).toMatch(
-      /^The developer declined Write Plan ([0-9a-f]{12}) in the Approval dialog, so nothing was sent/
+      /^The developer declined Write Plan [0-9a-f]{12} in the Approval dialog, so nothing was sent\./
     );
     const id = /Write Plan ([0-9a-f]{12})/.exec(textOf(result))![1]!;
     await expect(openPlans(dir).approve(id)).rejects.toThrow(
       `Write Plan ${id} is declined, not pending`
     );
+    expect(await linearWrites()).toEqual([]);
   });
 
   it("leaves the plan pending when the developer closes the dialog", async () => {
     await client.close();
-    client = await connectGateway(() => "cancel");
+    client = await connectGateway({ answer: () => "cancel" });
 
     const result = await client.callTool({
       name: "run_sandbox",
@@ -487,42 +530,108 @@ describe("Approval in the client", () => {
     expect((await openPlans(dir).pending()).map((plan) => plan.id)).toEqual([
       id,
     ]);
+    expect(await linearWrites()).toEqual([]);
+  });
+
+  it("applies a plan the developer approved in a terminal while the dialog was open", async () => {
+    await client.close();
+    client = await connectGateway({
+      answer: async (message): Promise<Answer> => {
+        const id = /^Write Plan ([0-9a-f]{12})/.exec(message)![1]!;
+        await openPlans(dir).approve(id);
+        return "accept";
+      },
+    });
+
+    const result = await client.callTool({
+      name: "run_sandbox",
+      arguments: { code: writing },
+    });
+
+    expect(result.isError).toBeFalsy();
+    expect(textOf(result)).toMatch(
+      /\n\nApplied Write Plan [0-9a-f]{12}: 1 write sent\./
+    );
+  });
+
+  it("asks again when the plan changed after the developer approved it", async () => {
+    const asked: string[] = [];
+    await saveWorkflow("file_issue", { code: writing }, undefined, {
+      answer: async (message): Promise<Answer> => {
+        asked.push(message);
+        if (asked.length > 1) return "decline";
+        const file = join(dir, ".workflows", "file_issue.ts");
+        const source = await readFile(file, "utf8");
+        await writeFile(file, source.replace("Fix totals", "Fix sums"));
+        return "accept";
+      },
+    });
+
+    const result = await client.callTool({
+      name: "run_workflow",
+      arguments: { name: "file_issue" },
+    });
+
+    expect(asked).toEqual([
+      expect.stringMatching(/^Paused for Approval: .*Fix totals/s),
+      expect.stringMatching(/^Paused for Approval: .*Fix sums/s),
+    ]);
+    const second = /Write Plan ([0-9a-f]{12})/.exec(asked[1]!)![1]!;
+    expect(textOf(result)).toMatch(
+      new RegExp(
+        `^The developer declined Write Plan ${second} in the Approval dialog`
+      )
+    );
+    expect(await linearWrites()).toEqual([]);
+  });
+
+  it("points to the terminal when the client can show no form dialog", async () => {
+    await client.close();
+    client = await connectGateway({
+      capabilities: { elicitation: { url: {} } },
+      answer: () => {
+        throw new Error("asked for a form");
+      },
+    });
+
+    const result = await client.callTool({
+      name: "run_sandbox",
+      arguments: { code: writing },
+    });
+
+    expect(result.isError).toBeFalsy();
+    expect(textOf(result)).toContain("pinfold approve ");
   });
 });
 
 describe("Workflows as their own tools", () => {
-  async function saveCountIssues(settings: string) {
-    const run = await client.callTool({
-      name: "run_sandbox",
-      arguments: {
-        code: `export async function main(input: { project: string }) {
-          const { issues } = await sdk.sentry.listIssues(input);
-          return issues.length;
-        }`,
-        input: { project: "web" },
-      },
-    });
-    const exploration = /Exploration Run ([0-9a-f]{8})/.exec(textOf(run))![1]!;
-    await client.callTool({
-      name: "save_workflow",
-      arguments: { run: exploration, name: "count_issues", confirmed: true },
-    });
-    const file = join(dir, ".workflows", "count_issues.ts");
-    const source = await readFile(file, "utf8");
-    await writeFile(
-      file,
-      source.replace("export const settings = { writeBudget: 10 };", settings)
-    );
-    await client.close();
-    client = await connectGateway();
-  }
+  const countIssues = {
+    code: `export async function main(input: { project: string }) {
+      const { issues } = await sdk.sentry.listIssues(input);
+      return issues.length;
+    }`,
+    input: { project: "web" },
+  };
 
   it("has exactly the fixed tools plus the opted-in Workflows, and none approves a plan", async () => {
-    await saveCountIssues(
+    await saveWorkflow(
+      "count_issues",
+      countIssues,
       'export const settings = { writeBudget: 10, expose: true, description: "Count the issues of a Sentry project" };'
     );
+    const pending = await client.callTool({
+      name: "run_sandbox",
+      arguments: { code: writing },
+    });
+    const id = /pinfold approve ([0-9a-f]{12})/.exec(textOf(pending))![1]!;
 
     const { tools } = await client.listTools();
+    for (const tool of tools) {
+      await client.callTool({
+        name: tool.name,
+        arguments: { id, plan: id, name: id, approve: true, confirmed: true },
+      });
+    }
 
     expect(tools.map((tool) => tool.name).sort()).toEqual([
       "count_issues",
@@ -533,10 +642,9 @@ describe("Workflows as their own tools", () => {
       "save_workflow",
       "search_sdk",
     ]);
-    for (const tool of tools) {
-      expect(tool.name).not.toMatch(/approv|declin/);
-      expect(tool.inputSchema.properties ?? {}).not.toHaveProperty("approved");
-    }
+    expect((await openPlans(dir).pending()).map((plan) => plan.id)).toEqual([
+      id,
+    ]);
     expect(tools.find((tool) => tool.name === "count_issues")).toMatchObject({
       description: "Count the issues of a Sentry project",
       inputSchema: {
@@ -548,7 +656,9 @@ describe("Workflows as their own tools", () => {
   });
 
   it("runs an opted-in Workflow through its own tool", async () => {
-    await saveCountIssues(
+    await saveWorkflow(
+      "count_issues",
+      countIssues,
       "export const settings = { writeBudget: 10, expose: true };"
     );
 
@@ -562,11 +672,28 @@ describe("Workflows as their own tools", () => {
   });
 
   it("leaves out a Workflow that did not opt in", async () => {
-    await saveCountIssues("export const settings = { writeBudget: 10 };");
+    await saveWorkflow("count_issues", countIssues);
 
     const { tools } = await client.listTools();
 
     expect(tools.map((tool) => tool.name)).not.toContain("count_issues");
+  });
+
+  it("leaves out a Workflow named like a fixed tool, and says so", async () => {
+    const stderr: string[] = [];
+    await saveWorkflow(
+      "search_sdk",
+      countIssues,
+      "export const settings = { writeBudget: 10, expose: true };",
+      { stderr }
+    );
+
+    const { tools } = await client.listTools();
+
+    expect(tools).toHaveLength(6);
+    expect(stderr.join("")).toContain(
+      "pinfold: Workflow search_sdk not exposed as an MCP tool: Tool search_sdk is already registered.\n"
+    );
   });
 });
 
