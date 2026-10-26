@@ -10,6 +10,7 @@
 //   node bin.ts run <workflow> [<value> | --<field> <value>...] [--config pinfold.json]
 //   node bin.ts stats [--json] [--config pinfold.json]
 import { dirname, resolve } from "node:path";
+import { createInterface } from "node:readline/promises";
 import {
   classifyTools,
   formatMigration,
@@ -98,8 +99,13 @@ async function main(): Promise<number> {
       const [id] = rest;
       if (id === undefined || rest.length > 1) return fail();
       const plans = openPlans(root);
-      const plan = await plans.approve(id);
-      console.log(await reviewPlan(root, plan));
+      const pending = (await plans.pending()).find((plan) => plan.id === id);
+      // A plan that is not pending is refused by approve itself, unasked.
+      if (pending !== undefined) {
+        console.log(await reviewPlan(root, pending));
+        if (!(await confirm("approve", `Approve Write Plan ${id}?`))) return 1;
+      }
+      await plans.approve(id);
       console.log(
         `Approved Write Plan ${id}. It is sent when the same code runs again and rebuilds the same plan.`
       );
@@ -134,6 +140,11 @@ async function main(): Promise<number> {
       if (run === undefined || rest.length !== 3) return fail();
       if (!/^[1-9]\d*$/.test(write!)) return fail();
       if (outcome !== "sent" && outcome !== "not-sent") return fail();
+      const question =
+        outcome === "sent"
+          ? `Record write ${write} of run ${run} as sent, so that no resume sends it?`
+          : `Record write ${write} of run ${run} as not sent, so that the next resume sends it?`;
+      if (!(await confirm("resolve", question))) return 1;
       await openPlans(root).resolve(run, Number(write), outcome === "sent");
       console.log(
         outcome === "sent"
@@ -258,6 +269,30 @@ function parseCommandLine(args: string[]): {
   return { positionals, config, input };
 }
 
+// Approving a plan, settling a write in doubt and marking a Tool as read
+// decide what reaches a Downstream Server, so they ask the person at an
+// interactive terminal. An agent's shell has none, so an agent cannot run
+// them unasked; client permission rules that deny them close the rest.
+async function confirm(command: string, question: string): Promise<boolean> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error(
+      `pinfold ${command} asks for confirmation in an interactive terminal, so that an agent cannot run it for the developer. Run it yourself in a terminal.`
+    );
+  }
+  const terminal = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  try {
+    const answer = await terminal.question(`${question} Type yes to confirm: `);
+    if (answer.trim() === "yes") return true;
+    console.log("Nothing changed.");
+    return false;
+  } finally {
+    terminal.close();
+  }
+}
+
 function splitOnce(text: string, separator: string): [string, string?] {
   const at = text.indexOf(separator);
   return at === -1 ? [text] : [text.slice(0, at), text.slice(at + 1)];
@@ -278,6 +313,10 @@ async function classify([kind, ...names]: string[]): Promise<number> {
       return 1;
     }
     choices.push({ server: match.server, tool: match.tool, kind: choice });
+  }
+  if (choice === "read") {
+    const question = `Mark ${names.join(", ")} as Read Tools? They run live during every Plan, so a Write Tool among them would send writes no one approved.`;
+    if (!(await confirm("classify read", question))) return 1;
   }
   await classifyTools(config, choices);
   // Opened once the first core has closed: its servers are started afresh.

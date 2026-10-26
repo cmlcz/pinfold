@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { driftKitCommand } from "../../drift-kit/index.ts";
+import { pinfoldInTerminal } from "./terminal.ts";
 
 const bin = fileURLToPath(new URL("../bin.ts", import.meta.url));
 let dir: string;
@@ -70,17 +71,23 @@ describe("pinfold classify", () => {
     ]);
   });
 
-  it("records the developer's choices in the config file", async () => {
-    const { code, stdout } = await pinfold(
+  it("records the developer's choices in the config file, asking before marking Read Tools", async () => {
+    const { code, output } = await pinfoldInTerminal([
       "classify",
       "read",
       "sentry.listIssues",
-      "linear.searchIssues"
-    );
+      "linear.searchIssues",
+      "--config",
+      config,
+    ]);
     await pinfold("classify", "write", "linear.createIssue");
 
     expect(code).toBe(0);
-    expect(rows(stdout).slice(0, 1)).toEqual([
+    const [question, ...table] = output.trim().split("\n");
+    expect(question).toBe(
+      "Mark sentry.listIssues, linear.searchIssues as Read Tools? They run live during every Plan, so a Write Tool among them would send writes no one approved. Type yes to confirm: yes"
+    );
+    expect(rows(table.join("\n")).slice(0, 1)).toEqual([
       ["sentry.listIssues", "read", "read"],
     ]);
     const saved = JSON.parse(await readFile(config, "utf8"));
@@ -94,6 +101,22 @@ describe("pinfold classify", () => {
       "write",
       "write",
     ]);
+  });
+
+  it("refuses to mark Read Tools outside an interactive terminal", async () => {
+    const { code, stderr } = await pinfold(
+      "classify",
+      "read",
+      "linear.createIssue"
+    );
+
+    expect(code).toBe(1);
+    expect(stderr).toMatch(
+      /^pinfold classify read asks for confirmation in an interactive terminal/
+    );
+    expect(JSON.parse(await readFile(config, "utf8")).classification).toBe(
+      undefined
+    );
   });
 
   it("refuses a Tool that no Downstream Server offers", async () => {
