@@ -32,7 +32,10 @@ pinfold is a local MCP server for coding agents. It sits between your agent and 
 git clone https://github.com/cmlcz/pinfold.git
 cd pinfold
 npm ci
+npm link   # optional: puts pinfold and pinfold-gateway on your PATH
 ```
+
+With `npm link`, `pinfold <command>` stands for `node src/packages/cli/bin.ts <command>` below, and `pinfold-gateway` for `node src/packages/gateway/bin.ts`. pinfold is not on npm yet: Node runs its TypeScript directly, and it does not do that for packages installed into `node_modules`. `examples/smoke/` holds a small project with a saved workflow, which CI runs from a fresh clone.
 
 ## Configure
 
@@ -279,4 +282,4 @@ Your approvals live in `.pinfold/runs.jsonl` and `.pinfold/plans/`. A workflow r
 
 ## License
 
-MIT
+MIT, see [LICENSE](LICENSE).
