@@ -8,6 +8,7 @@ import {
   withPickedModel,
   type ModelClient,
 } from "./lib/model.ts";
+import { migrateBaseline, type MigrationResult } from "./lib/migration.ts";
 import { writePlan } from "./lib/plan.ts";
 import { planRun } from "./lib/plan-run.ts";
 import { openProject } from "./lib/project.ts";
@@ -36,6 +37,7 @@ export {
   type ServerConfig,
   type ToolKind,
 } from "./lib/config.ts";
+export { formatMigration, type MigrationResult } from "./lib/migration.ts";
 export { chatClient, type ModelClient, type ModelUsage } from "./lib/model.ts";
 export type { PlannedWrite, WritePlan } from "./lib/plan.ts";
 export type { PendingDrift, RepairRecord, RepairTask } from "./lib/repair.ts";
@@ -120,6 +122,15 @@ export type Core = {
     tool: string;
     ops: unknown;
   }): Promise<ProposalResult>;
+  /**
+   * Baseline Migration: moves a Tool, as `server.tool`, to the shape its
+   * server gives it now, and checks every Workflow that calls it against
+   * the new Baseline. Unless `confirmed`, it only shows what would change.
+   */
+  migrateBaseline(request: {
+    tool: string;
+    confirmed: boolean;
+  }): Promise<MigrationResult>;
   close(): Promise<void>;
 };
 
@@ -191,6 +202,7 @@ export async function openCore(
     pendingDrift: () => project.repairs.pending(),
     repairTasks: () => repairTasks(project),
     proposeRepair: (request) => proposeRepair(project, request),
+    migrateBaseline: (request) => migrateBaseline(project, request),
     resume: (run) => resume(project, run),
     saveWorkflow: ({ run, name, confirmed }) =>
       saveWorkflow(project.root, {
