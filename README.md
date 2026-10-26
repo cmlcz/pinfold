@@ -96,7 +96,7 @@ The `classify` command reads the tool list from your servers, so they must be re
 
 ## Approve writes
 
-When a run includes writes, nothing is sent until you approve its plan. If your client supports MCP elicitation, as Claude Code does, the run asks you in a dialog that shows the plan and the repair behind each changed adapter. Approve, and pinfold sends the writes and returns the result. Decline, and no run sends that plan. Close the dialog, and the plan waits for you in the terminal.
+When a run includes writes, nothing is sent until you approve its plan. If your client supports MCP elicitation forms, the run asks you in a dialog that shows the plan and the repair behind each response adapter it was built through. Approve, and pinfold runs the same code again and sends the writes if it rebuilds the same plan; if it builds a different one, it asks again. Decline, and no run sends that plan. Close the dialog, and the plan waits for you in the terminal. A dialog left open for more than an hour ends the call with an error, and the plan waits in the terminal too.
 
 > [!WARNING]
 > The dialog is the safeguard. A client hook or setting that answers elicitations for you, without showing them, approves every plan unread. Do not auto-answer pinfold's elicitations.

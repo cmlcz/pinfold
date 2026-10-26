@@ -347,12 +347,9 @@ export async function loadWorkflow(
     tools: Set<string>;
   }
 ): Promise<
-  { ok: true; workflow: LoadedWorkflow } | { ok: false; error: string }
+  { ok: true; workflow: LoadedWorkflow } | { ok: false; reason: string }
 > {
-  const refuse = (error: string) => ({
-    ok: false as const,
-    error: `Workflow ${name} not run: ${error}.`,
-  });
+  const refuse = (reason: string) => ({ ok: false as const, reason });
   const dir = join(root, ".workflows");
   const record = namePattern.test(name)
     ? await readParsed(join(dir, `${name}.json`), recordSchema)
@@ -430,7 +427,9 @@ export async function exposedWorkflows(
     if (settings.value.expose !== true) continue;
     const loaded = await loadWorkflow(root, name, sdk);
     if (!loaded.ok) {
-      skipped.push(`${loaded.error} So it is not exposed as an MCP tool.`);
+      skipped.push(
+        `Workflow ${name} not exposed as an MCP tool: ${loaded.reason}.`
+      );
       continue;
     }
     const { input, description } = loaded.workflow;

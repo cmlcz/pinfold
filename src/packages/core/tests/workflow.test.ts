@@ -427,7 +427,7 @@ describe("exposed Workflows", () => {
     expect(skipped).toEqual([
       "Workflow shout not exposed as an MCP tool: its input is not an object, as the arguments of a tool are.",
       expect.stringMatching(
-        /^Workflow unbudgeted not run: it must export const settings = .* So it is not exposed as an MCP tool\.$/
+        /^Workflow unbudgeted not exposed as an MCP tool: it must export const settings = .*some text\.$/
       ),
     ]);
   });
