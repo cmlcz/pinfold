@@ -23,8 +23,10 @@ import type {
 } from "./lib/outcome.ts";
 import { runWorkflow, type WorkflowRunRequest } from "./lib/workflow-run.ts";
 import {
+  exposedWorkflows,
   saveWorkflow,
   type Exploration,
+  type ExposedWorkflow,
   type SaveResult,
 } from "./lib/workflows.ts";
 
@@ -63,6 +65,7 @@ export {
 export {
   formatWorkflows,
   listWorkflows,
+  type ExposedWorkflow,
   type SaveCheck,
   type CommandLineInput,
   type SaveResult,
@@ -104,6 +107,14 @@ export type Core = {
    * history.
    */
   runWorkflow(request: WorkflowRunRequest): Promise<WorkflowRunResult>;
+  /**
+   * The saved Workflows the developer opted into appearing as their own MCP
+   * tools, and why any of them is left out.
+   */
+  exposedWorkflows(): Promise<{
+    workflows: ExposedWorkflow[];
+    skipped: string[];
+  }>;
   /** The Drift that deterministic Repair could not settle, by Tool. */
   pendingDrift(): Promise<PendingDrift[]>;
   /**
@@ -199,6 +210,11 @@ export async function openCore(
       return { ...outcome, exploration: run };
     },
     runWorkflow: (request) => runWorkflow(project, request),
+    exposedWorkflows: () =>
+      exposedWorkflows(project.root, {
+        declarations: declarations(project.sdkTools()),
+        tools: new Set(project.tools.keys()),
+      }),
     pendingDrift: () => project.repairs.pending(),
     repairTasks: () => repairTasks(project),
     proposeRepair: (request) => proposeRepair(project, request),

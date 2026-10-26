@@ -7,15 +7,48 @@ import { promisify } from "node:util";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { readFile } from "node:fs/promises";
 import { openPlans } from "../../core/index.ts";
 import { connectControl, driftKitCommand } from "../../drift-kit/index.ts";
 
 let dir: string;
+let config: string;
 let client: Client;
+
+// A Gateway process with a client connected over stdio. A client that
+// answers elicitations declares the capability and answers each with
+// `answer`, after keeping its message in `asked`.
+async function connectGateway(
+  answer?: (message: string) => "accept" | "decline" | "cancel",
+  asked: string[] = []
+): Promise<Client> {
+  const connected = new Client(
+    { name: "gateway-test", version: "0.0.0" },
+    answer ? { capabilities: { elicitation: { form: {} } } } : {}
+  );
+  if (answer) {
+    connected.setRequestHandler("elicitation/create", (request) => {
+      const { message } = request.params;
+      asked.push(message);
+      return Promise.resolve({ action: answer(message) });
+    });
+  }
+  await connected.connect(
+    new StdioClientTransport({
+      command: process.execPath,
+      args: [
+        fileURLToPath(new URL("../bin.ts", import.meta.url)),
+        "--config",
+        config,
+      ],
+    })
+  );
+  return connected;
+}
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "pinfold-gateway-"));
-  const config = join(dir, "pinfold.json");
+  config = join(dir, "pinfold.json");
   const sentry = driftKitCommand("sentry", { control: join(dir, "s.sock") });
   const linear = driftKitCommand("linear", { control: join(dir, "l.sock") });
   await writeFile(
@@ -29,17 +62,7 @@ beforeEach(async () => {
     })
   );
 
-  client = new Client({ name: "gateway-test", version: "0.0.0" });
-  await client.connect(
-    new StdioClientTransport({
-      command: process.execPath,
-      args: [
-        fileURLToPath(new URL("../bin.ts", import.meta.url)),
-        "--config",
-        config,
-      ],
-    })
-  );
+  client = await connectGateway();
 });
 
 afterEach(async () => {
@@ -389,6 +412,161 @@ describe("Gateway", () => {
         },
       ],
     });
+  });
+});
+
+const textOf = (result: Awaited<ReturnType<Client["callTool"]>>) =>
+  (result.content as [{ type: "text"; text: string }])[0].text;
+
+const writing = `export async function main() {
+  const ticket = await sdk.linear.createIssue({ title: "Fix totals" });
+  return [ticket.identifier];
+}`;
+
+describe("Approval in the client", () => {
+  it("asks in a dialog with the Write Plan and applies the plan once approved", async () => {
+    const asked: string[] = [];
+    await client.close();
+    client = await connectGateway(() => "accept", asked);
+
+    const result = await client.callTool({
+      name: "run_sandbox",
+      arguments: { code: writing },
+    });
+
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatch(
+      new RegExp(
+        [
+          String.raw`^Write Plan [0-9a-f]{12}: 1 write, none sent yet`,
+          String.raw`  1\. linear\.createIssue \{"title":"Fix totals"\}`,
+          "",
+          "Approve to send these writes now",
+        ].join("\n")
+      )
+    );
+    expect(result.isError).toBeFalsy();
+    expect(textOf(result)).toMatch(
+      /^\["ENG-\d+"\]\n\nApplied Write Plan [0-9a-f]{12}: 1 write sent\./
+    );
+    expect(await openPlans(dir).pending()).toEqual([]);
+  });
+
+  it("never sends a plan the developer declines in the dialog", async () => {
+    await client.close();
+    client = await connectGateway(() => "decline");
+
+    const result = await client.callTool({
+      name: "run_sandbox",
+      arguments: { code: writing },
+    });
+
+    expect(result.isError).toBeFalsy();
+    expect(textOf(result)).toMatch(
+      /^The developer declined Write Plan ([0-9a-f]{12}) in the Approval dialog, so nothing was sent/
+    );
+    const id = /Write Plan ([0-9a-f]{12})/.exec(textOf(result))![1]!;
+    await expect(openPlans(dir).approve(id)).rejects.toThrow(
+      `Write Plan ${id} is declined, not pending`
+    );
+  });
+
+  it("leaves the plan pending when the developer closes the dialog", async () => {
+    await client.close();
+    client = await connectGateway(() => "cancel");
+
+    const result = await client.callTool({
+      name: "run_sandbox",
+      arguments: { code: writing },
+    });
+
+    const id = /pinfold approve ([0-9a-f]{12})/.exec(textOf(result))![1]!;
+    expect(textOf(result)).toMatch(
+      /^The developer closed the Approval dialog without deciding, so nothing was sent\./
+    );
+    expect((await openPlans(dir).pending()).map((plan) => plan.id)).toEqual([
+      id,
+    ]);
+  });
+});
+
+describe("Workflows as their own tools", () => {
+  async function saveCountIssues(settings: string) {
+    const run = await client.callTool({
+      name: "run_sandbox",
+      arguments: {
+        code: `export async function main(input: { project: string }) {
+          const { issues } = await sdk.sentry.listIssues(input);
+          return issues.length;
+        }`,
+        input: { project: "web" },
+      },
+    });
+    const exploration = /Exploration Run ([0-9a-f]{8})/.exec(textOf(run))![1]!;
+    await client.callTool({
+      name: "save_workflow",
+      arguments: { run: exploration, name: "count_issues", confirmed: true },
+    });
+    const file = join(dir, ".workflows", "count_issues.ts");
+    const source = await readFile(file, "utf8");
+    await writeFile(
+      file,
+      source.replace("export const settings = { writeBudget: 10 };", settings)
+    );
+    await client.close();
+    client = await connectGateway();
+  }
+
+  it("has exactly the fixed tools plus the opted-in Workflows, and none approves a plan", async () => {
+    await saveCountIssues(
+      'export const settings = { writeBudget: 10, expose: true, description: "Count the issues of a Sentry project" };'
+    );
+
+    const { tools } = await client.listTools();
+
+    expect(tools.map((tool) => tool.name).sort()).toEqual([
+      "count_issues",
+      "list_workflows",
+      "propose_repair",
+      "run_sandbox",
+      "run_workflow",
+      "save_workflow",
+      "search_sdk",
+    ]);
+    for (const tool of tools) {
+      expect(tool.name).not.toMatch(/approv|declin/);
+      expect(tool.inputSchema.properties ?? {}).not.toHaveProperty("approved");
+    }
+    expect(tools.find((tool) => tool.name === "count_issues")).toMatchObject({
+      description: "Count the issues of a Sentry project",
+      inputSchema: {
+        type: "object",
+        properties: { project: { type: "string" } },
+        required: ["project"],
+      },
+    });
+  });
+
+  it("runs an opted-in Workflow through its own tool", async () => {
+    await saveCountIssues(
+      "export const settings = { writeBudget: 10, expose: true };"
+    );
+
+    const result = await client.callTool({
+      name: "count_issues",
+      arguments: { project: "web" },
+    });
+
+    expect(result.isError).toBeFalsy();
+    expect(textOf(result)).toBe("3");
+  });
+
+  it("leaves out a Workflow that did not opt in", async () => {
+    await saveCountIssues("export const settings = { writeBudget: 10 };");
+
+    const { tools } = await client.listTools();
+
+    expect(tools.map((tool) => tool.name)).not.toContain("count_issues");
   });
 });
 

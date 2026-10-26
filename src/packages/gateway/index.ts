@@ -1,4 +1,12 @@
-import { McpServer } from "@modelcontextprotocol/server";
+import { randomBytes } from "node:crypto";
+import {
+  createRequestStateCodec,
+  fromJsonSchema,
+  inputRequired,
+  inputResponse,
+  McpServer,
+  type ServerContext,
+} from "@modelcontextprotocol/server";
 import * as z from "zod";
 import {
   formatOutcome,
@@ -7,19 +15,80 @@ import {
   formatWorkflowRun,
   formatWorkflows,
   listWorkflows,
+  openPlans,
   opsGuide,
+  reviewPlan,
   type Core,
+  type ExploreResult,
+  type ExposedWorkflow,
+  type WorkflowRunResult,
 } from "../core/index.ts";
 
 /**
  * The MCP server the agent connects to. It holds no logic of its own; `root`
- * is the project directory that holds `.workflows/`.
+ * is the project directory that holds `.workflows/`, and `workflows` are the
+ * saved Workflows that appear as their own tools.
  */
 export function createGateway(
   core: Core,
-  options: { root: string }
+  options: { root: string; workflows?: ExposedWorkflow[] }
 ): McpServer {
-  const server = new McpServer({ name: "pinfold", version: "0.0.0" });
+  // The plan an Approval dialog shows comes back from the client with the
+  // answer, sealed so that no client can swap in another plan. One process
+  // serves every round of a call, so a key of its own does.
+  const sealed = createRequestStateCodec<string>({ key: randomBytes(32) });
+  const server = new McpServer(
+    { name: "pinfold", version: "0.0.0" },
+    { requestState: { verify: sealed.verify } }
+  );
+
+  // A run paused for Approval asks the developer in a dialog of the client
+  // when it can show one, and otherwise points to `pinfold approve`.
+  // Approving runs the same request again, which sends the plan only if it
+  // rebuilds the same one.
+  async function withApproval<R extends ExploreResult | WorkflowRunResult>(
+    ctx: ServerContext,
+    run: () => Promise<R>,
+    format: (result: Extract<R, { ok: true }>) => string
+  ) {
+    const answer = inputResponse(ctx.mcpReq.inputResponses, "approval");
+    const id = ctx.mcpReq.requestState<string>();
+    if (answer.kind === "elicit" && id !== undefined) {
+      const declined = await decide(options.root, id, answer.action);
+      if (declined !== undefined) return declined;
+      // Approved: the same request again sends the plan, with no new dialog.
+      return settle(await run(), false);
+    }
+    return settle(
+      await run(),
+      server.server.getClientCapabilities()?.elicitation !== undefined
+    );
+
+    async function settle(result: R, ask: boolean) {
+      if (!result.ok) return failure(result.error);
+      const ran = result as Extract<R, { ok: true }>;
+      if (!ask || (ran.status !== "pending" && ran.status !== "changed")) {
+        return reply(format(ran));
+      }
+      const reason =
+        "approvalReason" in ran && ran.approvalReason !== undefined
+          ? [`Paused for Approval: ${ran.approvalReason}.`]
+          : [];
+      return inputRequired({
+        inputRequests: {
+          approval: inputRequired.elicit({
+            message: [
+              ...reason,
+              await reviewPlan(options.root, ran.plan),
+              "Approve to send these writes now, through the Response Adapters it names; decline and no run sends this plan.",
+            ].join("\n\n"),
+            requestedSchema: { type: "object", properties: {} },
+          }),
+        },
+        requestState: await sealed.mint(ran.plan.id),
+      });
+    }
+  }
 
   server.registerTool(
     "run_sandbox",
@@ -29,7 +98,7 @@ export function createGateway(
         "The program must `export async function main(input)`; `input` is passed through.",
         "Call a Downstream Server's Tool with `await sdk.<server>.<tool>(args)`; find signatures with search_sdk.",
         "The program is type-checked against the SDK before it runs.",
-        "Each run is a Plan: Read Tools run live, but calls to Write Tools are only recorded into a Write Plan and return a Placeholder. Pass a Placeholder to other Write Tools or return it; reading, comparing, formatting or calling it fails the run. A Placeholder is always truthy, so never branch on one. The result lists the Write Plan and nothing is sent until the developer approves it in a terminal; then running the same code again applies it and returns real values.",
+        "Each run is a Plan: Read Tools run live, but calls to Write Tools are only recorded into a Write Plan and return a Placeholder. Pass a Placeholder to other Write Tools or return it; reading, comparing, formatting or calling it fails the run. A Placeholder is always truthy, so never branch on one. Nothing is sent until the developer approves the Write Plan: in a dialog of the client when it can show one, after which the plan is applied and real values return; otherwise the result lists the plan for the developer to approve in a terminal, and running the same code again applies it.",
         "The sandbox has no filesystem, network, environment, timers or imports, and each run has time, memory and Tool-call limits. Within a run, Date stands still and Math.random is seeded.",
         "main's return value must be JSON-serializable.",
       ].join("\n"),
@@ -38,13 +107,8 @@ export function createGateway(
         input: z.unknown().optional().describe("The argument passed to main"),
       }),
     },
-    async ({ code, input }) => {
-      const result = await core.explore({ code, input });
-      if (!result.ok) {
-        return failure(result.error);
-      }
-      return reply(formatOutcome(result));
-    }
+    ({ code, input }, ctx) =>
+      withApproval(ctx, () => core.explore({ code, input }), formatOutcome)
   );
 
   server.registerTool(
@@ -107,7 +171,7 @@ export function createGateway(
     {
       description: [
         "Run a saved Workflow with an input, without writing code: list_workflows shows each one's inputs.",
-        "The run is a Plan, then an Apply. Its writes are sent unattended unless Approval is required: the developer has not approved writes of the Workflow's code as it is now, a Response Adapter it reads through changed, or its Write Plan exceeds its Write Budget. Then the run pauses, nothing is sent, and the result shows the Write Plan for the developer to approve in a terminal.",
+        "The run is a Plan, then an Apply. Its writes are sent unattended unless Approval is required: the developer has not approved writes of the Workflow's code as it is now, a Response Adapter it reads through changed, or its Write Plan exceeds its Write Budget. Then the run pauses and nothing is sent until the developer approves the Write Plan, in a dialog of the client when it can show one, or else in a terminal.",
         "The Workflow is checked before it runs, since the developer may have edited it; a run refused by a check says why.",
       ].join("\n"),
       inputSchema: z.object({
@@ -120,13 +184,12 @@ export function createGateway(
           ),
       }),
     },
-    async ({ name, input }) => {
-      const result = await core.runWorkflow({ name, input: input ?? {} });
-      if (!result.ok) {
-        return failure(result.error);
-      }
-      return reply(formatWorkflowRun(result));
-    }
+    ({ name, input }, ctx) =>
+      withApproval(
+        ctx,
+        () => core.runWorkflow({ name, input: input ?? {} }),
+        formatWorkflowRun
+      )
   );
 
   server.registerTool(
@@ -197,7 +260,71 @@ export function createGateway(
     }
   );
 
+  for (const { name, description, input } of options.workflows ?? []) {
+    if (fixedTools.has(name)) {
+      // stderr is the log of a stdio MCP server.
+      console.error(
+        `pinfold: Workflow ${name} not exposed as an MCP tool: pinfold has a tool by that name.`
+      );
+      continue;
+    }
+    server.registerTool(
+      name,
+      {
+        description,
+        inputSchema: fromJsonSchema<Record<string, unknown>>(input),
+      },
+      (args, ctx) =>
+        withApproval(
+          ctx,
+          () => core.runWorkflow({ name, input: args }),
+          formatWorkflowRun
+        )
+    );
+  }
+
   return server;
+}
+
+const fixedTools = new Set([
+  "run_sandbox",
+  "search_sdk",
+  "save_workflow",
+  "run_workflow",
+  "list_workflows",
+  "propose_repair",
+]);
+
+// The developer's answer in an Approval dialog: approving lets the run that
+// follows send the plan, and needs it; declining or closing the dialog does
+// not, and says so.
+async function decide(
+  root: string,
+  id: string,
+  action: "accept" | "decline" | "cancel"
+) {
+  const plans = openPlans(root);
+  try {
+    if (action === "accept") {
+      await plans.approve(id);
+      return undefined;
+    }
+    if (action === "decline") {
+      await plans.decline(id);
+      return reply(
+        `The developer declined Write Plan ${id} in the Approval dialog, so nothing was sent and no run sends it; a run that builds the same plan asks again.`
+      );
+    }
+  } catch (error) {
+    return failure(`Nothing was sent: ${(error as Error).message}.`);
+  }
+  return reply(
+    [
+      `The developer closed the Approval dialog without deciding, so nothing was sent. Write Plan ${id} waits for Approval in a terminal:`,
+      `  pinfold approve ${id}`,
+      "Then make the same call again to apply it.",
+    ].join("\n")
+  );
 }
 
 // A tool's result: its text, or its text as an error.
