@@ -14,7 +14,13 @@ import {
   type JsonSchema,
 } from "../../sandbox/index.ts";
 import { splitToolName } from "./baselines.ts";
-import { listJson, prepareState, readOrNone, safeJson } from "./files.ts";
+import {
+  listJson,
+  prepareState,
+  readOrNone,
+  readParsed,
+  safeJson,
+} from "./files.ts";
 import { deepestPaths, redact, withoutDataKeys } from "./paths.ts";
 
 const defaultWriteBudget = 10;
@@ -267,10 +273,9 @@ export async function fixtureCalls(
   const dir = join(root, ".workflows", "fixtures");
   const calls: RecordedCall[] = [];
   for (const file of await listJson(dir)) {
-    const text = await readOrNone(join(dir, file));
-    const parsed = fixturesSchema.safeParse(text && safeJson(text));
-    if (!parsed.success) continue;
-    calls.push(...parsed.data.calls.filter((call) => call.tool === tool));
+    const fixtures = await readParsed(join(dir, file), fixturesSchema);
+    if (fixtures === undefined) continue;
+    calls.push(...fixtures.calls.filter((call) => call.tool === tool));
   }
   return calls;
 }
@@ -291,9 +296,8 @@ async function readRecords(root: string): Promise<WorkflowRecord[]> {
   const dir = join(root, ".workflows");
   const records = [];
   for (const file of (await listJson(dir)).sort()) {
-    const text = await readOrNone(join(dir, file));
-    const parsed = recordSchema.safeParse(text && safeJson(text));
-    if (parsed.success) records.push(parsed.data);
+    const record = await readParsed(join(dir, file), recordSchema);
+    if (record !== undefined) records.push(record);
   }
   return records;
 }
@@ -338,12 +342,12 @@ export async function loadWorkflow(
     error: `Workflow ${name} not run: ${error}.`,
   });
   const dir = join(root, ".workflows");
-  const text = namePattern.test(name)
-    ? await readOrNone(join(dir, `${name}.json`))
+  const record = namePattern.test(name)
+    ? await readParsed(join(dir, `${name}.json`), recordSchema)
     : undefined;
-  const parsed = recordSchema.safeParse(text && safeJson(text));
-  if (!parsed.success) return refuse("there is no saved Workflow by that name");
-  const record = parsed.data;
+  if (record === undefined) {
+    return refuse("there is no saved Workflow by that name");
+  }
   const source = await readOrNone(join(dir, `${name}.ts`));
   if (source === undefined) return refuse(`.workflows/${name}.ts is missing`);
 

@@ -13,6 +13,7 @@ import { splitToolName, toolFileName } from "./baselines.ts";
 import {
   isMissing,
   mismatches,
+  sameMismatch,
   touches,
   touching,
   uniqueMismatches,
@@ -29,7 +30,7 @@ import {
   valuesAt,
   type Step,
 } from "./paths.ts";
-import { listJson, prepareState, readOrNone, safeJson } from "./files.ts";
+import { listJson, prepareState, readParsed } from "./files.ts";
 import { canonicalize } from "./plan.ts";
 import type { JsonSchema } from "./schema.ts";
 
@@ -79,7 +80,7 @@ export type DriftedTool = {
  */
 export function searchRepair(drift: DriftedTool): RepairSearch {
   const { baseline, ops, responses } = drift;
-  const reads = [...new Set(drift.contracts.flat())];
+  const reads = readsOf(drift);
   const driftedWith = drifting(drift);
   const adaptedWith = (trial: Op[]) =>
     responses.map(({ response }) => applyOps(trial, response));
@@ -91,15 +92,11 @@ export function searchRepair(drift: DriftedTool): RepairSearch {
     const base = [...ops, ...chosen];
     const before = driftedWith(base);
     // An op chosen for another field may have repaired this one too.
-    if (!before.some((mismatch) => same(mismatch, target))) continue;
+    if (!before.some((mismatch) => sameMismatch(mismatch, target))) continue;
+    // The same check propose_repair makes of every proposal.
+    const paged = pagedReason(drift, base);
+    if (paged !== undefined) return { kind: "manual", reason: paged };
     const live = adaptedWith(base);
-    const cursor = pageCursor(baseline, target, live);
-    if (cursor !== undefined) {
-      return {
-        kind: "manual",
-        reason: `its responses now come in pages, with ${cursor}, and a Response Adapter maps one response without fetching the others`,
-      };
-    }
     const scored = candidates(baseline, target, live, history)
       .flatMap(({ op, name }) => {
         const trial = [...base, op];
@@ -107,7 +104,7 @@ export function searchRepair(drift: DriftedTool): RepairSearch {
         const fits = driftedWith(trial).every(
           (mismatch) =>
             mismatch.path !== target.path &&
-            before.some((other) => same(other, mismatch))
+            before.some((other) => sameMismatch(other, mismatch))
         );
         if (!fits) return [];
         const adapted = adaptedWith(trial);
@@ -178,13 +175,54 @@ export function checkRepair(
     applyOps(final, response)
   );
   const history = historyOf(drift.fixtures, drift.responses);
-  const evidence = [...new Set(drift.contracts.flat())]
+  const evidence = readsOf(drift)
     .filter((read) => targets.some((target) => touches(target.path, read)))
     .map(
       (read) =>
         `${read}: now ${summarize(valuesIn(adapted, read))}; in the Fixtures ${summarize(valuesIn(history, read))}`
     );
   return { ok: true, evidence };
+}
+
+/**
+ * Why no Response Adapter can repair a drifted Tool through some ops, if
+ * none can: its responses now come in pages, and an Adapter maps one
+ * response without fetching the others.
+ */
+export function pagedReason(drift: DriftedTool, ops: Op[]): string | undefined {
+  const live = drift.responses.map(({ response }) => applyOps(ops, response));
+  for (const target of drifting(drift)(ops)) {
+    const cursor = pageCursor(drift.baseline, target, live);
+    if (cursor !== undefined) {
+      return `its responses now come in pages, with ${cursor}, and a Response Adapter maps one response without fetching the others`;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The paths that default ops would make up values for: fields the
+ * Fixtures hold another value of, so the default stands in for data.
+ */
+export function madeUpDefaults(
+  drift: Pick<DriftedTool, "fixtures" | "responses">,
+  added: Op[]
+): string[] {
+  const history = historyOf(drift.fixtures, drift.responses);
+  const text = (value: unknown) => JSON.stringify(canonicalize(value));
+  return added.flatMap((op) => {
+    if (op.op !== "default") return [];
+    const given = text(op.value);
+    return valuesIn(history, op.path).some((value) => text(value) !== given)
+      ? [op.path]
+      : [];
+  });
+}
+
+// Every field path read of the Tool, by a saved Workflow or the run that
+// drifted.
+function readsOf(drift: Pick<DriftedTool, "contracts">): string[] {
+  return [...new Set(drift.contracts.flat())];
 }
 
 // The mismatches of the live responses through some ops that touch a field
@@ -195,7 +233,7 @@ function drifting(
   drift: DriftedTool,
   options: { redactedFits?: boolean } = {}
 ): (trial: Op[]) => Mismatch[] {
-  const reads = [...new Set(drift.contracts.flat())];
+  const reads = readsOf(drift);
   return (trial) =>
     uniqueMismatches(
       drift.responses.flatMap(({ response }) =>
@@ -223,7 +261,7 @@ export function repairTask(
   pending: PendingDrift,
   drift: Omit<DriftedTool, "responses">
 ): RepairTask {
-  const reads = [...new Set(drift.contracts.flat())].sort();
+  const reads = readsOf(drift).sort();
   const history = historyOf(drift.fixtures, pending.responses);
   const fixtureValues = reads
     .filter((read) =>
@@ -534,10 +572,6 @@ function mean(numbers: number[]): number {
   return numbers.reduce((sum, n) => sum + n, 0) / numbers.length;
 }
 
-function same(a: Mismatch, b: Mismatch): boolean {
-  return a.path === b.path && a.problem === b.problem;
-}
-
 function isNumber(value: unknown): value is number {
   return typeof value === "number";
 }
@@ -546,8 +580,11 @@ function isNumber(value: unknown): value is number {
 export type RepairRecord = {
   /** The Tool, as `server.tool`. */
   tool: string;
-  /** Who found it: deterministic search, or an agent through propose_repair. */
-  by: "pinfold" | "agent";
+  /**
+   * Who found it: deterministic search, an agent through propose_repair, or
+   * the Repair Model.
+   */
+  by: (typeof repairers)[number];
   /** The digest of the Adapter version it wrote. */
   digest: string;
   version: number;
@@ -572,13 +609,20 @@ export type PendingDrift = {
    * Fixtures. A Repair proposed later is checked against them.
    */
   responses: Call[];
+  /**
+   * Why the Repair Model's proposal for it was refused. The model is not
+   * asked again while the Drift stays the same.
+   */
+  modelError?: string | undefined;
 };
 
 const callSchema = z.object({ arguments: z.json(), response: z.json() });
 
+const repairers = ["pinfold", "agent", "model"] as const;
+
 const recordSchema = z.object({
   tool: z.string(),
-  by: z.enum(["pinfold", "agent"]).default("pinfold"),
+  by: z.enum(repairers).default("pinfold"),
   digest: z.string(),
   version: z.int(),
   diff: z.array(z.string()),
@@ -593,6 +637,7 @@ const pendingSchema = z.object({
   reads: z.array(z.string()).default([]),
   reason: z.string(),
   responses: z.array(callSchema).default([]),
+  modelError: z.string().optional(),
 });
 
 export type Repairs = {
@@ -621,11 +666,8 @@ export function openRepairs(root: string): Repairs {
   };
   return {
     async get(tool, digest) {
-      const text = await readOrNone(file("repairs", tool));
-      const parsed = recordSchema.safeParse(text && safeJson(text));
-      return parsed.success && parsed.data.digest === digest
-        ? parsed.data
-        : undefined;
+      const record = await readParsed(file("repairs", tool), recordSchema);
+      return record?.digest === digest ? record : undefined;
     },
     async record(repair) {
       await write("repairs", repair.tool, repair);
@@ -638,9 +680,8 @@ export function openRepairs(root: string): Repairs {
       const drift = join(root, ".pinfold", "drift");
       for (const name of await listJson(drift)) {
         // Settled since the listing, or damaged: either way not pending.
-        const text = await readOrNone(join(drift, name));
-        const parsed = pendingSchema.safeParse(text && safeJson(text));
-        if (parsed.success) found.push(parsed.data);
+        const pending = await readParsed(join(drift, name), pendingSchema);
+        if (pending !== undefined) found.push(pending);
       }
       return found.sort((a, b) => a.tool.localeCompare(b.tool));
     },

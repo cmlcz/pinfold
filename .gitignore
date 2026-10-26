@@ -2,3 +2,4 @@
 node_modules/
 .pinfold/
 .workflows/fixtures/
+.env

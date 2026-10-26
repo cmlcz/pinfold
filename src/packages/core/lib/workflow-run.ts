@@ -30,11 +30,12 @@ import {
   type RunEntry,
 } from "./workflows.ts";
 
-export type WorkflowRunRequest = { name: string } & (
+export type WorkflowRunRequest = { name: string } & GivenInput;
+
+type GivenInput =
   | { input: unknown }
   /** Read against main's input type as the code is now. */
-  | { commandLine: CommandLineInput }
-);
+  | { commandLine: CommandLineInput };
 
 /** Runs a saved Workflow and keeps the run in the run history. */
 export async function runWorkflow(
@@ -64,7 +65,7 @@ type Ran = Pick<RunEntry, "saved" | "source" | "adapters">;
 async function runOnce(
   project: Project,
   name: string,
-  given: { input: unknown } | { commandLine: CommandLineInput },
+  given: GivenInput,
   ran: Ran,
   /** The Repair the run before this one made, which this run shows. */
   repaired?: RepairRecord

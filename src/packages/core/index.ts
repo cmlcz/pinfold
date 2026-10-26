@@ -3,6 +3,11 @@
 import { randomUUID } from "node:crypto";
 import { planOutcome, resume } from "./lib/apply.ts";
 import type { PinfoldConfig, ToolKind } from "./lib/config.ts";
+import {
+  configuredModel,
+  withPickedModel,
+  type ModelClient,
+} from "./lib/model.ts";
 import { writePlan } from "./lib/plan.ts";
 import { planRun } from "./lib/plan-run.ts";
 import { openProject } from "./lib/project.ts";
@@ -15,14 +20,14 @@ import type {
   ResumeResult,
   WorkflowRunResult,
 } from "./lib/outcome.ts";
-import { runWorkflow } from "./lib/workflow-run.ts";
+import { runWorkflow, type WorkflowRunRequest } from "./lib/workflow-run.ts";
 import {
   saveWorkflow,
-  type CommandLineInput,
   type Exploration,
   type SaveResult,
 } from "./lib/workflows.ts";
 
+export { opsGuide } from "./lib/adapters.ts";
 export { makeFieldOptional } from "./lib/baselines.ts";
 export {
   classifyTools,
@@ -31,6 +36,7 @@ export {
   type ServerConfig,
   type ToolKind,
 } from "./lib/config.ts";
+export { chatClient, type ModelClient, type ModelUsage } from "./lib/model.ts";
 export type { PlannedWrite, WritePlan } from "./lib/plan.ts";
 export type { PendingDrift, RepairRecord, RepairTask } from "./lib/repair.ts";
 export {
@@ -95,13 +101,7 @@ export type Core = {
    * unattended unless Approval is required. Each run is kept in the run
    * history.
    */
-  runWorkflow(
-    request: { name: string } & (
-      | { input: unknown }
-      /** Read against main's input type as the code is now. */
-      | { commandLine: CommandLineInput }
-    )
-  ): Promise<WorkflowRunResult>;
+  runWorkflow(request: WorkflowRunRequest): Promise<WorkflowRunResult>;
   /** The Drift that deterministic Repair could not settle, by Tool. */
   pendingDrift(): Promise<PendingDrift[]>;
   /**
@@ -123,12 +123,20 @@ export type Core = {
   close(): Promise<void>;
 };
 
-/** Opens a core on a project; `root` is the directory that holds `.workflows/`. */
+/**
+ * Opens a core on a project; `root` is the directory that holds
+ * `.workflows/`. `model` stands in for the Repair Model the config names.
+ */
 export async function openCore(
   config: PinfoldConfig,
-  options: { root: string }
+  options: { root: string; model?: ModelClient }
 ): Promise<Core> {
-  const project = await openProject(config, options.root);
+  const picked = withPickedModel(config, process.env);
+  const project = await openProject(
+    picked,
+    options.root,
+    options.model ?? configuredModel(picked, process.env)
+  );
 
   // The latest successful Exploration Runs, which save_workflow can save.
   // Kept in memory only, so no unredacted response reaches the disk.

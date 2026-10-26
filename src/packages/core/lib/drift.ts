@@ -186,11 +186,13 @@ export function touching(found: Mismatch[], reads: string[]): Mismatch[] {
 export function uniqueMismatches(found: Mismatch[]): Mismatch[] {
   return found.filter(
     (mismatch, index) =>
-      found.findIndex(
-        (other) =>
-          other.path === mismatch.path && other.problem === mismatch.problem
-      ) === index
+      found.findIndex((other) => sameMismatch(other, mismatch)) === index
   );
+}
+
+/** Whether two mismatches are the same field with the same problem. */
+export function sameMismatch(a: Mismatch, b: Mismatch): boolean {
+  return a.path === b.path && a.problem === b.problem;
 }
 
 /** Whether a mismatch is a field the Baseline requires that is not there. */

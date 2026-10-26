@@ -7,6 +7,7 @@ import {
   formatWorkflowRun,
   formatWorkflows,
   listWorkflows,
+  opsGuide,
   type Core,
 } from "../core/index.ts";
 
@@ -159,13 +160,7 @@ export function createGateway(
         "Repair Drift that pinfold could not repair by itself: a Downstream Server changed a Tool's responses, and the Workflows that read the changed fields stop before they make a Write Plan.",
         "Call it with no ops to see each Tool's pending Drift: the fields that no longer fit, the Baseline shape Workflows expect, a live response and the field values in the Fixtures.",
         "Then call it with the Tool and the ops to add after its Response Adapter's ops, which map a live response back to the Baseline. Workflow code is never changed.",
-        "Paths are field paths such as issues[].count; leaving out `at` means the whole response. The ops, applied in order:",
-        '  {"op":"rename","from":path,"to":path} moves a field, within the same array elements',
-        '  {"op":"wrap","at"?:path,"field":name} puts the value under a field',
-        '  {"op":"unwrap","at"?:path,"field":name} replaces the value with that field of it',
-        '  {"op":"convert","path":path,"to":"number"|"string"|"epoch-ms"|"iso-date"} converts text to a number and back, or an ISO date to epoch milliseconds and back',
-        '  {"op":"map","path":path,"values":{old:new}} maps enum values',
-        '  {"op":"default","path":path,"value":json} gives a missing field a value',
+        ...opsGuide,
         "pinfold checks the ops as it checks its own Repairs: through them, the live responses must fit the Baseline wherever a saved Workflow reads them. Ops that do not are rejected with the reason.",
         "Ops that pass become the Tool's next Adapter version, which the developer must approve in a terminal on the next run of each affected Workflow; you cannot approve it.",
       ].join("\n"),

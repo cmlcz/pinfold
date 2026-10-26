@@ -74,6 +74,17 @@ const adapterSchema = z.strictObject({
 
 export type Op = z.infer<typeof opSchema>;
 
+/** The closed set of ops, as an agent or the Repair Model is told of it. */
+export const opsGuide = [
+  "Paths are field paths such as issues[].count; leaving out `at` means the whole response. The ops, applied in order:",
+  '  {"op":"rename","from":path,"to":path} moves a field, within the same array elements',
+  '  {"op":"wrap","at"?:path,"field":name} puts the value under a field',
+  '  {"op":"unwrap","at"?:path,"field":name} replaces the value with that field of it',
+  '  {"op":"convert","path":path,"to":"number"|"string"|"epoch-ms"|"iso-date"} converts text to a number and back, or an ISO date to epoch milliseconds and back',
+  '  {"op":"map","path":path,"values":{old:new}} maps enum values',
+  '  {"op":"default","path":path,"value":json} gives a missing field a value',
+];
+
 /** Reads ops of the closed set, as an Adapter file holds them. */
 export function parseOps(
   value: unknown
