@@ -114,6 +114,28 @@ node src/packages/cli/bin.ts resume <run-id>    # finish a plan that stopped par
 node src/packages/cli/bin.ts resolve <run-id> <write> sent|not-sent  # settle a write in doubt
 ```
 
+`approve`, `resolve` and `classify read` show what they change and ask you to type `yes`. They run only in an interactive terminal, so an agent cannot run them through its shell tool, which has none.
+
+### Keep your agent away from approval
+
+Your agent's shell runs as you. A determined agent could fake a terminal, or edit the files where pinfold keeps approvals. Deny it the commands and files that approve writes. In Claude Code, add to `.claude/settings.json`:
+
+```json
+{
+  "permissions": {
+    "deny": [
+      "Bash(node src/packages/cli/bin.ts approve *)",
+      "Bash(node src/packages/cli/bin.ts resolve *)",
+      "Bash(node src/packages/cli/bin.ts classify read *)",
+      "Edit(/.pinfold/**)",
+      "Edit(/pinfold.json)"
+    ]
+  }
+}
+```
+
+These rules catch the commands as an agent usually writes them, chained ones included, and shell redirects into those files. They do not catch a command wrapped in `sh -c`, or a script that writes the files itself. For a hard boundary, run the agent in Claude Code's sandbox. Codex CLI has its own rules files for forbidden commands.
+
 A write whose real result no longer has a field a later write needs, because the write tool's response drifted, stops the Apply with the earlier writes sent. No resume can finish that run; a response adapter for the write tool lets later runs read its results as planned.
 
 A write that fails while it is being sent may still have reached its server: a server can make the change and then answer with an error. pinfold never sends such a write again by itself. The run stops with that write in doubt, and `resume` refuses to go on. Check the server, then tell pinfold what you found with `resolve`. A write you resolve as `not-sent` is sent by the next `resume`; one resolved as `sent` never is, and the writes after it follow.
