@@ -5,11 +5,13 @@
 //   node bin.ts resume <run-id> [--config pinfold.json]
 //   node bin.ts resolve <run-id> <write> sent|not-sent [--config pinfold.json]
 //   node bin.ts baseline optional <server.tool> <field-path> [--config pinfold.json]
+//   node bin.ts baseline migrate <server.tool> [--yes] [--config pinfold.json]
 //   node bin.ts list [--config pinfold.json]
 //   node bin.ts run <workflow> [<value> | --<field> <value>...] [--config pinfold.json]
 import { dirname, resolve } from "node:path";
 import {
   classifyTools,
+  formatMigration,
   formatResume,
   formatWorkflowRun,
   formatWorkflows,
@@ -31,6 +33,7 @@ const usage = `usage:
   pinfold resume <run-id> [--config <path>]
   pinfold resolve <run-id> <write> sent|not-sent [--config <path>]
   pinfold baseline optional <server.tool> <field-path> [--config <path>]
+  pinfold baseline migrate <server.tool> [--yes] [--config <path>]
   pinfold list [--config <path>]
   pinfold run <workflow> [<value> | --<field> <value>...] [--config <path>]
 
@@ -40,7 +43,11 @@ else a flag per input field; a value starting with -- is given as
 
 pinfold resolve records whether a write that an Apply stopped while sending
 reached its server. Check the server first, and only once no Apply is
-sending the write.`;
+sending the write.
+
+pinfold baseline migrate shows how a tool's live shape differs from its
+baseline and checks every workflow that calls it; with --yes it re-pins
+the baseline, and each of those workflows waits for approval once.`;
 
 // A Workflow Run that pauses for Approval exits with this code, so that cron
 // or CI can tell it from a failure.
@@ -65,6 +72,7 @@ try {
 }
 
 async function main(): Promise<number> {
+  const flagged = Object.keys(input.flags).length > 0;
   switch (command) {
     case "classify":
       return classify(rest);
@@ -128,9 +136,24 @@ async function main(): Promise<number> {
     }
     case "baseline": {
       const [change, tool, path] = rest;
+      if (change === "migrate") {
+        if (tool === undefined || rest.length > 2) return fail();
+        return withProjectCore(async (core) => {
+          const result = await core.migrateBaseline({
+            tool,
+            confirmed: input.flags.yes === true,
+          });
+          if (!result.ok) {
+            console.error(result.error);
+            return 1;
+          }
+          console.log(formatMigration(result));
+          return 0;
+        });
+      }
       if (change !== "optional" || tool === undefined || path === undefined)
         return fail();
-      if (rest.length > 3) return fail();
+      if (rest.length > 3 || flagged) return fail();
       await makeFieldOptional(root, tool, path);
       console.log(
         `Made ${path} of ${tool} optional in its Baseline: it may now be missing or null. A gateway that is running uses it once restarted.`
@@ -144,7 +167,6 @@ async function main(): Promise<number> {
     case "run": {
       // One value or flags, not both.
       const [name] = rest;
-      const flagged = Object.keys(input.flags).length > 0;
       if (name === undefined || rest.length > 2) return fail();
       if (input.value !== undefined && flagged) return fail();
       return withProjectCore(async (core) => {
@@ -168,8 +190,9 @@ async function main(): Promise<number> {
   }
 }
 
-// Throws on arguments that make no sense. Only `run` takes options other
-// than --config: the Workflow's input, one flag per field, or one value.
+// Throws on arguments that make no sense. Only `run` and `baseline` take
+// options other than --config: the Workflow's input, one flag per field,
+// or one value, and --yes, which takes no value.
 function parseCommandLine(args: string[]): {
   positionals: string[];
   config: string;
@@ -205,10 +228,12 @@ function parseCommandLine(args: string[]): {
     }
   }
   const [command, , value] = positionals;
-  const [flag] = Object.keys(flags);
-  if (command !== "run" && flag !== undefined) {
-    throw new Error(`unknown option --${flag}`);
-  }
+  const unknown = Object.keys(flags).find(
+    (flag) =>
+      command !== "run" &&
+      !(command === "baseline" && flag === "yes" && flags[flag] === true)
+  );
+  if (unknown !== undefined) throw new Error(`unknown option --${unknown}`);
   const input: CommandLineInput = { flags };
   if (command === "run" && value !== undefined) input.value = value;
   return { positionals, config, input };
