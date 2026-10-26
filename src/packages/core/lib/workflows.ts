@@ -21,7 +21,7 @@ import {
   readParsed,
   safeJson,
 } from "./files.ts";
-import { deepestPaths, redact, withoutDataKeys } from "./paths.ts";
+import { deepestPaths, isRecord, redact, withoutDataKeys } from "./paths.ts";
 
 const defaultWriteBudget = 10;
 
@@ -323,9 +323,15 @@ export type LoadedWorkflow = {
   contract: Record<string, string[]>;
   /** The Response Adapters the run it was saved from went through. */
   adapters: Record<string, string>;
+  /** What its MCP tool says it does, if the developer wrote it. */
+  description?: string;
 };
 
-const settingsSchema = z.object({ writeBudget: z.int().nonnegative() });
+const settingsSchema = z.object({
+  writeBudget: z.int().nonnegative(),
+  expose: z.boolean().optional(),
+  description: z.string().min(1).optional(),
+});
 
 /**
  * Loads a Workflow for a run, re-checking it since the developer may have
@@ -341,12 +347,9 @@ export async function loadWorkflow(
     tools: Set<string>;
   }
 ): Promise<
-  { ok: true; workflow: LoadedWorkflow } | { ok: false; error: string }
+  { ok: true; workflow: LoadedWorkflow } | { ok: false; reason: string }
 > {
-  const refuse = (error: string) => ({
-    ok: false as const,
-    error: `Workflow ${name} not run: ${error}.`,
-  });
+  const refuse = (reason: string) => ({ ok: false as const, reason });
   const dir = join(root, ".workflows");
   const record = namePattern.test(name)
     ? await readParsed(join(dir, `${name}.json`), recordSchema)
@@ -373,7 +376,7 @@ export async function loadWorkflow(
     : undefined;
   if (!parsedSettings?.success) {
     return refuse(
-      "it must export const settings = { writeBudget: <n> }, with n a whole number of writes"
+      "it must export const settings = { writeBudget: <n> }, with n a whole number of writes; expose, if set, true or false; and description, if set, some text"
     );
   }
   for (const tool of record.tools) {
@@ -392,8 +395,58 @@ export async function loadWorkflow(
       tools: record.tools,
       contract: record.contract,
       adapters: record.adapters,
+      ...(parsedSettings.data.description !== undefined && {
+        description: parsedSettings.data.description,
+      }),
     },
   };
+}
+
+/** A saved Workflow the developer opted into appearing as its own MCP tool. */
+export type ExposedWorkflow = {
+  name: string;
+  description: string;
+  /** The JSON Schema of main's input, an object as a tool's arguments are. */
+  input: JsonSchema;
+};
+
+/**
+ * The saved Workflows whose settings set `expose: true`, checked as before
+ * a run, and why any of them is left out.
+ */
+export async function exposedWorkflows(
+  root: string,
+  sdk: Parameters<typeof loadWorkflow>[2]
+): Promise<{ workflows: ExposedWorkflow[]; skipped: string[] }> {
+  const workflows: ExposedWorkflow[] = [];
+  const skipped: string[] = [];
+  for (const { name } of await readRecords(root)) {
+    const source = await readOrNone(join(root, ".workflows", `${name}.ts`));
+    const settings = source && exportedLiteral(source, "settings");
+    if (!settings || !settings.ok || !isRecord(settings.value)) continue;
+    if (settings.value.expose !== true) continue;
+    const loaded = await loadWorkflow(root, name, sdk);
+    if (!loaded.ok) {
+      skipped.push(
+        `Workflow ${name} not exposed as an MCP tool: ${loaded.reason}.`
+      );
+      continue;
+    }
+    const { input, description } = loaded.workflow;
+    if (input.type !== "object") {
+      skipped.push(
+        `Workflow ${name} not exposed as an MCP tool: its input is not an object, as the arguments of a tool are.`
+      );
+      continue;
+    }
+    workflows.push({
+      name,
+      description:
+        description ?? `Runs Workflow ${name}, as run_workflow does.`,
+      input,
+    });
+  }
+  return { workflows, skipped };
 }
 
 /** Checks a Workflow's input against the schema of main's input. */
