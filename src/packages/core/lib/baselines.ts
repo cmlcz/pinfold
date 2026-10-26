@@ -35,11 +35,18 @@ export type Baselines = {
    * once its response shape is known: declared, or observed well enough.
    */
   record(tool: SdkTool, response: unknown): Promise<void>;
+  /**
+   * Pins a Tool's Baseline anew from its listing and this response shape,
+   * in place of the one it has: a Baseline Migration.
+   */
+  repin(tool: SdkTool, outputSchema: JsonSchema): Promise<void>;
 };
 
 export async function openBaselines(root: string): Promise<Baselines> {
   const dir = join(root, ".workflows", "baselines");
   const pinned = new Map<string, Baseline>();
+  // The file each pinned Baseline is in, which a re-pin writes again.
+  const files = new Map<string, string>();
   for (const file of await listJson(dir)) {
     const path = join(dir, file);
     const parsed = baselineSchema.safeParse(await readJson(path));
@@ -49,10 +56,9 @@ export async function openBaselines(root: string): Promise<Baselines> {
       );
     }
     // zod leaves absent keys absent, so the data fits exact optional types.
-    pinned.set(
-      baselineKey(parsed.data.server, parsed.data.tool),
-      parsed.data as Baseline
-    );
+    const id = baselineKey(parsed.data.server, parsed.data.tool);
+    pinned.set(id, parsed.data as Baseline);
+    files.set(id, path);
   }
 
   // Inferred shapes of Tools whose responses have not shown enough yet.
@@ -65,13 +71,13 @@ export async function openBaselines(root: string): Promise<Baselines> {
       ...tool,
       outputSchema,
     }) as Baseline;
+    const file =
+      files.get(id) ?? join(dir, toolFileName(baseline.server, baseline.tool));
     pinned.set(id, baseline);
+    files.set(id, file);
     observed.delete(id);
     await mkdir(dir, { recursive: true });
-    await writeFile(
-      join(dir, toolFileName(baseline.server, baseline.tool)),
-      `${JSON.stringify(baseline, null, 2)}\n`
-    );
+    await writeFile(file, `${JSON.stringify(baseline, null, 2)}\n`);
   }
 
   return {
@@ -87,6 +93,7 @@ export async function openBaselines(root: string): Promise<Baselines> {
       if (isFullyObserved(merged)) return pin(tool, forPinning(merged));
       observed.set(id, merged);
     },
+    repin: pin,
   };
 }
 

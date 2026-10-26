@@ -172,3 +172,72 @@ describe("pinfold run", () => {
     expect(repeated.stderr).toMatch(/^--title is given more than once\n/);
   });
 });
+
+describe("pinfold baseline migrate", () => {
+  it("says when a Tool's Baseline is its live shape already", async () => {
+    const core = await openCore(await loadConfig(config), { root: dir });
+    try {
+      const result = await core.explore({
+        code: `export async function main() {
+          const { issues } = await sdk.linear.searchIssues({ query: "" });
+          return issues.length;
+        }`,
+      });
+      if (!result.ok) throw new Error(result.error);
+      // The Fixtures of a saved Workflow hold the calls a migration repeats.
+      await core.saveWorkflow({
+        run: result.exploration,
+        name: "count_issues",
+        confirmed: true,
+      });
+    } finally {
+      await core.close();
+    }
+
+    const { code, stdout } = await pinfold(
+      "baseline",
+      "migrate",
+      "linear.searchIssues",
+      "--yes"
+    );
+
+    expect(code).toBe(0);
+    expect(stdout).toBe(
+      "The Baseline of linear.searchIssues is the shape its server gives it now already; nothing to migrate.\n"
+    );
+  });
+
+  it("fails with the reason when the Tool has no Baseline", async () => {
+    const { code, stderr } = await pinfold(
+      "baseline",
+      "migrate",
+      "linear.searchIssues"
+    );
+
+    expect(code).toBe(1);
+    expect(stderr).toBe(
+      "Baseline of linear.searchIssues not migrated: it has no Baseline yet; the first run that calls it pins one.\n"
+    );
+  });
+
+  it("refuses options other than --yes with the usage and exit code 2", async () => {
+    const results = [
+      await pinfold("baseline", "migrate"),
+      await pinfold("baseline", "migrate", "linear.searchIssues", "--force"),
+      await pinfold("baseline", "migrate", "linear.searchIssues", "--yes=1"),
+      await pinfold(
+        "baseline",
+        "optional",
+        "linear.searchIssues",
+        "a",
+        "--yes"
+      ),
+      await pinfold("plans", "--yes"),
+    ];
+
+    for (const result of results) {
+      expect(result.code).toBe(2);
+      expect(result.stderr).toContain("usage:");
+    }
+  });
+});

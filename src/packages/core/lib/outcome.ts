@@ -97,8 +97,16 @@ export function formatWorkflowRun(
 }
 
 // A Repair as the Approval view shows it: the Adapter diff, then the value
-// evidence.
+// evidence. A Baseline Migration shows the Baseline's changes instead.
 function formatRepair(repair: RepairRecord): string {
+  if (repair.by === "migration") {
+    return [
+      `A Baseline Migration moved ${repair.tool} to the shape its server gives it now, and reset its Response Adapter, now version ${repair.version}:`,
+      ...repair.diff.map((line) => `  ${line}`),
+      "Changes to its Baseline:",
+      ...repair.evidence.map((line) => `  ${line}`),
+    ].join("\n");
+  }
   const who = {
     pinfold: "pinfold",
     agent: "An agent, through propose_repair,",
