@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // The pinfold CLI:
 //   node bin.ts classify [read|write <server.tool>...] [--config pinfold.json]
 //   node bin.ts plans [--config pinfold.json]
