@@ -81,6 +81,15 @@ describe("Configuration", () => {
     );
   });
 
+  it("names a config file that is not valid JSON", async () => {
+    const path = join(ws.dir, "pinfold.json");
+    await writeFile(path, "{");
+
+    await expect(loadConfig(path)).rejects.toThrow(
+      `${path} is not valid JSON: `
+    );
+  });
+
   it("names the Downstream Server that cannot be started", async () => {
     await expect(
       openCore(

@@ -13,6 +13,7 @@ import { splitToolName, toolFileName } from "./baselines.ts";
 import {
   isMissing,
   mismatches,
+  sameMismatch,
   touches,
   touching,
   uniqueMismatches,
@@ -29,7 +30,7 @@ import {
   valuesAt,
   type Step,
 } from "./paths.ts";
-import { listJson, prepareState, readOrNone, safeJson } from "./files.ts";
+import { listJson, prepareState, readParsed } from "./files.ts";
 import { canonicalize } from "./plan.ts";
 import type { JsonSchema } from "./schema.ts";
 
@@ -79,7 +80,7 @@ export type DriftedTool = {
  */
 export function searchRepair(drift: DriftedTool): RepairSearch {
   const { baseline, ops, responses } = drift;
-  const reads = [...new Set(drift.contracts.flat())];
+  const reads = readsOf(drift);
   const driftedWith = drifting(drift);
   const adaptedWith = (trial: Op[]) =>
     responses.map(({ response }) => applyOps(trial, response));
@@ -91,7 +92,7 @@ export function searchRepair(drift: DriftedTool): RepairSearch {
     const base = [...ops, ...chosen];
     const before = driftedWith(base);
     // An op chosen for another field may have repaired this one too.
-    if (!before.some((mismatch) => same(mismatch, target))) continue;
+    if (!before.some((mismatch) => sameMismatch(mismatch, target))) continue;
     // The same check propose_repair makes of every proposal.
     const paged = pagedReason(drift, base);
     if (paged !== undefined) return { kind: "manual", reason: paged };
@@ -103,7 +104,7 @@ export function searchRepair(drift: DriftedTool): RepairSearch {
         const fits = driftedWith(trial).every(
           (mismatch) =>
             mismatch.path !== target.path &&
-            before.some((other) => same(other, mismatch))
+            before.some((other) => sameMismatch(other, mismatch))
         );
         if (!fits) return [];
         const adapted = adaptedWith(trial);
@@ -174,7 +175,7 @@ export function checkRepair(
     applyOps(final, response)
   );
   const history = historyOf(drift.fixtures, drift.responses);
-  const evidence = [...new Set(drift.contracts.flat())]
+  const evidence = readsOf(drift)
     .filter((read) => targets.some((target) => touches(target.path, read)))
     .map(
       (read) =>
@@ -218,6 +219,12 @@ export function madeUpDefaults(
   });
 }
 
+// Every field path read of the Tool, by a saved Workflow or the run that
+// drifted.
+function readsOf(drift: Pick<DriftedTool, "contracts">): string[] {
+  return [...new Set(drift.contracts.flat())];
+}
+
 // The mismatches of the live responses through some ops that touch a field
 // a saved Workflow reads. One that touches none of the reads touches no
 // Contract, so responses without such mismatches satisfy every affected
@@ -226,7 +233,7 @@ function drifting(
   drift: DriftedTool,
   options: { redactedFits?: boolean } = {}
 ): (trial: Op[]) => Mismatch[] {
-  const reads = [...new Set(drift.contracts.flat())];
+  const reads = readsOf(drift);
   return (trial) =>
     uniqueMismatches(
       drift.responses.flatMap(({ response }) =>
@@ -254,7 +261,7 @@ export function repairTask(
   pending: PendingDrift,
   drift: Omit<DriftedTool, "responses">
 ): RepairTask {
-  const reads = [...new Set(drift.contracts.flat())].sort();
+  const reads = readsOf(drift).sort();
   const history = historyOf(drift.fixtures, pending.responses);
   const fixtureValues = reads
     .filter((read) =>
@@ -565,10 +572,6 @@ function mean(numbers: number[]): number {
   return numbers.reduce((sum, n) => sum + n, 0) / numbers.length;
 }
 
-function same(a: Mismatch, b: Mismatch): boolean {
-  return a.path === b.path && a.problem === b.problem;
-}
-
 function isNumber(value: unknown): value is number {
   return typeof value === "number";
 }
@@ -663,11 +666,8 @@ export function openRepairs(root: string): Repairs {
   };
   return {
     async get(tool, digest) {
-      const text = await readOrNone(file("repairs", tool));
-      const parsed = recordSchema.safeParse(text && safeJson(text));
-      return parsed.success && parsed.data.digest === digest
-        ? parsed.data
-        : undefined;
+      const record = await readParsed(file("repairs", tool), recordSchema);
+      return record?.digest === digest ? record : undefined;
     },
     async record(repair) {
       await write("repairs", repair.tool, repair);
@@ -680,9 +680,8 @@ export function openRepairs(root: string): Repairs {
       const drift = join(root, ".pinfold", "drift");
       for (const name of await listJson(drift)) {
         // Settled since the listing, or damaged: either way not pending.
-        const text = await readOrNone(join(drift, name));
-        const parsed = pendingSchema.safeParse(text && safeJson(text));
-        if (parsed.success) found.push(parsed.data);
+        const pending = await readParsed(join(drift, name), pendingSchema);
+        if (pending !== undefined) found.push(pending);
       }
       return found.sort((a, b) => a.tool.localeCompare(b.tool));
     },

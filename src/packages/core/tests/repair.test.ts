@@ -290,6 +290,26 @@ describe("Deterministic Repair", () => {
     expect(await core.pendingDrift()).toHaveLength(1);
   });
 
+  it("lists pending Drift files that parse, and skips the others", async () => {
+    const core = await openTriage();
+    const drift = join(ws.dir, ".pinfold", "drift");
+    await mkdir(drift, { recursive: true });
+    await writeFile(join(drift, "broken.json"), "{");
+    await writeFile(join(drift, "other.json"), "{}");
+    const pending = {
+      tool: "sentry.listIssues",
+      workflow: "triage_sentry",
+      at: "2026-10-26T00:00:00.000Z",
+      mismatches: [{ path: "issues[].count", problem: "is missing" }],
+      reason: "no op fits",
+    };
+    await writeFile(join(drift, "kept.json"), JSON.stringify(pending));
+
+    expect(await core.pendingDrift()).toEqual([
+      { ...pending, reads: [], responses: [] },
+    ]);
+  });
+
   it("reports a pagination change as needing a manual fix", async () => {
     const core = await openTriage();
     await saveApplied(core, "triage_sentry");
