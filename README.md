@@ -73,7 +73,7 @@ Start pinfold as an MCP server over stdio. Add this command to your agent's MCP 
 node src/packages/gateway/bin.ts --config pinfold.json
 ```
 
-The agent gets six tools:
+The agent gets six tools, plus one for each workflow you opt in (see [Save a workflow](#save-a-workflow)):
 
 - **`search_sdk`** finds the TypeScript signatures of the tools that match a keyword query.
 - **`run_sandbox`** runs a program that exports `main(input)` and calls tools with `await sdk.<server>.<tool>(args)`.
@@ -96,7 +96,12 @@ The `classify` command reads the tool list from your servers, so they must be re
 
 ## Approve writes
 
-When a run includes writes, `run_sandbox` returns the plan and reports that nothing was sent. Review the plan in your terminal:
+When a run includes writes, nothing is sent until you approve its plan. If your client supports MCP elicitation, as Claude Code does, the run asks you in a dialog that shows the plan and the repair behind each changed adapter. Approve, and pinfold sends the writes and returns the result. Decline, and no run sends that plan. Close the dialog, and the plan waits for you in the terminal.
+
+> [!WARNING]
+> The dialog is the safeguard. A client hook or setting that answers elicitations for you, without showing them, approves every plan unread. Do not auto-answer pinfold's elicitations.
+
+Otherwise, `run_sandbox` returns the plan and reports that nothing was sent. Review the plan in your terminal:
 
 ```sh
 node src/packages/cli/bin.ts plans              # list pending plans
@@ -110,7 +115,7 @@ A write whose real result no longer has a field a later write needs, because the
 
 A write that fails while it is being sent may still have reached its server: a server can make the change and then answer with an error. pinfold never sends such a write again by itself. The run stops with that write in doubt, and `resume` refuses to go on. Check the server, then tell pinfold what you found with `resolve`. A write you resolve as `not-sent` is sent by the next `resume`; one resolved as `sent` never is, and the writes after it follow.
 
-After you approve a plan, the agent runs the same code again. pinfold rebuilds the plan and sends the writes only if the plan has not changed. If it has changed, nothing is sent, and you need to approve the new plan. Inside a run, `Date` stands still and `Math.random` is seeded. The run after Approval gets the same time and seed, so a write that uses them rebuilds as you approved it.
+After you approve a plan in the terminal, the agent runs the same code again; after the dialog, pinfold does that itself. pinfold rebuilds the plan and sends the writes only if the plan has not changed. If it has changed, nothing is sent, and you need to approve the new plan. Inside a run, `Date` stands still and `Math.random` is seeded. The run after Approval gets the same time and seed, so a write that uses them rebuilds as you approved it.
 
 ## Save a workflow
 
@@ -125,7 +130,7 @@ If a check fails, nothing is written, and the result names the failed check. A r
 
 A saved workflow is made of these files:
 
-- **`.workflows/<name>.ts`** holds the code and `export const settings = { writeBudget: 10 }`. You own this file and may edit it.
+- **`.workflows/<name>.ts`** holds the code and `export const settings = { writeBudget: 10 }`. You own this file and may edit it. Add `expose: true` to settings to give the agent the workflow as its own tool, named after it and taking `main`'s input as its arguments, from the next gateway start. Add `description: "..."` to say what the tool does. A workflow whose input is not an object, or that fails its checks, is left out, and the gateway says why on stderr.
 - **`.workflows/<name>.json`** holds the input schema, the tools the workflow calls, and its contract: the response fields the code read.
 - **`.workflows/fixtures/<name>.json`** holds the run's input and its read tool calls with their responses, after redaction. It is git-ignored.
 

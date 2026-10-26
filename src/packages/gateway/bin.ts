@@ -18,6 +18,8 @@ try {
   console.error(`pinfold: ${(error as Error).message}`);
   process.exit(1);
 }
+const { workflows, skipped } = await core.exposedWorkflows();
+for (const line of skipped) console.error(`pinfold: ${line}`);
 const transport = new StdioServerTransport();
 transport.onclose = () => void core.close();
-await createGateway(core, { root }).connect(transport);
+await createGateway(core, { root, workflows }).connect(transport);
