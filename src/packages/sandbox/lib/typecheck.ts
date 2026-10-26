@@ -37,10 +37,84 @@ const libraryFiles = new Map(
 
 /** Error messages with positions in program.ts; empty when the program checks. */
 export function typecheck(source: string, declarations: string): string[] {
-  return ts
-    .getPreEmitDiagnostics(checkedProgram(source, declarations))
-    .map(describeDiagnostic);
+  const program = checkedProgram(source, declarations);
+  const errors = ts.getPreEmitDiagnostics(program).map(describeDiagnostic);
+  return errors.length > 0 ? errors : placeholderConditions(program);
 }
+
+/**
+ * Where a value typed as a Placeholder decides a condition, is compared, or
+ * has its typeof taken. At run time a Placeholder cannot see any of these,
+ * so a Plan would silently take one branch that Apply might not (#29).
+ */
+function placeholderConditions(
+  program: ts.Program & { programFile: string }
+): string[] {
+  const checker = program.getTypeChecker();
+  const file = program.getSourceFile(program.programFile)!;
+  const found: string[] = [];
+  const check = (expression: ts.Expression | undefined) => {
+    if (expression === undefined) return;
+    const type = checker.getTypeAtLocation(expression);
+    const types = type.isUnion() ? type.types : [type];
+    if (!types.some((member) => member.getProperty("__placeholder"))) return;
+    const { line, character } = file.getLineAndCharacterOfPosition(
+      expression.getStart(file)
+    );
+    found.push(
+      `A Placeholder cannot decide a condition, be compared or have its typeof taken: its value is known only after Apply, so the Plan would take one branch blindly. Use it only as an argument to a Write Tool or in main's return value.\n    at program.ts:${line + 1}:${character + 1}`
+    );
+  };
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isIfStatement(node) ||
+      ts.isWhileStatement(node) ||
+      ts.isDoStatement(node) ||
+      ts.isSwitchStatement(node)
+    ) {
+      check(node.expression);
+    } else if (ts.isForStatement(node)) {
+      check(node.condition);
+    } else if (ts.isConditionalExpression(node)) {
+      check(node.condition);
+    } else if (ts.isTypeOfExpression(node)) {
+      check(node.expression);
+    } else if (
+      ts.isPrefixUnaryExpression(node) &&
+      node.operator === ts.SyntaxKind.ExclamationToken
+    ) {
+      check(node.operand);
+    } else if (ts.isBinaryExpression(node)) {
+      const operator = node.operatorToken.kind;
+      if (deciding.has(operator)) check(node.left);
+      if (comparing.has(operator)) {
+        check(node.left);
+        check(node.right);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return [...new Set(found)];
+}
+
+// Operators whose left operand decides what the expression yields.
+const deciding = new Set([
+  ts.SyntaxKind.AmpersandAmpersandToken,
+  ts.SyntaxKind.BarBarToken,
+  ts.SyntaxKind.QuestionQuestionToken,
+]);
+
+const comparing = new Set([
+  ts.SyntaxKind.EqualsEqualsToken,
+  ts.SyntaxKind.EqualsEqualsEqualsToken,
+  ts.SyntaxKind.ExclamationEqualsToken,
+  ts.SyntaxKind.ExclamationEqualsEqualsToken,
+  ts.SyntaxKind.LessThanToken,
+  ts.SyntaxKind.LessThanEqualsToken,
+  ts.SyntaxKind.GreaterThanToken,
+  ts.SyntaxKind.GreaterThanEqualsToken,
+]);
 
 /** The program and the SDK, as the type checker sees them. */
 export function checkedProgram(
