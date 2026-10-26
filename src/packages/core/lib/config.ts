@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import * as z from "zod";
 import type { Limits } from "../../sandbox/index.ts";
+import { readJson } from "./files.ts";
 import { parsePath } from "./paths.ts";
 
 // A reference to an environment variable inside a value: ${NAME}.
@@ -173,23 +174,15 @@ export async function classifyTools(
 }
 
 export async function loadConfig(path: string): Promise<PinfoldConfig> {
-  let text: string;
+  let json: unknown;
   try {
-    text = await readFile(path, "utf8");
+    json = await readJson(path);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     throw new Error(
       `${path} does not exist; create a pinfold config there, or pass --config <path>`,
       { cause: error }
     );
-  }
-  let json: unknown;
-  try {
-    json = JSON.parse(text);
-  } catch (error) {
-    throw new Error(`${path} is not valid JSON: ${(error as Error).message}`, {
-      cause: error,
-    });
   }
   const parsed = configSchema.safeParse(json);
   if (!parsed.success) {

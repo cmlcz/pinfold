@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -339,5 +339,19 @@ describe("list_workflows", () => {
     expect(formatWorkflows(await listWorkflows(ws.dir))).toBe(
       "No saved Workflows."
     );
+  });
+
+  it("skips a record that is not JSON or not a Workflow record", async () => {
+    const core = await openTriage();
+    const run = explorationOf(
+      await core.explore({ code: "export async function main() { return 1; }" })
+    );
+    await core.saveWorkflow({ run, name: "noop", confirmed: true });
+    await writeFile(join(ws.dir, ".workflows", "broken.json"), "{");
+    await writeFile(join(ws.dir, ".workflows", "other.json"), "{}");
+
+    const names = (await listWorkflows(ws.dir)).map(({ name }) => name);
+
+    expect(names).toEqual(["noop"]);
   });
 });

@@ -20,10 +20,9 @@ import type {
   ResumeResult,
   WorkflowRunResult,
 } from "./lib/outcome.ts";
-import { runWorkflow } from "./lib/workflow-run.ts";
+import { runWorkflow, type WorkflowRunRequest } from "./lib/workflow-run.ts";
 import {
   saveWorkflow,
-  type CommandLineInput,
   type Exploration,
   type SaveResult,
 } from "./lib/workflows.ts";
@@ -102,13 +101,7 @@ export type Core = {
    * unattended unless Approval is required. Each run is kept in the run
    * history.
    */
-  runWorkflow(
-    request: { name: string } & (
-      | { input: unknown }
-      /** Read against main's input type as the code is now. */
-      | { commandLine: CommandLineInput }
-    )
-  ): Promise<WorkflowRunResult>;
+  runWorkflow(request: WorkflowRunRequest): Promise<WorkflowRunResult>;
   /** The Drift that deterministic Repair could not settle, by Tool. */
   pendingDrift(): Promise<PendingDrift[]>;
   /**
