@@ -21,6 +21,7 @@ import {
   readParsed,
   safeJson,
 } from "./files.ts";
+import type { Traffic } from "./downstream.ts";
 import { deepestPaths, isRecord, redact, withoutDataKeys } from "./paths.ts";
 
 const defaultWriteBudget = 10;
@@ -533,7 +534,7 @@ export type RunEntry = {
   /** How many writes the run's Write Plan held. */
   writes?: number;
   error?: string;
-};
+} & Partial<Traffic>;
 
 // The run history is the git-ignored state directory's runs.jsonl, one line
 // per run. Lines are appended whole, so runs of several processes can share
