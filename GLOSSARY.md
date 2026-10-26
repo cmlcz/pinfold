@@ -83,7 +83,7 @@ _Avoid_: write cap, max writes, circuit breaker
 ## Contracts and drift
 
 **Baseline**:
-The shape of a Tool, both what it accepts and what it returns, pinned the first time the Tool is called, through which every Workflow accesses that Tool.
+The shape of a Tool, both what it accepts and what it returns, pinned from the first call that shows its full shape, through which every Workflow accesses that Tool.
 _Avoid_: schema version, snapshot, original schema
 
 **Contract**:
@@ -91,7 +91,7 @@ The subset of a Tool's Baseline response shape that a specific Workflow actually
 _Avoid_: schema, assertion, expectation
 
 **Drift**:
-A discrepancy between a Tool as its Downstream Server offers it now (its responses after the current Response Adapter, or the inputs it accepts) and its pinned Baseline. A Workflow Run is affected only when Drift touches the fields it reads or the inputs it sends.
+A discrepancy between a Tool as its Downstream Server offers it now (its responses after the current Response Adapter, or the inputs it accepts) and its pinned Baseline. A Workflow Run checks the responses, and is affected only when Drift touches the fields it reads; a change in the inputs a Tool accepts shows only in a Baseline Migration, or as a failed call.
 _Avoid_: breaking change, API change, schema mismatch
 
 **Response Adapter**:
