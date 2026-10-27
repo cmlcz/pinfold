@@ -1,6 +1,6 @@
 # Repair drift with per-Tool Response Adapters, never by editing Workflow code
 
-When a Downstream Server's response shape drifts, pinfold writes or updates a declarative Response Adapter that maps the live response back to the Tool's pinned Baseline; it never edits a Workflow file. Each Tool has a single Baseline, pinned when the Tool is first used, and every Workflow accesses the Tool through that Baseline. As a result, a single reviewed Response Adapter repairs every Workflow that uses the Tool, while adopting a newer upstream shape requires an explicit Baseline Migration rather than happening silently.
+When a Downstream Server's response shape drifts, pinfold writes or updates a declarative Response Adapter that maps the live response back to the Tool's pinned Baseline; it never edits a Workflow file. Each Tool has a single Baseline, pinned from its first response that shows its full shape, and every Workflow accesses the Tool through that Baseline. As a result, a single reviewed Response Adapter repairs every Workflow that uses the Tool, while adopting a newer upstream shape requires an explicit Baseline Migration rather than happening silently.
 
 ## Considered Options
 
@@ -12,4 +12,3 @@ When a Downstream Server's response shape drifts, pinfold writes or updates a de
 - Repairs are small, reviewable mappings. For ambiguous field renames, Approval can display value evidence comparing candidate live values against the historical Fixture values of the missing field.
 - New fields added by a Downstream Server remain invisible to Workflows until an explicit Baseline Migration.
 - Drift that cannot be expressed as a single-response mapping (for example, a Tool that now requires an extra call to fetch the same data) is outside the scope of Repair and must be resolved manually.
-

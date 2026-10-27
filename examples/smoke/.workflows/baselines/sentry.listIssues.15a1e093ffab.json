@@ -1,0 +1,88 @@
+{
+  "server": "sentry",
+  "tool": "listIssues",
+  "description": "List the issues of a Sentry project.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "project": {
+        "type": "string"
+      }
+    },
+    "required": ["project"],
+    "$schema": "https://json-schema.org/draft/2020-12/schema"
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "issues": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "shortId": {
+              "type": "string"
+            },
+            "project": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "culprit": {
+              "type": "string"
+            },
+            "filename": {
+              "type": "string"
+            },
+            "lineNumber": {
+              "type": "number"
+            },
+            "level": {
+              "type": "string",
+              "enum": ["fatal", "error", "warning", "info"]
+            },
+            "status": {
+              "type": "string",
+              "enum": ["unresolved", "resolved", "ignored"]
+            },
+            "count": {
+              "type": "number"
+            },
+            "userCount": {
+              "type": "number"
+            },
+            "firstSeen": {
+              "type": "string"
+            },
+            "lastSeen": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "shortId",
+            "project",
+            "title",
+            "culprit",
+            "filename",
+            "lineNumber",
+            "level",
+            "status",
+            "count",
+            "userCount",
+            "firstSeen",
+            "lastSeen"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": ["issues"],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  }
+}

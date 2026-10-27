@@ -17,3 +17,17 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+
+  # H4: a fresh clone runs a saved Workflow through the pinfold command.
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm link
+      - working-directory: examples/smoke
+        run: pinfold run count_unresolved --project web

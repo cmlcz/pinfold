@@ -1,0 +1,20 @@
+{
+  "name": "count_unresolved",
+  "input": {
+    "type": "object",
+    "properties": {
+      "project": {
+        "type": "string"
+      }
+    },
+    "required": ["project"],
+    "additionalProperties": false
+  },
+  "tools": ["sentry.listIssues"],
+  "contract": {
+    "sentry.listIssues": ["issues[].status"]
+  },
+  "adapters": {},
+  "savedFrom": "b7f0027c",
+  "savedAt": "2026-10-26T22:08:27.418Z"
+}

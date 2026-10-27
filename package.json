@@ -7,6 +7,10 @@
   "engines": {
     "node": ">=22.18"
   },
+  "bin": {
+    "pinfold": "src/packages/cli/bin.ts",
+    "pinfold-gateway": "src/packages/gateway/bin.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",

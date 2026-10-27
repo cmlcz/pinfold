@@ -150,6 +150,40 @@ describe("Deterministic Repair", () => {
     expect(await readFile(workflowFile, "utf8")).toBe(source);
   });
 
+  it("proposes no rename when the Fixtures hold too few values to check it against", async () => {
+    // Project api has one issue, so the Fixtures hold one count.
+    const core = await ws.open({
+      servers: { sentry: ws.sentry() },
+      classification: sentryReads,
+    });
+    const explored = await core.explore({
+      code: `export async function main(input: { project: string }) {
+        const { issues } = await sdk.sentry.listIssues(input);
+        return issues.reduce((sum, issue) => sum + issue.count, 0);
+      }`,
+      input: { project: "api" },
+    });
+    if (!explored.ok) throw new Error(explored.error);
+    await core.saveWorkflow({
+      run: explored.exploration,
+      name: "count_api",
+      confirmed: true,
+    });
+    await ws.control("sentry").startDrift("rename");
+
+    const stopped = await core.runWorkflow({
+      name: "count_api",
+      input: { project: "api" },
+    });
+
+    expect(stopped.ok).toBe(false);
+    expect((await core.repairTasks()).map(({ reason }) => reason)).toEqual([
+      expect.stringMatching(
+        /fits issues\[\]\.count, but the Fixtures hold fewer than 3 values of it, too few to check its values against$/
+      ),
+    ]);
+  });
+
   it("asks again when the Adapter changed after the developer approved the plan", async () => {
     const core = await openTriage();
     const explored = await core.explore({ code: triage, input });
@@ -284,7 +318,7 @@ describe("Deterministic Repair", () => {
     expect(result).toMatchObject({
       ok: false,
       error: expect.stringContaining(
-        "fits issues[].tally, but its values agree too little with the Fixtures"
+        "fits issues[].tally, but the Fixtures hold fewer than 3 values of it"
       ),
     });
     expect(await core.pendingDrift()).toHaveLength(1);

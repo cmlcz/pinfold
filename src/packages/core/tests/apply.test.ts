@@ -55,6 +55,34 @@ function planId(result: ExploreResult): string {
 }
 
 describe("Approval and Apply", () => {
+  it("refuses a plan whose write no longer fits the arguments its Write Tool takes, before anything is sent", async () => {
+    const before = await openTriage();
+    await openPlans(ws.dir).approve(planId(await before.explore(triage)));
+    expect(await before.explore(triage)).toMatchObject({ status: "applied" });
+    // A server that started with createIssue taking the title as name.
+    const now = await ws.open({
+      servers: {
+        sentry: ws.sentry("sentry-now"),
+        linear: ws.linear("linear-now", ["renamed-argument"]),
+      },
+      classification: {
+        ...sentryReads,
+        linear: { searchIssues: "read", createIssue: "write" },
+      },
+    });
+
+    const refused = await now.explore(triage);
+
+    expect(refused).toEqual({
+      ok: false,
+      error: expect.stringMatching(
+        /^Write Plan [0-9a-f]{12} not sent: linear\.createIssue now accepts other arguments than its Baseline, and write 1 no longer fits them: name is missing\. Nothing was sent\. `pinfold baseline migrate linear\.createIssue` shows how the Tool changed/
+      ),
+    });
+    expect(await ws.control("linear-now").receivedWrites()).toEqual([]);
+    expect(await openPlans(ws.dir).pending()).toEqual([]);
+  });
+
   it("leaves a Write Plan pending until the developer approves it", async () => {
     const core = await openTriage();
 

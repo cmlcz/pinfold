@@ -75,7 +75,7 @@ export async function openProject(
         const known = baselines.get(tool.server, tool.tool) ?? tool;
         if (isRead(tool)) return known;
         const parts = [known.description, writeToolNote].filter(Boolean);
-        return { ...known, description: parts.join(" ") };
+        return { ...known, description: parts.join(" "), write: true };
       }),
     toolOf(write) {
       const tool = tools.get(write.tool);

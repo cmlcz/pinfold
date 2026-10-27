@@ -4,6 +4,7 @@
 // for Approval.
 import { Placeholder, type Clock } from "../../sandbox/index.ts";
 import { loadAdapters } from "./adapters.ts";
+import { describeMismatch, mismatches } from "./drift.ts";
 import { resolveHint, type RunJournal } from "./journal.ts";
 import {
   span,
@@ -12,7 +13,13 @@ import {
   type PlanOutcome,
   type ResumeResult,
 } from "./outcome.ts";
-import type { PlannedWrite, WritePlan } from "./plan.ts";
+import {
+  canonicalize,
+  containsPlaceholder,
+  type PlannedWrite,
+  type WritePlan,
+} from "./plan.ts";
+import { valuesAt } from "./paths.ts";
 import type { PlanRecord } from "./plans.ts";
 import type { Project } from "./project.ts";
 
@@ -35,6 +42,8 @@ export async function planOutcome(
   const { plans } = project;
   if (plan.writes.length === 0 && !run.needsApproval)
     return { ok: true, status: "complete", value, plan };
+  const refused = inputDrift(project, plan);
+  if (refused !== undefined) return refused;
   const record = await plans.latest(plan.id);
   switch (record?.status) {
     case "approved":
@@ -190,6 +199,48 @@ async function pinResults(
       results[index]
     );
   }
+}
+
+/**
+ * A Write Tool whose listing now asks for other arguments than its Baseline
+ * would refuse a planned write in the middle of Apply, after the writes
+ * before it were sent. So a plan with a write that no longer fits is
+ * refused whole, before Approval and before anything is sent. A field that
+ * holds a Placeholder is left out, since its value is known only at Apply.
+ */
+function inputDrift(project: Project, plan: WritePlan): Failed | undefined {
+  for (const [index, write] of plan.writes.entries()) {
+    const tool = project.toolOf(write);
+    const baseline = project.baselines.get(tool.server, tool.tool);
+    if (
+      baseline === undefined ||
+      sameSchema(baseline.inputSchema, tool.inputSchema)
+    ) {
+      continue;
+    }
+    const found = mismatches(tool.inputSchema, write.arguments).filter(
+      ({ path }) => !holdsPlaceholder(write.arguments, path)
+    );
+    if (found.length === 0) continue;
+    return {
+      ok: false,
+      error: `Write Plan ${plan.id} not sent: ${write.tool} now accepts other arguments than its Baseline, and write ${index + 1} no longer fits them: ${found.map(describeMismatch).join("; ")}. Nothing was sent. \`pinfold baseline migrate ${write.tool}\` shows how the Tool changed; then edit the code to send what it accepts now.`,
+    };
+  }
+  return undefined;
+}
+
+function sameSchema(a: unknown, b: unknown): boolean {
+  return JSON.stringify(canonicalize(a)) === JSON.stringify(canonicalize(b));
+}
+
+// Whether the value at a path, or at any field it lies within, holds a
+// Placeholder.
+function holdsPlaceholder(value: unknown, path: string): boolean {
+  const steps = path.split(".");
+  return steps.some((_, end) =>
+    valuesAt(value, steps.slice(0, end + 1).join(".")).some(containsPlaceholder)
+  );
 }
 
 function busy(plan: WritePlan, record: PlanRecord): Failed {

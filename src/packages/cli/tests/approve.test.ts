@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadConfig, openCore, openPlans } from "../../core/index.ts";
 import { connectControl, driftKitCommand } from "../../drift-kit/index.ts";
+import { pinfoldInTerminal } from "./terminal.ts";
 
 const bin = fileURLToPath(new URL("../bin.ts", import.meta.url));
 let dir: string;
@@ -79,17 +80,50 @@ describe("pinfold plans, approve and decline", () => {
     );
   });
 
-  it("approves a pending plan after showing it, and explains how it gets applied", async () => {
+  it("approves a pending plan after showing it and asking, and explains how it gets applied", async () => {
     const id = await pendingPlan("Fix totals");
 
-    const { code, stdout } = await pinfold("approve", id);
+    const { code, output } = await pinfoldInTerminal([
+      "approve",
+      id,
+      "--config",
+      config,
+    ]);
 
     expect(code).toBe(0);
-    expect(stdout).toContain('  1. linear.createIssue {"title":"Fix totals"}');
-    expect(stdout).toContain(
-      `Approved Write Plan ${id}. It is sent when the same code runs again and rebuilds the same plan.`
+    expect(output).toContain(
+      [
+        '  1. linear.createIssue {"title":"Fix totals"}',
+        `Approve Write Plan ${id}? Type yes to confirm: yes`,
+        `Approved Write Plan ${id}. It is sent when the same code runs again and rebuilds the same plan.`,
+      ].join("\n")
     );
     expect((await pinfold("plans")).stdout).toBe("No pending Write Plans.\n");
+  });
+
+  it("leaves a plan pending when the developer does not confirm", async () => {
+    const id = await pendingPlan("Fix totals");
+
+    const { code, output } = await pinfoldInTerminal(
+      ["approve", id, "--config", config],
+      "no"
+    );
+
+    expect(code).toBe(1);
+    expect(output).toContain("Nothing changed.");
+    expect((await pinfold("plans")).stdout).toContain(`Write Plan ${id}`);
+  });
+
+  it("refuses to approve outside an interactive terminal, as from an agent's shell", async () => {
+    const id = await pendingPlan("Fix totals");
+
+    const { code, stderr } = await pinfold("approve", id);
+
+    expect(code).toBe(1);
+    expect(stderr).toBe(
+      "pinfold approve asks for confirmation in an interactive terminal, so that an agent cannot run it for the developer. Run it yourself in a terminal.\n"
+    );
+    expect((await pinfold("plans")).stdout).toContain(`Write Plan ${id}`);
   });
 
   it("declines a pending plan so that it is never sent", async () => {
@@ -140,16 +174,28 @@ describe("pinfold resume", () => {
     const { run, id } = await stoppedRun();
 
     const inDoubt = await pinfold("resume", run);
-    const resolved = await pinfold("resolve", run, "1", "not-sent");
+    const refused = await pinfold("resolve", run, "1", "not-sent");
+    const resolved = await pinfoldInTerminal([
+      "resolve",
+      run,
+      "1",
+      "not-sent",
+      "--config",
+      config,
+    ]);
     const resumed = await pinfold("resume", run);
     const again = await pinfold("resume", run);
 
     expect(inDoubt.code).toBe(1);
     expect(inDoubt.stderr).toContain(`pinfold resolve ${run} 1 not-sent`);
-    expect(resolved).toMatchObject({
-      code: 0,
-      stdout: `Recorded write 1 of run ${run} as not sent. \`pinfold resume ${run}\` sends it and the writes after it.\n`,
-    });
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toMatch(
+      /^pinfold resolve asks for confirmation in an interactive terminal/
+    );
+    expect(resolved.code).toBe(0);
+    expect(resolved.output).toContain(
+      `Record write 1 of run ${run} as not sent, so that the next resume sends it? Type yes to confirm: yes\nRecorded write 1 of run ${run} as not sent. \`pinfold resume ${run}\` sends it and the writes after it.\n`
+    );
     expect(resumed).toMatchObject({
       code: 0,
       stdout: `Resumed run ${run}: sent write 1 of Write Plan ${id}.\n`,
