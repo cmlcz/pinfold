@@ -45,8 +45,9 @@ How large these costs are is what the benchmark measures (§10). This document m
 | Developer-initiated **Baseline Migration** and marking a Baseline field optional ([ADR 0008](docs/adr/0008-baseline-migration-from-live-responses.md))                                                                         | Built                                                                                                        |
 | Redacted, git-ignored Fixtures                                                                                                                                                                                                 | Built                                                                                                        |
 | `pinfold stats`                                                                                                                                                                                                                | Built                                                                                                        |
-| **Drift Kit** with Sentry- and Linear-shaped servers and six **Drift Scenarios**                                                                                                                                               | Built                                                                                                        |
-| GitHub-shaped Drift Kit server, the six benchmark tasks, `pinfold bench`, the real-CLI drivers and the lifecycle experiment                                                                                                    | Planned: [#19](https://github.com/cmlcz/pinfold/issues/19)–[#22](https://github.com/cmlcz/pinfold/issues/22) |
+| **Drift Kit** with Sentry-, Linear- and GitHub-shaped servers and six **Drift Scenarios**                                                                                                                                      | Built                                                                                                        |
+| The six benchmark tasks and their checkers (`src/packages/bench/`)                                                                                                                                                             | Built                                                                                                        |
+| `pinfold bench`, the real-CLI drivers and the lifecycle experiment                                                                                                                                                             | Planned: [#20](https://github.com/cmlcz/pinfold/issues/20)–[#22](https://github.com/cmlcz/pinfold/issues/22) |
 | A `pinfold` command from a clone (`npm link`)                                                                                                                                                                                  | Built                                                                                                        |
 | npm publication, which needs a build step: Node does not strip types in `node_modules`                                                                                                                                         | Planned: [#23](https://github.com/cmlcz/pinfold/issues/23)                                                   |
 
@@ -335,9 +336,9 @@ It never estimates tokens saved, because pinfold cannot observe the host agent's
 
 ### 10.2 Benchmark (`pinfold bench`)
 
-_Not built yet._ The work is split across four issues:
+_Partly built._ The work is split across four issues:
 
-- [#19](https://github.com/cmlcz/pinfold/issues/19): the GitHub-shaped server and the six tasks;
+- [#19](https://github.com/cmlcz/pinfold/issues/19): the GitHub-shaped server and the six tasks (built);
 - [#20](https://github.com/cmlcz/pinfold/issues/20): the harness and the minimal agent loop;
 - [#21](https://github.com/cmlcz/pinfold/issues/21): the Claude Code and Codex CLI drivers;
 - [#22](https://github.com/cmlcz/pinfold/issues/22): the lifecycle experiment.
@@ -357,7 +358,7 @@ The benchmark compares four **Arms** on identical tasks:
 | **A3 Saved skill** | The agent reuses its earlier program, as told by one line in `CLAUDE.md` or `AGENTS.md`, with an LLM still driving each run. |
 | **A4 pinfold**     | A pinfold Workflow Run, with no LLM.                                                                                         |
 
-- **Tasks.** Six tasks run against the Drift Kit: read-heavy, multi-server join, write-heavy, large paginated responses, in-run deduplication, and mixed. Each task is run with three different inputs.
+- **Tasks.** Six tasks run against the Drift Kit, one per category: read-heavy (`error-digest`), multi-server join (`issue-owners`), write-heavy (`file-issues`), large paginated responses (`commit-counts`), in-run deduplication (`triage-once`), and mixed (`triage-assign`). Each task is run with three different inputs. A checker judges each run from the servers' final state and received writes, and from the returned value for a task that only reads; the tasks and checkers are in `src/packages/bench/`.
 - **Drivers.** Claude Code and Codex CLI routed through OpenRouter, plus a minimal OpenRouter agent loop for other models. Every run pins the exact model and provider, with fallbacks disabled. Every run logs the CLI version, the model ID, the time and the raw JSON events. Subscription logins are used only for single compatibility runs ([ADR 0006](docs/adr/0006-benchmark-through-openrouter-not-subscriptions.md)).
 - **Metrics per Arm and task:**
   - token counts (input, cached, cache-write, output, reasoning), normalized across CLI log formats;

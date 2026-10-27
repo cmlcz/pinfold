@@ -79,6 +79,46 @@ export const seedIssues: readonly SentryIssue[] = [
     firstSeen: "2026-10-17T06:45:00Z",
     lastSeen: "2026-10-17T23:10:00Z",
   },
+  // A batch-jobs project with many issues, two of them regressions that
+  // share a culprit with an earlier issue.
+  ...(
+    [
+      ["mailer.ts in sendDigest", "src/jobs/mailer.ts", 31, "unresolved", 412],
+      [
+        "billing.ts in chargeCard",
+        "src/jobs/billing.ts",
+        77,
+        "unresolved",
+        260,
+      ],
+      ["export.ts in writeCsv", "src/jobs/export.ts", 12, "unresolved", 198],
+      ["cleanup.ts in purgeOld", "src/jobs/cleanup.ts", 54, "unresolved", 151],
+      ["mailer.ts in sendDigest", "src/jobs/mailer.ts", 31, "unresolved", 133],
+      ["sync.ts in pullVendors", "src/jobs/sync.ts", 140, "unresolved", 120],
+      ["report.ts in buildWeekly", "src/jobs/report.ts", 66, "unresolved", 97],
+      ["billing.ts in refund", "src/jobs/billing.ts", 203, "unresolved", 88],
+      ["export.ts in writeCsv", "src/jobs/export.ts", 12, "unresolved", 75],
+      ["cleanup.ts in vacuum", "src/jobs/cleanup.ts", 99, "resolved", 64],
+      ["sync.ts in pushOrders", "src/jobs/sync.ts", 18, "unresolved", 41],
+      ["report.ts in emailPdf", "src/jobs/report.ts", 150, "ignored", 23],
+    ] as const
+  ).map(
+    ([culprit, filename, lineNumber, status, count], index): SentryIssue => ({
+      id: String(4701 + index),
+      shortId: `JOBS-${(index + 1).toString(36).toUpperCase()}`,
+      project: "jobs",
+      title: `JobError: ${culprit.split(" in ")[1]} failed`,
+      culprit,
+      filename,
+      lineNumber,
+      level: "error",
+      status,
+      count,
+      userCount: 0,
+      firstSeen: "2026-10-15T00:00:00Z",
+      lastSeen: `2026-10-17T${String(10 + index).padStart(2, "0")}:00:00Z`,
+    })
+  ),
 ];
 
 export const eventSchema = z.object({
@@ -113,6 +153,27 @@ export const seedEvents: readonly SentryEvent[] = [
     release: "api@1.9.0",
     message: "deadlock detected",
   },
+  {
+    id: "e-9201",
+    issueId: "4701",
+    timestamp: "2026-10-17T10:00:00Z",
+    release: "jobs@2.1.0",
+    message: "SMTP connection reset",
+  },
+  {
+    id: "e-9202",
+    issueId: "4701",
+    timestamp: "2026-10-16T09:00:00Z",
+    release: "jobs@2.0.3",
+    message: "SMTP connection reset",
+  },
+  {
+    id: "e-9203",
+    issueId: "4702",
+    timestamp: "2026-10-17T11:00:00Z",
+    release: "jobs@2.1.0",
+    message: "card declined: insufficient funds",
+  },
 ];
 
 export type SentryProject = {
@@ -134,6 +195,13 @@ export const seedProjects: readonly SentryProject[] = [
   {
     slug: "api",
     name: "Orders API",
+    platform: "node",
+    team: null,
+    archivedAt: null,
+  },
+  {
+    slug: "jobs",
+    name: "Batch jobs",
     platform: "node",
     team: null,
     archivedAt: null,
