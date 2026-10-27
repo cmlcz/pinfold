@@ -37,3 +37,11 @@ export {
   runBenchmark,
   type HarnessOptions,
 } from "./lib/harness.ts";
+export {
+  formatLifecycle,
+  lifecycleDrift,
+  runLifecycle,
+  type LifecycleResult,
+  type LifecycleRun,
+  type ScheduledDrift,
+} from "./lib/lifecycle.ts";

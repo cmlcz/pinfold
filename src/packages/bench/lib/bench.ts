@@ -7,6 +7,7 @@ import {
   connectControl,
   serveDriftKitHttp,
   type ControlClient,
+  type DriftKitServerName,
   type HttpDriftKitServer,
 } from "../../drift-kit/index.ts";
 import type { Outcome } from "./state.ts";
@@ -18,8 +19,15 @@ export const serverNames = ["sentry", "linear", "github"] as const;
 export type Bench = {
   config: PinfoldConfig;
   controls: Record<(typeof serverNames)[number], ControlClient>;
-  /** Restores every server's seed and turns its Drift Scenarios off. */
+  /**
+   * Restores every server's seed and turns its Drift Scenarios off, except
+   * those kept on.
+   */
   reset(): Promise<void>;
+  /** Turns a Drift Scenario on, and keeps it on across resets. */
+  keepDrift(server: DriftKitServerName, scenario: string): Promise<void>;
+  /** Stops keeping Drift Scenarios on, and resets every server. */
+  dropDrift(): Promise<void>;
   /** Resets every server and opens a core on a fresh project. */
   fresh(): Promise<{ core: Core; root: string }>;
   outcome(value: unknown): Promise<Outcome>;
@@ -44,13 +52,29 @@ export async function startBench(): Promise<Bench> {
     classification: benchClassification,
   };
   const cores: Core[] = [];
+  const kept: { server: DriftKitServerName; scenario: string }[] = [];
   const reset = async () => {
     await Promise.all(serverNames.map((name) => controls[name].reset()));
+    for (const { server, scenario } of kept) {
+      await controls[server as (typeof serverNames)[number]].startDrift(
+        scenario
+      );
+    }
   };
   return {
     config,
     controls,
     reset,
+    async dropDrift() {
+      kept.length = 0;
+      await reset();
+    },
+    async keepDrift(server, scenario) {
+      kept.push({ server, scenario });
+      await controls[server as (typeof serverNames)[number]].startDrift(
+        scenario
+      );
+    },
     async fresh() {
       await reset();
       const root = await mkdtemp(join(dir, "run-"));
