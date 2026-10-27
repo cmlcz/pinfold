@@ -5,7 +5,7 @@
 // how alike the field names are and how well the values agree with the
 // Fixtures. It proposes a mapping only where one candidate stands out.
 // Repairs it writes, and Drift it cannot settle, are kept under .pinfold/.
-import { rm, writeFile } from "node:fs/promises";
+import { appendFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as z from "zod";
 import { applyOps, type Op } from "./adapters.ts";
@@ -30,7 +30,13 @@ import {
   valuesAt,
   type Step,
 } from "./paths.ts";
-import { listJson, prepareState, readParsed } from "./files.ts";
+import {
+  listJson,
+  prepareState,
+  readOrNone,
+  readParsed,
+  safeJson,
+} from "./files.ts";
 import { canonicalize } from "./plan.ts";
 import type { JsonSchema } from "./schema.ts";
 
@@ -655,7 +661,21 @@ export type Repairs = {
   settle(tool: string): Promise<void>;
   /** Every Tool's pending Drift. */
   pending(): Promise<PendingDrift[]>;
+  /** Every Repair kept, oldest first, since pinfold began to log them. */
+  log(): Promise<LoggedRepair[]>;
 };
+
+/** A Repair as the Repair log keeps it, in .pinfold/repair-log.jsonl. */
+export type LoggedRepair = Pick<RepairRecord, "tool" | "by" | "version"> & {
+  at: string;
+};
+
+const loggedSchema = z.object({
+  at: z.string(),
+  tool: z.string(),
+  by: z.enum(repairers),
+  version: z.number(),
+});
 
 /** Repairs and pending Drift, in .pinfold/repairs/ and .pinfold/drift/. */
 export function openRepairs(root: string): Repairs {
@@ -668,13 +688,29 @@ export function openRepairs(root: string): Repairs {
     await prepareState(root, dir);
     await writeFile(file(dir, tool), `${JSON.stringify(value, null, 2)}\n`);
   };
+  const logFile = join(root, ".pinfold", "repair-log.jsonl");
   return {
+    async log() {
+      const text = (await readOrNone(logFile)) ?? "";
+      return text.split("\n").flatMap((line) => {
+        const parsed = loggedSchema.safeParse(safeJson(line));
+        return parsed.success ? [parsed.data] : [];
+      });
+    },
     async get(tool, digest) {
       const record = await readParsed(file("repairs", tool), recordSchema);
       return record?.digest === digest ? record : undefined;
     },
     async record(repair) {
       await write("repairs", repair.tool, repair);
+      const { tool, by, version } = repair;
+      const logged: LoggedRepair = {
+        at: new Date().toISOString(),
+        tool,
+        by,
+        version,
+      };
+      await appendFile(logFile, `${JSON.stringify(logged)}\n`);
       await rm(file("drift", repair.tool), { force: true });
     },
     pend: (pending) => write("drift", pending.tool, pending),

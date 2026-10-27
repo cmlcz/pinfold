@@ -227,9 +227,25 @@ Nothing changed yet. `pinfold baseline migrate sentry.listIssues --yes` re-pins 
 
 With `--yes`, pinfold re-pins the baseline and resets the tool's response adapter as a new version with no ops, since the baseline is now the live shape. Like any changed adapter, that makes the next run of every workflow that uses the tool pause for approval, with the baseline's changes in the approval view. Pending drift of the tool is dropped, as it was drift from the old baseline. Edit each workflow that no longer checks before you run it again.
 
+## See what pinfold did
+
+```sh
+node src/packages/cli/bin.ts stats         # read it
+node src/packages/cli/bin.ts stats --json  # for scripts
+```
+
+`stats` reports only what pinfold measured itself:
+
+- exploration runs and workflow runs with their wall time, per workflow and in total;
+- the tool calls they made, and the bytes of the tool responses, which stay in the sandbox: the agent reads only what a run returns;
+- repairs, by who made them;
+- the tokens and cost pinfold spent through the repair model.
+
+It never estimates tokens saved. Runs from before pinfold measured them are counted apart, not as zero. Repairs are counted from the repair log, which began with this version.
+
 ## Where pinfold keeps its state
 
-- **`.pinfold/`** holds the write plans, a journal of the writes already sent, the run history, the repairs pinfold made, the drift it could not repair and the repair model's usage. It is git-ignored.
+- **`.pinfold/`** holds the write plans, a journal of the writes already sent, the run history, a history of exploration runs, the repairs pinfold made and a log of them, the drift it could not repair and the repair model's usage. It is git-ignored.
 - **`.workflows/baselines/`** holds the recorded response shape of each tool.
 - **`.workflows/adapters/`** holds the response adapters.
 - **`.workflows/`** also holds the saved workflows. **`.workflows/fixtures/`** is git-ignored.

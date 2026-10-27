@@ -15,6 +15,7 @@ import {
   withPickedModel,
   type ModelClient,
 } from "./lib/model.ts";
+import { metered } from "./lib/downstream.ts";
 import { migrateBaseline, type MigrationResult } from "./lib/migration.ts";
 import { writePlan } from "./lib/plan.ts";
 import { planRun } from "./lib/plan-run.ts";
@@ -22,6 +23,7 @@ import { openProject } from "./lib/project.ts";
 import { proposeRepair, repairTasks } from "./lib/repair-drift.ts";
 import type { PendingDrift, RepairTask } from "./lib/repair.ts";
 import { declarations, searchTools } from "./lib/sdk.ts";
+import { recordExploration } from "./lib/stats.ts";
 import type {
   ExploreResult,
   ProposalResult,
@@ -52,6 +54,7 @@ export {
   type ToolKind,
 } from "./lib/config.ts";
 export { formatMigration, type MigrationResult } from "./lib/migration.ts";
+export { formatStats, readStats, type Stats } from "./lib/stats.ts";
 export { chatClient, type ModelClient, type ModelUsage } from "./lib/model.ts";
 export type { PlannedWrite, WritePlan } from "./lib/plan.ts";
 export type { PendingDrift, RepairRecord, RepairTask } from "./lib/repair.ts";
@@ -194,6 +197,39 @@ export async function openCore(
     }
   }
 
+  // An Exploration Run: a Plan, then an Apply only of an approved plan.
+  async function explore({
+    code,
+    input = {},
+  }: {
+    code: string;
+    input?: unknown;
+  }): Promise<ExploreResult> {
+    const { key, approved, clock, writes, calls, result, adapters } =
+      await planRun(project, code, input);
+    if (!result.ok) return { ok: false, error: result.error };
+    const tools = [...new Set([...calls, ...writes].map((call) => call.tool))];
+    const plan = writePlan(writes, adapters!.digests(tools));
+    const outcome = await planOutcome(project, plan, result.value, {
+      key,
+      clock,
+      approved,
+      needsApproval: plan.writes.length > 0,
+    });
+    if (!outcome.ok) return outcome;
+    const run = randomUUID().slice(0, 8);
+    remember({
+      run,
+      code,
+      input,
+      calls,
+      tools,
+      reads: result.reads,
+      adapters: plan.adapters,
+    });
+    return { ...outcome, exploration: run };
+  }
+
   return {
     toolClassifications: () =>
       project.downstream.tools.map((tool) => ({
@@ -204,32 +240,15 @@ export async function openCore(
         classified: project.classificationOf(tool) !== undefined,
       })),
     searchSdk: (query) => searchTools(project.sdkTools(), query),
-    async explore({ code, input = {} }) {
-      const { key, approved, clock, writes, calls, result, adapters } =
-        await planRun(project, code, input);
-      if (!result.ok) return { ok: false, error: result.error };
-      const tools = [
-        ...new Set([...calls, ...writes].map((call) => call.tool)),
-      ];
-      const plan = writePlan(writes, adapters!.digests(tools));
-      const outcome = await planOutcome(project, plan, result.value, {
-        key,
-        clock,
-        approved,
-        needsApproval: plan.writes.length > 0,
+    async explore(request) {
+      const { value: result, traffic } = await metered(() => explore(request));
+      await recordExploration(project.root, {
+        ...(result.ok && { exploration: result.exploration }),
+        at: new Date().toISOString(),
+        status: result.ok ? result.status : "failed",
+        ...traffic,
       });
-      if (!outcome.ok) return outcome;
-      const run = randomUUID().slice(0, 8);
-      remember({
-        run,
-        code,
-        input,
-        calls,
-        tools,
-        reads: result.reads,
-        adapters: plan.adapters,
-      });
-      return { ...outcome, exploration: run };
+      return result;
     },
     runWorkflow: (request) => runWorkflow(project, request),
     exposedWorkflows: () =>
