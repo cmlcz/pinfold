@@ -4,6 +4,7 @@
 // be, and the run tried again.
 import { planOutcome } from "./apply.ts";
 import { toolName } from "./baselines.ts";
+import { metered } from "./downstream.ts";
 import { touching } from "./drift.ts";
 import {
   shortHash,
@@ -43,11 +44,14 @@ export async function runWorkflow(
   { name, ...given }: WorkflowRunRequest
 ): Promise<WorkflowRunResult> {
   const ran: Ran = {};
-  const result = await runOnce(project, name, given, ran);
+  const { value: result, traffic } = await metered(() =>
+    runOnce(project, name, given, ran)
+  );
   await recordRun(project.root, {
     workflow: name,
     ...ran,
     at: new Date().toISOString(),
+    ...traffic,
     status: result.ok ? result.status : "failed",
     ...(result.ok
       ? { plan: result.plan.id, writes: result.plan.writes.length }

@@ -8,11 +8,13 @@
 //   node bin.ts baseline migrate <server.tool> [--yes] [--config pinfold.json]
 //   node bin.ts list [--config pinfold.json]
 //   node bin.ts run <workflow> [<value> | --<field> <value>...] [--config pinfold.json]
+//   node bin.ts stats [--json] [--config pinfold.json]
 import { dirname, resolve } from "node:path";
 import {
   classifyTools,
   formatMigration,
   formatResume,
+  formatStats,
   formatWorkflowRun,
   formatWorkflows,
   listWorkflows,
@@ -20,6 +22,7 @@ import {
   makeFieldOptional,
   openCore,
   openPlans,
+  readStats,
   reviewPlan,
   type CommandLineInput,
   type Core,
@@ -36,6 +39,7 @@ const usage = `usage:
   pinfold baseline migrate <server.tool> [--yes] [--config <path>]
   pinfold list [--config <path>]
   pinfold run <workflow> [<value> | --<field> <value>...] [--config <path>]
+  pinfold stats [--json] [--config <path>]
 
 pinfold run takes one value for a Workflow whose input is not an object, or
 else a flag per input field; a value starting with -- is given as
@@ -47,7 +51,11 @@ sending the write.
 
 pinfold baseline migrate shows how a tool's live shape differs from its
 baseline and checks every workflow that calls it; with --yes it re-pins
-the baseline, and each of those workflows waits for approval once.`;
+the baseline, and each of those workflows waits for approval once.
+
+pinfold stats shows what pinfold measured: runs and their wall time, tool
+calls and the bytes of their responses, repairs and repair model tokens;
+--json prints it for machines.`;
 
 // A Workflow Run that pauses for Approval exits with this code, so that cron
 // or CI can tell it from a failure.
@@ -160,6 +168,16 @@ async function main(): Promise<number> {
       );
       return 0;
     }
+    case "stats": {
+      if (rest.length > 0) return fail();
+      const stats = await readStats(root);
+      console.log(
+        input.flags.json === true
+          ? JSON.stringify(stats, null, 2)
+          : formatStats(stats)
+      );
+      return 0;
+    }
     case "list":
       if (rest.length > 0) return fail();
       console.log(formatWorkflows(await listWorkflows(root)));
@@ -231,7 +249,8 @@ function parseCommandLine(args: string[]): {
   const unknown = Object.keys(flags).find(
     (flag) =>
       command !== "run" &&
-      !(command === "baseline" && flag === "yes" && flags[flag] === true)
+      !(command === "baseline" && flag === "yes" && flags[flag] === true) &&
+      !(command === "stats" && flag === "json" && flags[flag] === true)
   );
   if (unknown !== undefined) throw new Error(`unknown option --${unknown}`);
   const input: CommandLineInput = { flags };

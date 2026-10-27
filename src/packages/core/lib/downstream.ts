@@ -1,5 +1,7 @@
 // MCP client sessions to the configured Downstream Servers.
+import { AsyncLocalStorage } from "node:async_hooks";
 import { stat } from "node:fs/promises";
+import { performance } from "node:perf_hooks";
 import { resolve } from "node:path";
 import {
   Client,
@@ -17,6 +19,26 @@ export type DownstreamTool = SdkTool & {
   readOnlyHint: boolean;
   call(args: unknown): Promise<unknown>;
 };
+
+/**
+ * What a run did on the Downstream Servers, as pinfold measured it: its
+ * wall time, its Tool calls, and the bytes of their responses as JSON, which
+ * stay in the sandbox rather than reaching the agent.
+ */
+export type Traffic = { ms: number; toolCalls: number; responseBytes: number };
+
+const traffic = new AsyncLocalStorage<Traffic>();
+
+/** Runs `work`, measuring the Tool calls made while it runs. */
+export async function metered<T>(
+  work: () => Promise<T>
+): Promise<{ value: T; traffic: Traffic }> {
+  const measured: Traffic = { ms: 0, toolCalls: 0, responseBytes: 0 };
+  const start = performance.now();
+  const value = await traffic.run(measured, work);
+  measured.ms = Math.round(performance.now() - start);
+  return { value, traffic: measured };
+}
 
 export type Downstream = {
   tools: DownstreamTool[];
@@ -117,7 +139,23 @@ async function connect(server: string, config: ServerConfig, root: string) {
           outputSchema: tool.outputSchema,
         }),
         readOnlyHint: tool.annotations?.readOnlyHint === true,
-        call: (args) => callTool(client, server, tool.name, args, secrets),
+        async call(args) {
+          const measured = traffic.getStore();
+          if (measured) measured.toolCalls++;
+          const response = await callTool(
+            client,
+            server,
+            tool.name,
+            args,
+            secrets
+          );
+          if (measured) {
+            measured.responseBytes += Buffer.byteLength(
+              JSON.stringify(response) ?? ""
+            );
+          }
+          return response;
+        },
       })),
     };
   } catch (error) {
