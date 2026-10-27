@@ -1,0 +1,179 @@
+[
+  {
+    "role": "system",
+    "content": "You are a coding agent. Do the developer's task with the tools you have; do not ask the developer anything. When you are done, reply with the task's result as JSON and nothing else."
+  },
+  {
+    "role": "user",
+    "content": "For every unresolved Sentry issue of project \"jobs\" with at least 0 events, make sure Linear has an issue for its culprit: unless a Linear issue already mentions the culprit, create one titled \"[Sentry] <culprit>\" with the culprit as its description. Several Sentry issues can share a culprit; create at most one Linear issue per culprit."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-bf78f32762c70e54",
+        "function": {
+          "name": "search_sdk",
+          "arguments": "{\"query\": \"sentry issues project list\"}"
+        },
+        "type": "function"
+      },
+      {
+        "id": "chatcmpl-tool-b3d923c3cca3de2a",
+        "function": {
+          "name": "search_sdk",
+          "arguments": "{\"query\": \"linear issues create list\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-bf78f32762c70e54",
+    "content": "/** List the issues of a Sentry project. */\nsdk.sentry.listIssues(args: { project: string }): Promise<{ issues: { id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }[] }>\n\n/** List the Sentry projects of the organization. */\nsdk.sentry.listProjects(args?: { platform?: string }): Promise<unknown>\n\n/** List the events recorded for a Sentry issue, newest first. */\nsdk.sentry.listIssueEvents(args: { issueId: string }): Promise<{ events: { id: string; issueId: string; timestamp: string; release: string; message: string }[] }>\n\n/** Get the members of a Sentry project's team. */\nsdk.sentry.getProjectTeam(args: { slug: string }): Promise<unknown>\n\n/** Get one Sentry issue by its id. */\nsdk.sentry.getIssue(args: { id: string }): Promise<{ id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }>\n\n/** List the repository's commits, newest first, in pages of 50. Pass a page's nextCursor to get the next one. */\nsdk.github.listCommits(args?: { since?: string; cursor?: string }): Promise<{ commits: { sha: string; authorName: string; authorEmail: string; message: string; committedAt: string }[]; nextCursor: string | null }>\n\n/** Search Linear issues whose title or description contains the query. */\nsdk.linear.searchIssues(args: { query: string }): Promise<{ issues: { id: string; identifier: string; title: string; description: string; assigneeEmail: string | null; state: \"Todo\" | \"In Progress\" | \"Done\" }[] }>\n\n/** Create a Linear issue. Write Tool: a run records this call in its Write Plan instead of sending it, and gets a Placeholder back. */\nsdk.linear.createIssue(args: { title: string; description?: string; assigneeEmail?: string }): Promise<Placeholder<{ id: string; identifier: string; title: string; url: string }>>"
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-b3d923c3cca3de2a",
+    "content": "/** Create a Linear issue. Write Tool: a run records this call in its Write Plan instead of sending it, and gets a Placeholder back. */\nsdk.linear.createIssue(args: { title: string; description?: string; assigneeEmail?: string }): Promise<Placeholder<{ id: string; identifier: string; title: string; url: string }>>\n\n/** Search Linear issues whose title or description contains the query. */\nsdk.linear.searchIssues(args: { query: string }): Promise<{ issues: { id: string; identifier: string; title: string; description: string; assigneeEmail: string | null; state: \"Todo\" | \"In Progress\" | \"Done\" }[] }>\n\n/** List the issues of a Sentry project. */\nsdk.sentry.listIssues(args: { project: string }): Promise<{ issues: { id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }[] }>\n\n/** List the events recorded for a Sentry issue, newest first. */\nsdk.sentry.listIssueEvents(args: { issueId: string }): Promise<{ events: { id: string; issueId: string; timestamp: string; release: string; message: string }[] }>\n\n/** List the Sentry projects of the organization. */\nsdk.sentry.listProjects(args?: { platform?: string }): Promise<unknown>\n\n/** Get one Sentry issue by its id. */\nsdk.sentry.getIssue(args: { id: string }): Promise<{ id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }>\n\n/** List the repository's commits, newest first, in pages of 50. Pass a page's nextCursor to get the next one. */\nsdk.github.listCommits(args?: { since?: string; cursor?: string }): Promise<{ commits: { sha: string; authorName: string; authorEmail: string; message: string; committedAt: string }[]; nextCursor: string | null }>"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-bd7de1073407f900",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input) {\\n  const { issues } = await sdk.sentry.listIssues({ project: \\\"jobs\\\" });\\n  return issues.map(i => ({ id: i.id, shortId: i.shortId, status: i.status, count: i.count, culprit: i.culprit, title: i.title }));\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-bd7de1073407f900",
+    "content": "Error: TS7006: Parameter 'input' implicitly has an 'any' type.\n    at program.ts:1:28"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-8a3c2589028ca3e6",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: {}): Promise<unknown> {\\n  const { issues } = await sdk.sentry.listIssues({ project: \\\"jobs\\\" });\\n  return issues.map(i => ({ id: i.id, shortId: i.shortId, status: i.status, count: i.count, culprit: i.culprit, title: i.title }));\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-8a3c2589028ca3e6",
+    "content": "[{\"id\":\"4701\",\"shortId\":\"JOBS-1\",\"status\":\"unresolved\",\"count\":412,\"culprit\":\"mailer.ts in sendDigest\",\"title\":\"JobError: sendDigest failed\"},{\"id\":\"4702\",\"shortId\":\"JOBS-2\",\"status\":\"unresolved\",\"count\":260,\"culprit\":\"billing.ts in chargeCard\",\"title\":\"JobError: chargeCard failed\"},{\"id\":\"4703\",\"shortId\":\"JOBS-3\",\"status\":\"unresolved\",\"count\":198,\"culprit\":\"export.ts in writeCsv\",\"title\":\"JobError: writeCsv failed\"},{\"id\":\"4704\",\"shortId\":\"JOBS-4\",\"status\":\"unresolved\",\"count\":151,\"culprit\":\"cleanup.ts in purgeOld\",\"title\":\"JobError: purgeOld failed\"},{\"id\":\"4705\",\"shortId\":\"JOBS-5\",\"status\":\"unresolved\",\"count\":133,\"culprit\":\"mailer.ts in sendDigest\",\"title\":\"JobError: sendDigest failed\"},{\"id\":\"4706\",\"shortId\":\"JOBS-6\",\"status\":\"unresolved\",\"count\":120,\"culprit\":\"sync.ts in pullVendors\",\"title\":\"JobError: pullVendors failed\"},{\"id\":\"4707\",\"shortId\":\"JOBS-7\",\"status\":\"unresolved\",\"count\":97,\"culprit\":\"report.ts in buildWeekly\",\"title\":\"JobError: buildWeekly failed\"},{\"id\":\"4708\",\"shortId\":\"JOBS-8\",\"status\":\"unresolved\",\"count\":88,\"culprit\":\"billing.ts in refund\",\"title\":\"JobError: refund failed\"},{\"id\":\"4709\",\"shortId\":\"JOBS-9\",\"status\":\"unresolved\",\"count\":75,\"culprit\":\"export.ts in writeCsv\",\"title\":\"JobError: writeCsv failed\"},{\"id\":\"4710\",\"shortId\":\"JOBS-A\",\"status\":\"resolved\",\"count\":64,\"culprit\":\"cleanup.ts in vacuum\",\"title\":\"JobError: vacuum failed\"},{\"id\":\"4711\",\"shortId\":\"JOBS-B\",\"status\":\"unresolved\",\"count\":41,\"culprit\":\"sync.ts in pushOrders\",\"title\":\"JobError: pushOrders failed\"},{\"id\":\"4712\",\"shortId\":\"JOBS-C\",\"status\":\"ignored\",\"count\":23,\"culprit\":\"report.ts in emailPdf\",\"title\":\"JobError: emailPdf failed\"}]\n\nExploration Run ab011c94. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-9f75a8db4bbe34a8",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: {}): Promise<unknown> {\\n  const culprits = [\\n    \\\"mailer.ts in sendDigest\\\",\\n    \\\"billing.ts in chargeCard\\\",\\n    \\\"export.ts in writeCsv\\\",\\n    \\\"cleanup.ts in purgeOld\\\",\\n    \\\"sync.ts in pullVendors\\\",\\n    \\\"report.ts in buildWeekly\\\",\\n    \\\"billing.ts in refund\\\",\\n    \\\"sync.ts in pushOrders\\\",\\n  ];\\n  const out: any = {};\\n  for (const c of culprits) {\\n    out[c] = await sdk.linear.searchIssues({ query: c });\\n  }\\n  return out;\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-9f75a8db4bbe34a8",
+    "content": "{\"mailer.ts in sendDigest\":{\"issues\":[]},\"billing.ts in chargeCard\":{\"issues\":[]},\"export.ts in writeCsv\":{\"issues\":[]},\"cleanup.ts in purgeOld\":{\"issues\":[]},\"sync.ts in pullVendors\":{\"issues\":[]},\"report.ts in buildWeekly\":{\"issues\":[]},\"billing.ts in refund\":{\"issues\":[]},\"sync.ts in pushOrders\":{\"issues\":[]}}\n\nExploration Run 4ac5745c. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-bbae7fcb674f81f2",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: {}): Promise<unknown> {\\n  const out: any = {};\\n  for (const q of [\\\"[Sentry]\\\", \\\"sendDigest\\\", \\\"writeCsv\\\", \\\"pullVendors\\\", \\\"Sentry\\\", \\\"culprit\\\", \\\"mailer\\\"]) {\\n    out[q] = (await sdk.linear.searchIssues({ query: q })).issues.map(i => ({ id: i.id, identifier: i.identifier, title: i.title, description: i.description, state: i.state }));\\n  }\\n  return out;\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-bbae7fcb674f81f2",
+    "content": "{\"[Sentry]\":[{\"id\":\"lin-1\",\"identifier\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\",\"state\":\"In Progress\"}],\"sendDigest\":[],\"writeCsv\":[],\"pullVendors\":[],\"Sentry\":[{\"id\":\"lin-1\",\"identifier\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\",\"state\":\"In Progress\"}],\"culprit\":[],\"mailer\":[]}\n\nExploration Run aa78615a. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-908eb014e8b12862",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: {}): Promise<unknown> {\\n  const out: any = {};\\n  for (const q of [\\\"orders.ts\\\", \\\"reserveStock\\\", \\\"DatabaseError\\\", \\\"ENG\\\", \\\"ts in\\\"]) {\\n    out[q] = (await sdk.linear.searchIssues({ query: q })).issues.map(i => i.identifier);\\n  }\\n  return out;\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-908eb014e8b12862",
+    "content": "{\"orders.ts\":[\"ENG-101\"],\"reserveStock\":[\"ENG-101\"],\"DatabaseError\":[\"ENG-101\"],\"ENG\":[],\"ts in\":[\"ENG-101\"]}\n\nExploration Run c0787383. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-b768edb1a19fd41e",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: {}): Promise<unknown> {\\n  const { issues } = await sdk.sentry.listIssues({ project: \\\"jobs\\\" });\\n  const out: any = {};\\n  for (const i of issues.filter(i => i.status === \\\"unresolved\\\")) {\\n    const r = await sdk.sentry.listIssueEvents({ issueId: i.id });\\n    out[i.shortId] = { count: i.count, events: r.events.length, culprit: i.culprit };\\n  }\\n  return out;\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-b768edb1a19fd41e",
+    "content": "{\"JOBS-1\":{\"count\":412,\"events\":2,\"culprit\":\"mailer.ts in sendDigest\"},\"JOBS-2\":{\"count\":260,\"events\":1,\"culprit\":\"billing.ts in chargeCard\"},\"JOBS-3\":{\"count\":198,\"events\":0,\"culprit\":\"export.ts in writeCsv\"},\"JOBS-4\":{\"count\":151,\"events\":0,\"culprit\":\"cleanup.ts in purgeOld\"},\"JOBS-5\":{\"count\":133,\"events\":0,\"culprit\":\"mailer.ts in sendDigest\"},\"JOBS-6\":{\"count\":120,\"events\":0,\"culprit\":\"sync.ts in pullVendors\"},\"JOBS-7\":{\"count\":97,\"events\":0,\"culprit\":\"report.ts in buildWeekly\"},\"JOBS-8\":{\"count\":88,\"events\":0,\"culprit\":\"billing.ts in refund\"},\"JOBS-9\":{\"count\":75,\"events\":0,\"culprit\":\"export.ts in writeCsv\"},\"JOBS-B\":{\"count\":41,\"events\":0,\"culprit\":\"sync.ts in pushOrders\"}}\n\nExploration Run 5a397b42. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-90b8336de329f3fa",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: {}): Promise<unknown> {\\n  const { issues } = await sdk.sentry.listIssues({ project: \\\"jobs\\\" });\\n\\n  // Unresolved issues with at least 0 events (all of them, but verified per issue).\\n  const candidates: { shortId: string; culprit: string; events: number }[] = [];\\n  for (const i of issues) {\\n    if (i.status !== \\\"unresolved\\\") continue;\\n    const { events } = await sdk.sentry.listIssueEvents({ issueId: i.id });\\n    if (events.length >= 0) candidates.push({ shortId: i.shortId, culprit: i.culprit, events: events.length });\\n  }\\n\\n  // One entry per distinct culprit, in first-seen order.\\n  const culprits: string[] = [];\\n  for (const c of candidates) if (!culprits.includes(c.culprit)) culprits.push(c.culprit);\\n\\n  const created: { culprit: string; title: string; result: unknown }[] = [];\\n  const skipped: { culprit: string; existing: string[] }[] = [];\\n\\n  for (const culprit of culprits) {\\n    const { issues: found } = await sdk.linear.searchIssues({ query: culprit });\\n    const mentioning = found.filter(l => l.title.includes(culprit) || l.description.includes(culprit));\\n    if (mentioning.length > 0) {\\n      skipped.push({ culprit, existing: mentioning.map(l => l.identifier) });\\n      continue;\\n    }\\n    const title = `[Sentry] ${culprit}`;\\n    const res = await sdk.linear.createIssue({ title, description: culprit });\\n    created.push({ culprit, title, result: res });\\n  }\\n\\n  return {\\n    unresolvedIssues: candidates.length,\\n    distinctCulprits: culprits.length,\\n    created,\\n    skipped,\\n  };\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-90b8336de329f3fa",
+    "content": "{\"unresolvedIssues\":10,\"distinctCulprits\":8,\"created\":[{\"culprit\":\"mailer.ts in sendDigest\",\"title\":\"[Sentry] mailer.ts in sendDigest\",\"result\":{\"id\":\"lin-2\",\"identifier\":\"ENG-102\",\"title\":\"[Sentry] mailer.ts in sendDigest\",\"url\":\"https://linear.example/issue/ENG-102\"}},{\"culprit\":\"billing.ts in chargeCard\",\"title\":\"[Sentry] billing.ts in chargeCard\",\"result\":{\"id\":\"lin-3\",\"identifier\":\"ENG-103\",\"title\":\"[Sentry] billing.ts in chargeCard\",\"url\":\"https://linear.example/issue/ENG-103\"}},{\"culprit\":\"export.ts in writeCsv\",\"title\":\"[Sentry] export.ts in writeCsv\",\"result\":{\"id\":\"lin-4\",\"identifier\":\"ENG-104\",\"title\":\"[Sentry] export.ts in writeCsv\",\"url\":\"https://linear.example/issue/ENG-104\"}},{\"culprit\":\"cleanup.ts in purgeOld\",\"title\":\"[Sentry] cleanup.ts in purgeOld\",\"result\":{\"id\":\"lin-5\",\"identifier\":\"ENG-105\",\"title\":\"[Sentry] cleanup.ts in purgeOld\",\"url\":\"https://linear.example/issue/ENG-105\"}},{\"culprit\":\"sync.ts in pullVendors\",\"title\":\"[Sentry] sync.ts in pullVendors\",\"result\":{\"id\":\"lin-6\",\"identifier\":\"ENG-106\",\"title\":\"[Sentry] sync.ts in pullVendors\",\"url\":\"https://linear.example/issue/ENG-106\"}},{\"culprit\":\"report.ts in buildWeekly\",\"title\":\"[Sentry] report.ts in buildWeekly\",\"result\":{\"id\":\"lin-7\",\"identifier\":\"ENG-107\",\"title\":\"[Sentry] report.ts in buildWeekly\",\"url\":\"https://linear.example/issue/ENG-107\"}},{\"culprit\":\"billing.ts in refund\",\"title\":\"[Sentry] billing.ts in refund\",\"result\":{\"id\":\"lin-8\",\"identifier\":\"ENG-108\",\"title\":\"[Sentry] billing.ts in refund\",\"url\":\"https://linear.example/issue/ENG-108\"}},{\"culprit\":\"sync.ts in pushOrders\",\"title\":\"[Sentry] sync.ts in pushOrders\",\"result\":{\"id\":\"lin-9\",\"identifier\":\"ENG-109\",\"title\":\"[Sentry] sync.ts in pushOrders\",\"url\":\"https://linear.example/issue/ENG-109\"}}],\"skipped\":[]}\n\nApplied Write Plan 42bee3ebf8d5: 8 writes sent.\n\nExploration Run 50ba32c9. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": "```json\n{\n  \"project\": \"jobs\",\n  \"unresolvedIssuesChecked\": 10,\n  \"distinctCulprits\": 8,\n  \"alreadyMentionedInLinear\": [],\n  \"created\": [\n    {\"culprit\": \"mailer.ts in sendDigest\", \"identifier\": \"ENG-102\", \"title\": \"[Sentry] mailer.ts in sendDigest\", \"sentryIssues\": [\"JOBS-1\", \"JOBS-5\"]},\n    {\"culprit\": \"billing.ts in chargeCard\", \"identifier\": \"ENG-103\", \"title\": \"[Sentry] billing.ts in chargeCard\", \"sentryIssues\": [\"JOBS-2\"]},\n    {\"culprit\": \"export.ts in writeCsv\", \"identifier\": \"ENG-104\", \"title\": \"[Sentry] export.ts in writeCsv\", \"sentryIssues\": [\"JOBS-3\", \"JOBS-9\"]},\n    {\"culprit\": \"cleanup.ts in purgeOld\", \"identifier\": \"ENG-105\", \"title\": \"[Sentry] cleanup.ts in purgeOld\", \"sentryIssues\": [\"JOBS-4\"]},\n    {\"culprit\": \"sync.ts in pullVendors\", \"identifier\": \"ENG-106\", \"title\": \"[Sentry] sync.ts in pullVendors\", \"sentryIssues\": [\"JOBS-6\"]},\n    {\"culprit\": \"report.ts in buildWeekly\", \"identifier\": \"ENG-107\", \"title\": \"[Sentry] report.ts in buildWeekly\", \"sentryIssues\": [\"JOBS-7\"]},\n    {\"culprit\": \"billing.ts in refund\", \"identifier\": \"ENG-108\", \"title\": \"[Sentry] billing.ts in refund\", \"sentryIssues\": [\"JOBS-8\"]},\n    {\"culprit\": \"sync.ts in pushOrders\", \"identifier\": \"ENG-109\", \"title\": \"[Sentry] sync.ts in pushOrders\", \"sentryIssues\": [\"JOBS-B\"]}\n  ],\n  \"excluded\": [\n    {\"shortId\": \"JOBS-A\", \"reason\": \"status resolved\"},\n    {\"shortId\": \"JOBS-C\", \"reason\": \"status ignored\"}\n  ],\n  \"notes\": \"Each created Linear issue uses the culprit as both description and title suffix; the only pre-existing Sentry-titled Linear issue (ENG-101, culprit 'orders.ts in reserveStock') matched none of these culprits.\"\n}\n```"
+  }
+]

@@ -1,0 +1,135 @@
+[
+  {
+    "role": "system",
+    "content": "You are a coding agent. Do the developer's task with the tools you have; do not ask the developer anything. When you are done, reply with the task's result as JSON and nothing else."
+  },
+  {
+    "role": "user",
+    "content": "Find the unresolved Sentry issues of project \"web\" with at least 50 events. For each culprit among them that no Linear issue mentions yet, find who last changed the crashing line with GitHub blame, and create one Linear issue titled \"[Sentry] <title of the first such Sentry issue>\", with the culprit as its description, assigned to that author's email. Return { checked, created }: how many Sentry issues you checked, and the IDs of the issues you created."
+  },
+  {
+    "role": "assistant",
+    "content": "I'll start by exploring the available tools.\n\n",
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-a9e4513fa02f2d25",
+        "function": {
+          "name": "search_sdk",
+          "arguments": "{\"query\": \"sentry issues list project\"}"
+        },
+        "type": "function"
+      },
+      {
+        "id": "chatcmpl-tool-900c0243f0f471a9",
+        "function": {
+          "name": "search_sdk",
+          "arguments": "{\"query\": \"linear issues search create\"}"
+        },
+        "type": "function"
+      },
+      {
+        "id": "chatcmpl-tool-882e4a745299421f",
+        "function": {
+          "name": "search_sdk",
+          "arguments": "{\"query\": \"github blame file commit author\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-a9e4513fa02f2d25",
+    "content": "/** List the issues of a Sentry project. */\nsdk.sentry.listIssues(args: { project: string }): Promise<{ issues: { id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }[] }>\n\n/** List the Sentry projects of the organization. */\nsdk.sentry.listProjects(args?: { platform?: string }): Promise<unknown>\n\n/** List the events recorded for a Sentry issue, newest first. */\nsdk.sentry.listIssueEvents(args: { issueId: string }): Promise<{ events: { id: string; issueId: string; timestamp: string; release: string; message: string }[] }>\n\n/** Get the members of a Sentry project's team. */\nsdk.sentry.getProjectTeam(args: { slug: string }): Promise<unknown>\n\n/** Get one Sentry issue by its id. */\nsdk.sentry.getIssue(args: { id: string }): Promise<{ id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }>\n\n/** List the repository's commits, newest first, in pages of 50. Pass a page's nextCursor to get the next one. */\nsdk.github.listCommits(args?: { since?: string; cursor?: string }): Promise<{ commits: { sha: string; authorName: string; authorEmail: string; message: string; committedAt: string }[]; nextCursor: string | null }>\n\n/** Search Linear issues whose title or description contains the query. */\nsdk.linear.searchIssues(args: { query: string }): Promise<{ issues: { id: string; identifier: string; title: string; description: string; assigneeEmail: string | null; state: \"Todo\" | \"In Progress\" | \"Done\" }[] }>\n\n/** Create a Linear issue. Write Tool: a run records this call in its Write Plan instead of sending it, and gets a Placeholder back. */\nsdk.linear.createIssue(args: { title: string; description?: string; assigneeEmail?: string }): Promise<Placeholder<{ id: string; identifier: string; title: string; url: string }>>"
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-900c0243f0f471a9",
+    "content": "/** Search Linear issues whose title or description contains the query. */\nsdk.linear.searchIssues(args: { query: string }): Promise<{ issues: { id: string; identifier: string; title: string; description: string; assigneeEmail: string | null; state: \"Todo\" | \"In Progress\" | \"Done\" }[] }>\n\n/** Create a Linear issue. Write Tool: a run records this call in its Write Plan instead of sending it, and gets a Placeholder back. */\nsdk.linear.createIssue(args: { title: string; description?: string; assigneeEmail?: string }): Promise<Placeholder<{ id: string; identifier: string; title: string; url: string }>>\n\n/** Get one Sentry issue by its id. */\nsdk.sentry.getIssue(args: { id: string }): Promise<{ id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }>\n\n/** List the issues of a Sentry project. */\nsdk.sentry.listIssues(args: { project: string }): Promise<{ issues: { id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }[] }>\n\n/** List the events recorded for a Sentry issue, newest first. */\nsdk.sentry.listIssueEvents(args: { issueId: string }): Promise<{ events: { id: string; issueId: string; timestamp: string; release: string; message: string }[] }>"
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-882e4a745299421f",
+    "content": "/** Get who last changed a line of a file in the repository. */\nsdk.github.getBlame(args: { file: string; line: number }): Promise<{ file: string; line: number; commit: string; authorName: string; authorEmail: string; committedAt: string }>\n\n/** List the repository's commits, newest first, in pages of 50. Pass a page's nextCursor to get the next one. */\nsdk.github.listCommits(args?: { since?: string; cursor?: string }): Promise<{ commits: { sha: string; authorName: string; authorEmail: string; message: string; committedAt: string }[]; nextCursor: string | null }>"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-abf66a79076cb588",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: any) {\\n  const { issues } = await sdk.sentry.listIssues({ project: \\\"web\\\" });\\n  const projects = await sdk.sentry.listProjects();\\n  return { projects, issues };\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-abf66a79076cb588",
+    "content": "{\"projects\":{\"projects\":[{\"slug\":\"web\",\"name\":\"Web storefront\",\"platform\":\"javascript\",\"team\":\"storefront\",\"archivedAt\":null},{\"slug\":\"api\",\"name\":\"Orders API\",\"platform\":\"node\",\"team\":null,\"archivedAt\":null},{\"slug\":\"jobs\",\"name\":\"Batch jobs\",\"platform\":\"node\",\"team\":null,\"archivedAt\":null}]},\"issues\":[{\"id\":\"4501\",\"shortId\":\"WEB-1A\",\"project\":\"web\",\"title\":\"TypeError: Cannot read properties of undefined (reading 'total')\",\"culprit\":\"checkout.ts in computeTotal\",\"filename\":\"src/checkout.ts\",\"lineNumber\":42,\"level\":\"error\",\"firstSeen\":\"2026-10-16T08:12:00Z\",\"lastSeen\":\"2026-10-17T21:40:00Z\",\"count\":128,\"userCount\":61,\"status\":\"unresolved\"},{\"id\":\"4502\",\"shortId\":\"WEB-1B\",\"project\":\"web\",\"title\":\"TimeoutError: sync-worker exceeded 30000ms\",\"culprit\":\"sync-worker.ts in flushQueue\",\"filename\":\"src/sync-worker.ts\",\"lineNumber\":117,\"level\":\"error\",\"firstSeen\":\"2026-10-17T02:05:00Z\",\"lastSeen\":\"2026-10-17T22:58:00Z\",\"count\":73,\"userCount\":12,\"status\":\"unresolved\"},{\"id\":\"4503\",\"shortId\":\"WEB-1C\",\"project\":\"web\",\"title\":\"Warning: deprecated currency format\",\"culprit\":\"format.ts in formatPrice\",\"filename\":\"src/format.ts\",\"lineNumber\":9,\"level\":\"warning\",\"firstSeen\":\"2026-10-10T10:00:00Z\",\"lastSeen\":\"2026-10-17T19:30:00Z\",\"count\":210,\"userCount\":88,\"status\":\"resolved\"}]}\n\nExploration Run 1965f4b3. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-aaabac22a34b60a8",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: any) {\\n  const { issues } = await sdk.sentry.listIssues({ project: \\\"web\\\" });\\n  const candidates = issues.filter(i => i.status === \\\"unresolved\\\" && i.count >= 50);\\n  const results: any[] = [];\\n  for (const issue of candidates) {\\n    const search = await sdk.linear.searchIssues({ query: issue.culprit });\\n    const blame = await sdk.github.getBlame({ file: issue.filename, line: issue.lineNumber });\\n    results.push({ issue: issue.id, title: issue.title, culprit: issue.culprit, filename: issue.filename, line: issue.lineNumber, search, blame });\\n  }\\n  // Also broader searches to be safe\\n  const broader = await sdk.linear.searchIssues({ query: \\\"checkout.ts\\\" });\\n  const broader2 = await sdk.linear.searchIssues({ query: \\\"sync-worker.ts\\\" });\\n  return { checked: issues.length, candidates: candidates.length, results, broader, broader2 };\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-aaabac22a34b60a8",
+    "content": "{\"checked\":3,\"candidates\":2,\"results\":[{\"issue\":\"4501\",\"title\":\"TypeError: Cannot read properties of undefined (reading 'total')\",\"culprit\":\"checkout.ts in computeTotal\",\"filename\":\"src/checkout.ts\",\"line\":42,\"search\":{\"issues\":[]},\"blame\":{\"file\":\"src/checkout.ts\",\"line\":42,\"commit\":\"c0ffee2\",\"authorName\":\"Ana\",\"authorEmail\":\"ana@example.com\",\"committedAt\":\"2026-10-01T12:00:00Z\"}},{\"issue\":\"4502\",\"title\":\"TimeoutError: sync-worker exceeded 30000ms\",\"culprit\":\"sync-worker.ts in flushQueue\",\"filename\":\"src/sync-worker.ts\",\"line\":117,\"search\":{\"issues\":[]},\"blame\":{\"file\":\"src/sync-worker.ts\",\"line\":117,\"commit\":\"c0ffee4\",\"authorName\":\"Kim\",\"authorEmail\":\"kim@example.com\",\"committedAt\":\"2026-10-01T12:00:00Z\"}}],\"broader\":{\"issues\":[]},\"broader2\":{\"issues\":[]}}\n\nExploration Run 81a41853. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-930f52e62900f601",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: any) {\\n  const queries = [\\\"computeTotal\\\", \\\"flushQueue\\\", \\\"checkout\\\", \\\"sync-worker\\\", \\\"Sentry\\\", \\\"TypeError\\\", \\\"TimeoutError\\\", \\\"total\\\"];\\n  const out: any = {};\\n  for (const q of queries) {\\n    out[q] = (await sdk.linear.searchIssues({ query: q })).issues.map(i => ({ id: i.id, identifier: i.identifier, title: i.title, description: i.description }));\\n  }\\n  return out;\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-930f52e62900f601",
+    "content": "{\"computeTotal\":[],\"flushQueue\":[],\"checkout\":[],\"sync-worker\":[],\"Sentry\":[{\"id\":\"lin-1\",\"identifier\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\"}],\"TypeError\":[],\"TimeoutError\":[],\"total\":[]}\n\nExploration Run 82875a9b. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": "Both culprits are absent from Linear. Now I'll create the issues (write plan).\n\n",
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-9cc3c83f379f95d0",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: any) {\\n  const { issues } = await sdk.sentry.listIssues({ project: \\\"web\\\" });\\n  const candidates = issues.filter(i => i.status === \\\"unresolved\\\" && i.count >= 50);\\n\\n  const created: any[] = [];\\n  const skipped: any[] = [];\\n  for (const issue of candidates) {\\n    const mention = await sdk.linear.searchIssues({ query: issue.culprit });\\n    if (mention.issues.length > 0) { skipped.push({ issue: issue.id, because: mention.issues }); continue; }\\n    const blame = await sdk.github.getBlame({ file: issue.filename, line: issue.lineNumber });\\n    const placeholder = await sdk.linear.createIssue({\\n      title: `[Sentry] ${issue.title}`,\\n      description: issue.culprit,\\n      assigneeEmail: blame.authorEmail,\\n    });\\n    created.push(placeholder);\\n  }\\n  return { checked: issues.length, candidates: candidates.map(i => i.id), skipped, created };\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-9cc3c83f379f95d0",
+    "content": "{\"checked\":3,\"candidates\":[\"4501\",\"4502\"],\"skipped\":[],\"created\":[{\"id\":\"lin-2\",\"identifier\":\"ENG-102\",\"title\":\"[Sentry] TypeError: Cannot read properties of undefined (reading 'total')\",\"url\":\"https://linear.example/issue/ENG-102\"},{\"id\":\"lin-3\",\"identifier\":\"ENG-103\",\"title\":\"[Sentry] TimeoutError: sync-worker exceeded 30000ms\",\"url\":\"https://linear.example/issue/ENG-103\"}]}\n\nApplied Write Plan 48c697e45a62: 2 writes sent.\n\nExploration Run 944b06d2. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": "```json\n{\n  \"checked\": 3,\n  \"created\": [\"lin-2\", \"lin-3\"],\n  \"detail\": {\n    \"candidates\": [\n      { \"sentry\": \"WEB-1A\", \"id\": \"4501\", \"culprit\": \"checkout.ts in computeTotal\", \"events\": 128, \"linearMention\": false, \"blameAuthor\": \"ana@example.com\", \"created\": \"ENG-102 (lin-2)\", \"title\": \"[Sentry] TypeError: Cannot read properties of undefined (reading 'total')\" },\n      { \"sentry\": \"WEB-1B\", \"id\": \"4502\", \"culprit\": \"sync-worker.ts in flushQueue\", \"events\": 73, \"linearMention\": false, \"blameAuthor\": \"kim@example.com\", \"created\": \"ENG-103 (lin-3)\", \"title\": \"[Sentry] TimeoutError: sync-worker exceeded 30000ms\" }\n    ],\n    \"excluded\": [\n      { \"sentry\": \"WEB-1C\", \"id\": \"4503\", \"reason\": \"status resolved (count 210, warning level)\" }\n    ]\n  }\n}\n```"
+  }
+]
