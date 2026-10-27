@@ -1,3 +1,4 @@
+import { createGithubServer, createGithubWorld } from "./github/server.ts";
 import { createLinearServer, createLinearWorld } from "./linear/server.ts";
 import { createSentryServer, createSentryWorld } from "./sentry/server.ts";
 
@@ -13,6 +14,10 @@ export const servers = {
   linear: () => {
     const world = createLinearWorld();
     return { world, server: () => createLinearServer(world) };
+  },
+  github: () => {
+    const world = createGithubWorld();
+    return { world, server: () => createGithubServer(world) };
   },
 };
 
