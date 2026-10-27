@@ -1,6 +1,17 @@
 name: CI
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  # A larger run of the H3 property tests, from the Actions tab.
+  workflow_dispatch:
+    inputs:
+      property-runs:
+        description: Cases the H3 property tests try
+        default: "500"
+      property-seed:
+        description: Their seed
+        default: "1"
 
 jobs:
   check:
@@ -31,3 +42,18 @@ jobs:
       - run: npm link
       - working-directory: examples/smoke
         run: pinfold run count_unresolved --project web
+
+  property:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run no-unreviewed-writes
+        env:
+          PINFOLD_PROPERTY_RUNS: ${{ inputs.property-runs }}
+          PINFOLD_PROPERTY_SEED: ${{ inputs.property-seed }}
