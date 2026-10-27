@@ -1,0 +1,84 @@
+[
+  {
+    "role": "system",
+    "content": "You are a coding agent. Do the developer's task with the tools you have; do not ask the developer anything. When you are done, reply with the task's result as JSON and nothing else."
+  },
+  {
+    "role": "user",
+    "content": "For every Sentry issue of project \"web\" with at least 0 events, whatever its status, return { shortId, count, status, latestRelease }, where latestRelease is the release of its newest event, or null if it has none. Return them as one array, most events first. Change nothing."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-b6c4e0f8ed7c5613",
+        "function": {
+          "name": "search_sdk",
+          "arguments": "{\"query\": \"sentry issues project events\"}"
+        },
+        "type": "function"
+      },
+      {
+        "id": "chatcmpl-tool-b11a7e407041c207",
+        "function": {
+          "name": "search_sdk",
+          "arguments": "{\"query\": \"sentry list issues\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-b6c4e0f8ed7c5613",
+    "content": "/** List the events recorded for a Sentry issue, newest first. */\nsdk.sentry.listIssueEvents(args: { issueId: string }): Promise<{ events: { id: string; issueId: string; timestamp: string; release: string; message: string }[] }>\n\n/** List the issues of a Sentry project. */\nsdk.sentry.listIssues(args: { project: string }): Promise<{ issues: { id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }[] }>\n\n/** List the Sentry projects of the organization. */\nsdk.sentry.listProjects(args?: { platform?: string }): Promise<unknown>\n\n/** Get the members of a Sentry project's team. */\nsdk.sentry.getProjectTeam(args: { slug: string }): Promise<unknown>\n\n/** Get one Sentry issue by its id. */\nsdk.sentry.getIssue(args: { id: string }): Promise<{ id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }>\n\n/** Search Linear issues whose title or description contains the query. */\nsdk.linear.searchIssues(args: { query: string }): Promise<{ issues: { id: string; identifier: string; title: string; description: string; assigneeEmail: string | null; state: \"Todo\" | \"In Progress\" | \"Done\" }[] }>\n\n/** Create a Linear issue. Write Tool: a run records this call in its Write Plan instead of sending it, and gets a Placeholder back. */\nsdk.linear.createIssue(args: { title: string; description?: string; assigneeEmail?: string }): Promise<Placeholder<{ id: string; identifier: string; title: string; url: string }>>"
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-b11a7e407041c207",
+    "content": "/** List the issues of a Sentry project. */\nsdk.sentry.listIssues(args: { project: string }): Promise<{ issues: { id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }[] }>\n\n/** List the events recorded for a Sentry issue, newest first. */\nsdk.sentry.listIssueEvents(args: { issueId: string }): Promise<{ events: { id: string; issueId: string; timestamp: string; release: string; message: string }[] }>\n\n/** List the Sentry projects of the organization. */\nsdk.sentry.listProjects(args?: { platform?: string }): Promise<unknown>\n\n/** Get one Sentry issue by its id. */\nsdk.sentry.getIssue(args: { id: string }): Promise<{ id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }>\n\n/** List the repository's commits, newest first, in pages of 50. Pass a page's nextCursor to get the next one. */\nsdk.github.listCommits(args?: { since?: string; cursor?: string }): Promise<{ commits: { sha: string; authorName: string; authorEmail: string; message: string; committedAt: string }[]; nextCursor: string | null }>\n\n/** Search Linear issues whose title or description contains the query. */\nsdk.linear.searchIssues(args: { query: string }): Promise<{ issues: { id: string; identifier: string; title: string; description: string; assigneeEmail: string | null; state: \"Todo\" | \"In Progress\" | \"Done\" }[] }>\n\n/** Get the members of a Sentry project's team. */\nsdk.sentry.getProjectTeam(args: { slug: string }): Promise<unknown>\n\n/** Create a Linear issue. Write Tool: a run records this call in its Write Plan instead of sending it, and gets a Placeholder back. */\nsdk.linear.createIssue(args: { title: string; description?: string; assigneeEmail?: string }): Promise<Placeholder<{ id: string; identifier: string; title: string; url: string }>>"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-836e318beefe28bc",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: unknown) {\\n  const { issues } = await sdk.sentry.listIssues({ project: \\\"web\\\" });\\n  const eligible = issues.filter((i) => i.count >= 0);\\n  const out: { shortId: string; count: number; status: string; latestRelease: string | null }[] = [];\\n  for (const issue of eligible) {\\n    let events: { id: string; issueId: string; timestamp: string; release: string; message: string }[] = [];\\n    try {\\n      const res = await sdk.sentry.listIssueEvents({ issueId: issue.id });\\n      events = res.events ?? [];\\n    } catch (e) {\\n      events = [];\\n    }\\n    let latest: string | null = null;\\n    if (events.length > 0) {\\n      const sorted = [...events].sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));\\n      const rel = sorted[0]?.release;\\n      latest = rel && rel.length > 0 ? rel : null;\\n    }\\n    out.push({ shortId: issue.shortId, count: issue.count, status: issue.status, latestRelease: latest });\\n  }\\n  out.sort((a, b) => b.count - a.count);\\n  return { total: issues.length, eligible: eligible.length, rows: out };\\n}\", \"input\": {}}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-836e318beefe28bc",
+    "content": "{\"total\":3,\"eligible\":3,\"rows\":[{\"shortId\":\"WEB-1C\",\"count\":210,\"status\":\"resolved\",\"latestRelease\":null},{\"shortId\":\"WEB-1A\",\"count\":128,\"status\":\"unresolved\",\"latestRelease\":\"web@3.4.1\"},{\"shortId\":\"WEB-1B\",\"count\":73,\"status\":\"unresolved\",\"latestRelease\":null}]}\n\nExploration Run 8bc0ae4e. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-9cbeef7c9796d74b",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: unknown) {\\n  const { issues } = await sdk.sentry.listIssues({ project: \\\"web\\\" });\\n  const detail = [];\\n  for (const issue of issues) {\\n    let events: any[] = [];\\n    let err: string | null = null;\\n    try {\\n      const res = await sdk.sentry.listIssueEvents({ issueId: issue.id });\\n      events = res.events ?? [];\\n    } catch (e) {\\n      err = String(e);\\n    }\\n    detail.push({ id: issue.id, shortId: issue.shortId, count: issue.count, status: issue.status, project: issue.project, err, events });\\n  }\\n  return detail;\\n}\", \"input\": {}}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-9cbeef7c9796d74b",
+    "content": "[{\"id\":\"4501\",\"shortId\":\"WEB-1A\",\"count\":128,\"status\":\"unresolved\",\"project\":\"web\",\"err\":null,\"events\":[{\"id\":\"e-9001\",\"issueId\":\"4501\",\"timestamp\":\"2026-10-17T21:40:00Z\",\"release\":\"web@3.4.1\",\"message\":\"Cannot read properties of undefined (reading 'total')\"},{\"id\":\"e-9002\",\"issueId\":\"4501\",\"timestamp\":\"2026-10-17T20:12:00Z\",\"release\":\"web@3.4.0\",\"message\":\"Cannot read properties of undefined (reading 'total')\"}]},{\"id\":\"4502\",\"shortId\":\"WEB-1B\",\"count\":73,\"status\":\"unresolved\",\"project\":\"web\",\"err\":null,\"events\":[]},{\"id\":\"4503\",\"shortId\":\"WEB-1C\",\"count\":210,\"status\":\"resolved\",\"project\":\"web\",\"err\":null,\"events\":[]}]\n\nExploration Run 638d368f. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": "```json\n[\n  { \"shortId\": \"WEB-1C\", \"count\": 210, \"status\": \"resolved\", \"latestRelease\": null },\n  { \"shortId\": \"WEB-1A\", \"count\": 128, \"status\": \"unresolved\", \"latestRelease\": \"web@3.4.1\" },\n  { \"shortId\": \"WEB-1B\", \"count\": 73, \"status\": \"unresolved\", \"latestRelease\": null }\n]\n```"
+  }
+]

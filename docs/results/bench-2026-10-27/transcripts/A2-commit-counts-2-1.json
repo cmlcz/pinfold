@@ -1,0 +1,65 @@
+[
+  {
+    "role": "system",
+    "content": "You are a coding agent. Do the developer's task with the tools you have; do not ask the developer anything. When you are done, reply with the task's result as JSON and nothing else."
+  },
+  {
+    "role": "user",
+    "content": "Count the GitHub repository's commits by author email, going through every page of commits. Return an object from author email to count. Change nothing."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-8d41957ca4f26b57",
+        "function": {
+          "name": "search_sdk",
+          "arguments": "{\"query\": \"github list commits repository\"}"
+        },
+        "type": "function"
+      },
+      {
+        "id": "chatcmpl-tool-a28b800d3feb571b",
+        "function": {
+          "name": "search_sdk",
+          "arguments": "{\"query\": \"github repository info\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-8d41957ca4f26b57",
+    "content": "/** List the repository's commits, newest first, in pages of 50. Pass a page's nextCursor to get the next one. */\nsdk.github.listCommits(args?: { since?: string; cursor?: string }): Promise<{ commits: { sha: string; authorName: string; authorEmail: string; message: string; committedAt: string }[]; nextCursor: string | null }>\n\n/** Get who last changed a line of a file in the repository. */\nsdk.github.getBlame(args: { file: string; line: number }): Promise<{ file: string; line: number; commit: string; authorName: string; authorEmail: string; committedAt: string }>\n\n/** List the issues of a Sentry project. */\nsdk.sentry.listIssues(args: { project: string }): Promise<{ issues: { id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }[] }>\n\n/** List the Sentry projects of the organization. */\nsdk.sentry.listProjects(args?: { platform?: string }): Promise<unknown>\n\n/** List the events recorded for a Sentry issue, newest first. */\nsdk.sentry.listIssueEvents(args: { issueId: string }): Promise<{ events: { id: string; issueId: string; timestamp: string; release: string; message: string }[] }>"
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-a28b800d3feb571b",
+    "content": "/** Get who last changed a line of a file in the repository. */\nsdk.github.getBlame(args: { file: string; line: number }): Promise<{ file: string; line: number; commit: string; authorName: string; authorEmail: string; committedAt: string }>\n\n/** List the repository's commits, newest first, in pages of 50. Pass a page's nextCursor to get the next one. */\nsdk.github.listCommits(args?: { since?: string; cursor?: string }): Promise<{ commits: { sha: string; authorName: string; authorEmail: string; message: string; committedAt: string }[]; nextCursor: string | null }>"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-99c20109eab5e1c1",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: unknown) {\\n  const counts: Record<string, number> = {};\\n  let cursor: string | undefined = undefined;\\n  let pages = 0;\\n  let total = 0;\\n  const seenCursors = new Set<string>();\\n  while (true) {\\n    const res = await sdk.github.listCommits(cursor ? { cursor } : {});\\n    pages++;\\n    total += res.commits.length;\\n    for (const c of res.commits) {\\n      counts[c.authorEmail] = (counts[c.authorEmail] ?? 0) + 1;\\n    }\\n    if (!res.nextCursor) break;\\n    if (seenCursors.has(res.nextCursor)) break;\\n    seenCursors.add(res.nextCursor);\\n    cursor = res.nextCursor;\\n    if (pages > 200) break;\\n  }\\n  return { pages, total, counts };\\n}\", \"input\": {}}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-99c20109eab5e1c1",
+    "content": "{\"pages\":10,\"total\":480,\"counts\":{\"kim@example.com\":96,\"joe@example.com\":94,\"ana@example.com\":100,\"li@example.com\":95,\"sam@example.com\":95}}\n\nExploration Run 935f9001. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": "{\"kim@example.com\":96,\"joe@example.com\":94,\"ana@example.com\":100,\"li@example.com\":95,\"sam@example.com\":95}"
+  }
+]
