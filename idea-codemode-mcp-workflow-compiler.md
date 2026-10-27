@@ -340,7 +340,7 @@ It never estimates tokens saved, because pinfold cannot observe the host agent's
 _Partly built._ The work is split across four issues:
 
 - [#19](https://github.com/cmlcz/pinfold/issues/19): the GitHub-shaped server and the six tasks (built);
-- [#20](https://github.com/cmlcz/pinfold/issues/20): the harness and the minimal agent loop;
+- [#20](https://github.com/cmlcz/pinfold/issues/20): the harness and the minimal agent loop (built for A2 and A4: `pinfold bench`);
 - [#21](https://github.com/cmlcz/pinfold/issues/21): the Claude Code and Codex CLI drivers;
 - [#22](https://github.com/cmlcz/pinfold/issues/22): the lifecycle experiment.
 
