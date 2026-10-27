@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadConfig, openCore } from "../../core/index.ts";
 import { driftKitCommand } from "../../drift-kit/index.ts";
+import { pinfoldInTerminal } from "./terminal.ts";
 
 const bin = fileURLToPath(new URL("../bin.ts", import.meta.url));
 let dir: string;
@@ -101,7 +102,9 @@ describe("pinfold run", () => {
     );
     const id = /pinfold approve (\S+)/.exec(paused.stdout)![1]!;
 
-    expect((await pinfold("approve", id)).code).toBe(0);
+    expect(
+      (await pinfoldInTerminal(["approve", id, "--config", config])).code
+    ).toBe(0);
     const applied = await pinfold(
       "run",
       "file_issue",

@@ -214,6 +214,44 @@ describe("Placeholder rules", () => {
     }
   );
 
+  it.each([
+    ["an if", "if (ticket.id) return 1; return 2;"],
+    ["a conditional expression", "return ticket.id ? 1 : 2;"],
+    ["a negation", "return !ticket;"],
+    ["an &&", "return ticket.id && 1;"],
+    ["a comparison", 'return ticket.identifier === "ENG-1";'],
+    ["a typeof", "return typeof ticket.id;"],
+    ["a switch", "switch (ticket.id) { default: return 1; }"],
+  ])(
+    "refuses code where a Placeholder decides %s, before it runs",
+    async (_, use) => {
+      const core = await openTriage();
+
+      const result = await core.explore({
+        code: [
+          "export async function main() {",
+          '  const ticket = await sdk.linear.createIssue({ title: "T" });',
+          `  ${use}`,
+          "}",
+        ].join("\n"),
+      });
+
+      expect(result.ok).toBe(false);
+      expect(!result.ok && result.error).toMatch(
+        /A Placeholder cannot decide a condition, be compared or have its typeof taken[^\n]*\n\s+at program\.ts:3:\d+/
+      );
+      expect(await ws.control("linear").receivedWrites()).toEqual([]);
+    }
+  );
+
+  it("types a Write Tool's result as a Placeholder in its signature", async () => {
+    const core = await openTriage();
+
+    const [create] = core.searchSdk("create a linear issue");
+
+    expect(create).toMatch(/\): Promise<Placeholder<\{/);
+  });
+
   it("fails the Plan when a Placeholder is passed to a Read Tool", async () => {
     const core = await openTriage();
 

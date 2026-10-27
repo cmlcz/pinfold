@@ -33,8 +33,11 @@ export type Workspace = {
   dir: string;
   /** A Sentry-shaped Drift Kit server, distinct per name. */
   sentry(name?: string): ServerConfig;
-  /** A Linear-shaped Drift Kit server, distinct per name. */
-  linear(name?: string): ServerConfig;
+  /**
+   * A Linear-shaped Drift Kit server, distinct per name, with these Drift
+   * Scenarios on from its start.
+   */
+  linear(name?: string, drift?: readonly string[]): ServerConfig;
   /**
    * Starts a Drift Kit server over Streamable HTTP, distinct per name, that
    * asks for the token when given one. Returns its URL.
@@ -67,7 +70,8 @@ export async function createWorkspace(): Promise<Workspace> {
   return {
     dir,
     sentry,
-    linear: (name = "linear") => server("linear")(name),
+    linear: (name = "linear", drift = []) =>
+      driftKitCommand("linear", { control: socket(name), drift }),
     async serveHttp(kind, { name = kind, token } = {}) {
       const server = await serveDriftKitHttp(kind, {
         control: socket(name),

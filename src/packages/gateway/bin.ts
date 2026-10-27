@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // Runs the Gateway over stdio: `node bin.ts [--config pinfold.json]`.
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";

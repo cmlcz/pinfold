@@ -27,8 +27,18 @@ const seedIssues: readonly LinearIssue[] = [
   },
 ];
 
+/**
+ * Linear's Drift Scenarios. `renamed-argument` makes createIssue take the
+ * title as `name`: a change to the arguments a Tool accepts, which only a
+ * server started with it on lists, since clients list Tools once.
+ */
+export const linearDriftScenarios = ["renamed-argument"] as const;
+
 export function createLinearWorld(): World<LinearState> {
-  return createWorld(() => ({ issues: structuredClone([...seedIssues]) }));
+  return createWorld(
+    () => ({ issues: structuredClone([...seedIssues]) }),
+    linearDriftScenarios
+  );
 }
 
 export function createLinearServer(world: World<LinearState>): McpServer {
@@ -61,12 +71,15 @@ export function createLinearServer(world: World<LinearState>): McpServer {
     url: z.string(),
   });
 
+  const titled = world.drift.has("renamed-argument")
+    ? { name: z.string() }
+    : { title: z.string() };
   server.registerTool(
     "createIssue",
     {
       description: "Create a Linear issue.",
       inputSchema: z.object({
-        title: z.string(),
+        ...titled,
         description: z.string().optional(),
         assigneeEmail: z.string().optional(),
       }),
@@ -81,7 +94,7 @@ export function createLinearServer(world: World<LinearState>): McpServer {
       const issue: LinearIssue = {
         id: `lin-${sequence}`,
         identifier: `ENG-${100 + sequence}`,
-        title: args.title,
+        title: String("name" in args ? args.name : args.title),
         description: args.description ?? "",
         assigneeEmail: args.assigneeEmail ?? null,
         state: "Todo",

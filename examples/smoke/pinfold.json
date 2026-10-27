@@ -1,0 +1,16 @@
+{
+  "servers": {
+    "sentry": {
+      "command": "node",
+      "args": [
+        "../../src/packages/drift-kit/bin.ts",
+        "sentry",
+        "--control",
+        "sentry.sock"
+      ]
+    }
+  },
+  "classification": {
+    "sentry": { "listIssues": "read" }
+  }
+}

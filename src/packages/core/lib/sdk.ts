@@ -10,7 +10,16 @@ export type SdkTool = {
   description?: string;
   inputSchema: JsonSchema;
   outputSchema?: JsonSchema;
+  /** A Write Tool, whose result is a Placeholder during a Plan. */
+  write?: true;
 };
+
+// A Write Tool's result, and each of its fields, is typed as a Placeholder,
+// so that the type check can refuse one deciding a condition (#29).
+const placeholderType = [
+  "/** A Write Tool's result: known only after Apply. Pass it to a Write Tool or return it; it cannot decide a condition. */",
+  "type Placeholder<T> = (T extends object ? { readonly [K in keyof T]: Placeholder<T[K]> } : T) & { readonly __placeholder: true };",
+].join("\n");
 
 function signature(tool: SdkTool): string {
   return `${doc(tool)}sdk.${tool.server}${access(tool.tool)}${method(tool)}`;
@@ -52,14 +61,15 @@ export function declarations(tools: SdkTool[]): string {
     );
     return `  ${server}: {\n${methods.join("\n")}\n  };`;
   });
-  return `declare const sdk: {\n${members.join("\n")}\n};\n`;
+  return `${placeholderType}\ndeclare const sdk: {\n${members.join("\n")}\n};\n`;
 }
 
 function method(tool: SdkTool): string {
   const required = tool.inputSchema.required;
   const optional = !Array.isArray(required) || required.length === 0;
   const args = `args${optional ? "?" : ""}: ${typeOf(tool.inputSchema)}`;
-  return `(${args}): Promise<${typeOf(tool.outputSchema)}>`;
+  const result = typeOf(tool.outputSchema);
+  return `(${args}): Promise<${tool.write ? `Placeholder<${result}>` : result}>`;
 }
 
 function doc(tool: SdkTool): string {

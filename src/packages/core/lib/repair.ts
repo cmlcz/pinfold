@@ -63,6 +63,10 @@ type Call = { arguments: unknown; response: unknown };
 // and leads every other candidate for its field by at least this margin.
 const minScore = 0.5;
 const minLead = 0.25;
+// Fewer Fixture values of a field than this are no evidence: one or two can
+// agree with a wrong field by chance. A candidate then needs a name that
+// matches outright, as a wrap or a conversion keeps it.
+const minEvidence = 3;
 
 /** A drifted Tool, as Repair sees it. */
 export type DriftedTool = {
@@ -117,9 +121,11 @@ export function searchRepair(drift: DriftedTool): RepairSearch {
         const values = mean(
           reads
             .filter((read) => touches(target.path, read))
-            .map((read) =>
-              agreement(valuesIn(history, read), valuesIn(adapted, read))
-            )
+            .map((read) => {
+              const recorded = valuesIn(history, read);
+              if (recorded.length < minEvidence) return 0;
+              return agreement(recorded, valuesIn(adapted, read));
+            })
         );
         return [{ op, score: (name + values) / 2 }];
       })
@@ -132,9 +138,16 @@ export function searchRepair(drift: DriftedTool): RepairSearch {
       };
     }
     if (best.score < minScore) {
+      const thin = reads.some(
+        (read) =>
+          touches(target.path, read) &&
+          valuesIn(history, read).length < minEvidence
+      );
       return {
         kind: "pending",
-        reason: `${JSON.stringify(best.op)} fits ${target.path}, but its values agree too little with the Fixtures`,
+        reason: thin
+          ? `${JSON.stringify(best.op)} fits ${target.path}, but the Fixtures hold fewer than ${minEvidence} values of it, too few to check its values against`
+          : `${JSON.stringify(best.op)} fits ${target.path}, but its values agree too little with the Fixtures`,
       };
     }
     if (second !== undefined && best.score - second.score < minLead) {
