@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod";
-import { listed, structured } from "../reply.ts";
+import { listed, respond } from "../reply.ts";
 import { createWorld, type World } from "../world.ts";
 import {
   blameOf,
@@ -18,10 +18,14 @@ export type GithubState = {
 };
 
 export function createGithubWorld(): World<GithubState> {
-  return createWorld(() => ({
-    commits: structuredClone([...seedCommits]),
-    blame: structuredClone(seedBlame) as Record<string, BlameRange[]>,
-  }));
+  return createWorld(
+    () => ({
+      commits: structuredClone([...seedCommits]),
+      blame: structuredClone(seedBlame) as Record<string, BlameRange[]>,
+    }),
+    [],
+    ["getBlame", "listCommits"]
+  );
 }
 
 // listCommits answers in pages this long, as GitHub's API does.
@@ -46,7 +50,7 @@ export function createGithubServer(world: World<GithubState>): McpServer {
           isError: true,
         };
       }
-      return structured(blame);
+      return respond(world, "getBlame", blame);
     }
   );
 
@@ -79,7 +83,7 @@ export function createGithubServer(world: World<GithubState>): McpServer {
       );
       const start = cursor === undefined ? 0 : Number(cursor);
       const end = start + pageSize;
-      return structured({
+      return respond(world, "listCommits", {
         commits: matching.slice(start, end),
         nextCursor: end < matching.length ? String(end) : null,
       });

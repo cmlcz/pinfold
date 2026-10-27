@@ -1,0 +1,639 @@
+[
+  {
+    "server": "sentry",
+    "scenario": "enum-change:listIssues:issues[].status",
+    "mappable": true,
+    "runs": [
+      {
+        "task": "error-digest",
+        "input": 0
+      },
+      {
+        "task": "issue-owners",
+        "input": 0
+      },
+      {
+        "task": "file-issues",
+        "input": 0
+      },
+      {
+        "task": "triage-once",
+        "input": 0
+      },
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "pagination:listIssueEvents",
+    "mappable": false,
+    "runs": [
+      {
+        "task": "error-digest",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "pagination:listIssues",
+    "mappable": false,
+    "runs": [
+      {
+        "task": "error-digest",
+        "input": 0
+      },
+      {
+        "task": "issue-owners",
+        "input": 0
+      },
+      {
+        "task": "file-issues",
+        "input": 0
+      },
+      {
+        "task": "triage-once",
+        "input": 0
+      },
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "linear",
+    "scenario": "pagination:searchIssues",
+    "mappable": false,
+    "runs": [
+      {
+        "task": "triage-once",
+        "input": 0
+      },
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "github",
+    "scenario": "removed-field:getBlame:authorEmail",
+    "mappable": false,
+    "runs": [
+      {
+        "task": "issue-owners",
+        "input": 0
+      },
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "github",
+    "scenario": "removed-field:listCommits:commits[].authorEmail",
+    "mappable": false,
+    "runs": [
+      {
+        "task": "commit-counts",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "github",
+    "scenario": "removed-field:listCommits:nextCursor",
+    "mappable": false,
+    "runs": [
+      {
+        "task": "commit-counts",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "removed-field:listIssueEvents:events[].release",
+    "mappable": false,
+    "runs": [
+      {
+        "task": "error-digest",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "removed-field:listIssueEvents:events[].timestamp",
+    "mappable": false,
+    "runs": [
+      {
+        "task": "error-digest",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "removed-field:listIssues:issues[].count",
+    "mappable": false,
+    "runs": [
+      {
+        "task": "error-digest",
+        "input": 0
+      },
+      {
+        "task": "issue-owners",
+        "input": 0
+      },
+      {
+        "task": "file-issues",
+        "input": 0
+      },
+      {
+        "task": "triage-once",
+        "input": 0
+      },
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "removed-field:listIssues:issues[].culprit",
+    "mappable": false,
+    "runs": [
+      {
+        "task": "file-issues",
+        "input": 0
+      },
+      {
+        "task": "triage-once",
+        "input": 0
+      },
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "removed-field:listIssues:issues[].filename",
+    "mappable": false,
+    "runs": [
+      {
+        "task": "issue-owners",
+        "input": 0
+      },
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "removed-field:listIssues:issues[].id",
+    "mappable": false,
+    "runs": [
+      {
+        "task": "error-digest",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "removed-field:listIssues:issues[].lineNumber",
+    "mappable": false,
+    "runs": [
+      {
+        "task": "issue-owners",
+        "input": 0
+      },
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "removed-field:listIssues:issues[].shortId",
+    "mappable": false,
+    "runs": [
+      {
+        "task": "error-digest",
+        "input": 0
+      },
+      {
+        "task": "issue-owners",
+        "input": 0
+      },
+      {
+        "task": "file-issues",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "removed-field:listIssues:issues[].status",
+    "mappable": false,
+    "runs": [
+      {
+        "task": "error-digest",
+        "input": 0
+      },
+      {
+        "task": "issue-owners",
+        "input": 0
+      },
+      {
+        "task": "file-issues",
+        "input": 0
+      },
+      {
+        "task": "triage-once",
+        "input": 0
+      },
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "removed-field:listIssues:issues[].title",
+    "mappable": false,
+    "runs": [
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "linear",
+    "scenario": "removed-field:searchIssues:issues",
+    "mappable": false,
+    "runs": [
+      {
+        "task": "triage-once",
+        "input": 0
+      },
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "github",
+    "scenario": "rename:getBlame:authorEmail",
+    "mappable": true,
+    "runs": [
+      {
+        "task": "issue-owners",
+        "input": 0
+      },
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "github",
+    "scenario": "rename:listCommits:commits[].authorEmail",
+    "mappable": true,
+    "runs": [
+      {
+        "task": "commit-counts",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "github",
+    "scenario": "rename:listCommits:nextCursor",
+    "mappable": true,
+    "runs": [
+      {
+        "task": "commit-counts",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "rename:listIssueEvents:events[].release",
+    "mappable": true,
+    "runs": [
+      {
+        "task": "error-digest",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "rename:listIssueEvents:events[].timestamp",
+    "mappable": true,
+    "runs": [
+      {
+        "task": "error-digest",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "rename:listIssues:issues[].count",
+    "mappable": true,
+    "runs": [
+      {
+        "task": "error-digest",
+        "input": 0
+      },
+      {
+        "task": "issue-owners",
+        "input": 0
+      },
+      {
+        "task": "file-issues",
+        "input": 0
+      },
+      {
+        "task": "triage-once",
+        "input": 0
+      },
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "rename:listIssues:issues[].culprit",
+    "mappable": true,
+    "runs": [
+      {
+        "task": "file-issues",
+        "input": 0
+      },
+      {
+        "task": "triage-once",
+        "input": 0
+      },
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "rename:listIssues:issues[].filename",
+    "mappable": true,
+    "runs": [
+      {
+        "task": "issue-owners",
+        "input": 0
+      },
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "rename:listIssues:issues[].id",
+    "mappable": true,
+    "runs": [
+      {
+        "task": "error-digest",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "rename:listIssues:issues[].lineNumber",
+    "mappable": true,
+    "runs": [
+      {
+        "task": "issue-owners",
+        "input": 0
+      },
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "rename:listIssues:issues[].shortId",
+    "mappable": true,
+    "runs": [
+      {
+        "task": "error-digest",
+        "input": 0
+      },
+      {
+        "task": "issue-owners",
+        "input": 0
+      },
+      {
+        "task": "file-issues",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "rename:listIssues:issues[].status",
+    "mappable": true,
+    "runs": [
+      {
+        "task": "error-digest",
+        "input": 0
+      },
+      {
+        "task": "issue-owners",
+        "input": 0
+      },
+      {
+        "task": "file-issues",
+        "input": 0
+      },
+      {
+        "task": "triage-once",
+        "input": 0
+      },
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "rename:listIssues:issues[].title",
+    "mappable": true,
+    "runs": [
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "linear",
+    "scenario": "rename:searchIssues:issues",
+    "mappable": true,
+    "runs": [
+      {
+        "task": "triage-once",
+        "input": 0
+      },
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "type-change:listIssues:issues[].count",
+    "mappable": true,
+    "runs": [
+      {
+        "task": "error-digest",
+        "input": 0
+      },
+      {
+        "task": "issue-owners",
+        "input": 0
+      },
+      {
+        "task": "file-issues",
+        "input": 0
+      },
+      {
+        "task": "triage-once",
+        "input": 0
+      },
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "type-change:listIssues:issues[].lineNumber",
+    "mappable": true,
+    "runs": [
+      {
+        "task": "issue-owners",
+        "input": 0
+      },
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "github",
+    "scenario": "wrap:getBlame",
+    "mappable": true,
+    "runs": [
+      {
+        "task": "issue-owners",
+        "input": 0
+      },
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "github",
+    "scenario": "wrap:listCommits",
+    "mappable": true,
+    "runs": [
+      {
+        "task": "commit-counts",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "wrap:listIssueEvents",
+    "mappable": true,
+    "runs": [
+      {
+        "task": "error-digest",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "sentry",
+    "scenario": "wrap:listIssues",
+    "mappable": true,
+    "runs": [
+      {
+        "task": "error-digest",
+        "input": 0
+      },
+      {
+        "task": "issue-owners",
+        "input": 0
+      },
+      {
+        "task": "file-issues",
+        "input": 0
+      },
+      {
+        "task": "triage-once",
+        "input": 0
+      },
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  },
+  {
+    "server": "linear",
+    "scenario": "wrap:searchIssues",
+    "mappable": true,
+    "runs": [
+      {
+        "task": "triage-once",
+        "input": 0
+      },
+      {
+        "task": "triage-assign",
+        "input": 0
+      }
+    ]
+  }
+]

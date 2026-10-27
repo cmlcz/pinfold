@@ -1,3 +1,5 @@
+import { parseFieldDrift } from "./field-drift.ts";
+
 /** A write a Drift Kit server actually received through one of its MCP Tools. */
 export type ReceivedWrite = {
   tool: string;
@@ -28,8 +30,10 @@ export type World<State> = {
 
 export function createWorld<State>(
   seed: () => State,
-  /** The Drift Scenarios the server has. */
-  scenarios: readonly string[] = []
+  /** The named Drift Scenarios the server has. */
+  scenarios: readonly string[] = [],
+  /** The server's Tools, any field of which a field-level scenario changes. */
+  tools: readonly string[] = []
 ): World<State> {
   let attempts = 0;
   const failingAttempts = new Set<number>();
@@ -39,7 +43,9 @@ export function createWorld<State>(
     receivedWrites: [] as ReceivedWrite[],
     drift,
     setDrift(scenario: string, on: boolean) {
-      if (!scenarios.includes(scenario)) return false;
+      const tool = parseFieldDrift(scenario)?.tool;
+      if (!scenarios.includes(scenario) && !tools.includes(tool ?? ""))
+        return false;
       if (on) drift.add(scenario);
       else drift.delete(scenario);
       return true;
