@@ -1,8 +1,8 @@
 // Runs the benchmark, which `pinfold bench` calls:
 //   node bin.ts --model <id> --provider <slug> --budget <usd> [--pilot]
 //     [--tasks a,b] [--inputs 0,1,2] [--arms A2,A4] [--repeats 3] [--out dir]
-// A2 needs OPENROUTER_API_KEY. The pilot runs one task on its first input,
-// three times per Arm, to estimate the cost of a run.
+// A2 needs OPENROUTER_API_KEY. The pilot runs the first task chosen on its
+// first input, three times per Arm, to estimate the cost of a run.
 import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -48,9 +48,10 @@ if (arms.includes("A2") && model === undefined) {
   fail("A2 needs --model, --provider and OPENROUTER_API_KEY");
 }
 const names = values.tasks?.split(",");
-const chosen = values.pilot
-  ? tasks.slice(0, 1)
-  : tasks.filter((task) => names === undefined || names.includes(task.name));
+// The pilot runs the first task chosen.
+const chosen = tasks
+  .filter((task) => names === undefined || names.includes(task.name))
+  .slice(0, values.pilot ? 1 : undefined);
 if (chosen.length === 0)
   fail(`no task among ${tasks.map((task) => task.name).join(", ")}`);
 
