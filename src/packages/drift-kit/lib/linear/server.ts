@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod";
-import { failedOnRequest, structured } from "../reply.ts";
+import { failedOnRequest, listed, respond } from "../reply.ts";
 import { createWorld, type World } from "../world.ts";
 
 const issueSchema = z.object({
@@ -37,7 +37,8 @@ export const linearDriftScenarios = ["renamed-argument"] as const;
 export function createLinearWorld(): World<LinearState> {
   return createWorld(
     () => ({ issues: structuredClone([...seedIssues]) }),
-    linearDriftScenarios
+    linearDriftScenarios,
+    ["searchIssues", "createIssue"]
   );
 }
 
@@ -50,7 +51,7 @@ export function createLinearServer(world: World<LinearState>): McpServer {
       description:
         "Search Linear issues whose title or description contains the query.",
       inputSchema: z.object({ query: z.string() }),
-      outputSchema: z.object({ issues: z.array(issueSchema) }),
+      outputSchema: listed(z.object({ issues: z.array(issueSchema) }), world),
       annotations: { readOnlyHint: true },
     },
     async ({ query }) => {
@@ -60,7 +61,7 @@ export function createLinearServer(world: World<LinearState>): McpServer {
           `${issue.title}\n${issue.description}`.toLowerCase().includes(needle)
         ),
       };
-      return structured(output);
+      return respond(world, "searchIssues", output);
     }
   );
 
@@ -83,7 +84,7 @@ export function createLinearServer(world: World<LinearState>): McpServer {
         description: z.string().optional(),
         assigneeEmail: z.string().optional(),
       }),
-      outputSchema: createdSchema,
+      outputSchema: listed(createdSchema, world),
       annotations: { readOnlyHint: false, destructiveHint: false },
     },
     async (args) => {
@@ -106,7 +107,7 @@ export function createLinearServer(world: World<LinearState>): McpServer {
         title: issue.title,
         url: `https://linear.example/issue/${issue.identifier}`,
       };
-      return structured(output);
+      return respond(world, "createIssue", output);
     }
   );
 
