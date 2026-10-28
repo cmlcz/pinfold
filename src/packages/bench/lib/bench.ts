@@ -15,6 +15,9 @@ import { benchClassification } from "./tasks.ts";
 
 export const serverNames = ["sentry", "linear", "github"] as const;
 
+/** A Drift Kit server the benchmark starts. */
+export type BenchServer = (typeof serverNames)[number];
+
 /** Drift Kit servers over HTTP, reset to their seeds for each run. */
 export type Bench = {
   config: PinfoldConfig;

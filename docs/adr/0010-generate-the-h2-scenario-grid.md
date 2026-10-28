@@ -14,6 +14,6 @@ A scenario is mappable when a Response Adapter op can express the change: rename
 
 ## Consequences
 
-- The rename rule keeps the old name's words in the new one, which favours deterministic Repair's name matching. The H2 report must say so. The changelog set, not built yet, is the check against it.
+- The rename rule keeps the old name's words in the new one, which favours deterministic Repair's name matching. The H2 report must say so. The changelog set, ported from github/github-mcp-server's trims of its responses (`src/packages/bench/changelog.ts`), is the check against it.
 - Changing a task's reference program or the Drift Kit's seeds can change the grid. Then the grid must be regenerated and committed, and earlier results do not compare with later ones.
 - Type changes cover numbers only. A date that turns into epoch milliseconds is left out, since Baselines do not mark which strings are dates.

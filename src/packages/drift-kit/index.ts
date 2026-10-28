@@ -36,3 +36,4 @@ export {
 export type { ReceivedWrite } from "./lib/world.ts";
 export { linearDriftScenarios } from "./lib/linear/server.ts";
 export { sentryDriftScenarios } from "./lib/sentry/server.ts";
+export { githubMcpDriftScenarios } from "./lib/github-mcp/server.ts";
