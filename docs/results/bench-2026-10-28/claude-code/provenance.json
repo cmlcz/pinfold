@@ -1,0 +1,10 @@
+{
+  "Measured on": "2026-10-28T18:11:15.167Z",
+  "Commit": "d7810f5",
+  "pinfold": "0.0.0",
+  "Node": "v26.12.0",
+  "Driver": "claude-code 2.1.312 deepseek/deepseek-v4.1-flash-1017@deepinfra/fp8",
+  "Budget cap (USD)": "0.4",
+  "Mode": "full",
+  "Merged from": "bench-results/full-2026-10-28/claude-code-error-digest, bench-results/full-2026-10-28/claude-code-issue-owners, bench-results/full-2026-10-28/claude-code-file-issues, bench-results/full-2026-10-28/claude-code-commit-counts, bench-results/full-2026-10-28/claude-code-triage-once, bench-results/full-2026-10-28/claude-code-triage-assign"
+}

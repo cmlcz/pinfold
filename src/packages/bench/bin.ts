@@ -105,6 +105,7 @@ const provenance = {
   pinfold: version,
   Node: process.version,
   Driver: driver?.id ?? "none",
+  "Repair Model": process.env.PINFOLD_REPAIR_MODEL ?? "none",
   "Budget cap (USD)": String(budgetUsd),
   Mode: values.pilot ? "pilot" : "full",
 };
@@ -126,7 +127,7 @@ try {
       runs,
       drift: lifecycleDrift(grid, task, runs),
       driver: driver!,
-      arms: agentArms.length > 0 ? agentArms : ["A2"],
+      arms: agentArms,
       budgetUsd,
       log: (line) => console.log(line),
     });
