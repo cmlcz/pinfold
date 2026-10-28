@@ -3,27 +3,16 @@
 // programs read, and committed before any run; a run applies each scenario
 // to each saved Workflow that reads its field, and the task's checker
 // judges the repaired run.
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
-  openCore,
   openPlans,
   type Core,
-  type PinfoldConfig,
   type WorkflowRunResult,
 } from "../../core/index.ts";
-import {
-  connectControl,
-  serveDriftKitHttp,
-  type ControlClient,
-  type DriftKitServerName,
-  type HttpDriftKitServer,
-} from "../../drift-kit/index.ts";
-import type { Outcome } from "./state.ts";
-import { benchClassification, tasks, type Task } from "./tasks.ts";
-
-const serverNames = ["sentry", "linear", "github"] as const;
+import type { DriftKitServerName } from "../../drift-kit/index.ts";
+import type { Bench } from "./bench.ts";
+import { tasks, type Task } from "./tasks.ts";
 
 /** One Drift Scenario of the grid, and the Workflows it is tried on. */
 export type GridScenario = {
@@ -40,73 +29,11 @@ export type GridScenario = {
 // Response Adapter cannot make.
 const mappableKinds = new Set(["rename", "type-change", "enum-change", "wrap"]);
 
-/** Drift Kit servers over HTTP, reset to their seeds for each run. */
-export type Bench = {
-  config: PinfoldConfig;
-  controls: Record<(typeof serverNames)[number], ControlClient>;
-  /** Resets every server and opens a core on a fresh project. */
-  fresh(): Promise<{ core: Core; root: string }>;
-  outcome(value: unknown): Promise<Outcome>;
-  close(): Promise<void>;
-};
-
-export async function startBench(): Promise<Bench> {
-  const dir = await mkdtemp(join(tmpdir(), "pinfold-h2-"));
-  const servers: HttpDriftKitServer[] = [];
-  for (const name of serverNames) {
-    servers.push(
-      await serveDriftKitHttp(name, { control: join(dir, `${name}.sock`) })
-    );
-  }
-  const controls = Object.fromEntries(
-    serverNames.map((name) => [name, connectControl(join(dir, `${name}.sock`))])
-  ) as Bench["controls"];
-  const config: PinfoldConfig = {
-    servers: Object.fromEntries(
-      serverNames.map((name, index) => [name, { url: servers[index]!.url }])
-    ),
-    classification: benchClassification,
-  };
-  const cores: Core[] = [];
-  return {
-    config,
-    controls,
-    async fresh() {
-      await Promise.all(serverNames.map((name) => controls[name].reset()));
-      const root = await mkdtemp(join(dir, "run-"));
-      const core = await openCore(config, { root });
-      cores.push(core);
-      return { core, root };
-    },
-    async outcome(value) {
-      const writes = Object.fromEntries(
-        await Promise.all(
-          serverNames.map(
-            async (name) =>
-              [name, await controls[name].receivedWrites()] as const
-          )
-        )
-      );
-      const state = Object.fromEntries(
-        await Promise.all(
-          serverNames.map(async (name) => [name, await controls[name].state()])
-        )
-      ) as Outcome["state"];
-      return { value, writes, state };
-    },
-    async close() {
-      await Promise.allSettled(cores.map((core) => core.close()));
-      await Promise.allSettled(servers.map((server) => server.close()));
-      await rm(dir, { recursive: true, force: true });
-    },
-  };
-}
-
 /**
  * Saves the reference program of a task for one input as a Workflow and
  * applies its first run, as a developer would before Drift.
  */
-async function saveApplied(
+export async function saveApplied(
   core: Core,
   root: string,
   task: Task,
@@ -127,7 +54,7 @@ async function saveApplied(
 }
 
 // Runs Workflow w, approving a plan that waits for Approval once.
-async function approvedRun(
+export async function approvedRun(
   core: Core,
   root: string,
   input: unknown
@@ -305,7 +232,7 @@ async function tryScenario(
   const { core, root } = await bench.fresh();
   await saveApplied(core, root, task, input);
   // The drifted run starts from the seed, so its writes are its own.
-  await Promise.all(serverNames.map((name) => bench.controls[name].reset()));
+  await bench.reset();
   await bench.controls[entry.server].startDrift(entry.scenario);
   const result = await approvedRun(core, root, task.inputs[input]!);
   if (!result.ok) {

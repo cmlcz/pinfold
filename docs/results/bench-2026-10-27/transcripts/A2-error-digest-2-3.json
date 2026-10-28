@@ -1,0 +1,122 @@
+[
+  {
+    "role": "system",
+    "content": "You are a coding agent. Do the developer's task with the tools you have; do not ask the developer anything. When you are done, reply with the task's result as JSON and nothing else."
+  },
+  {
+    "role": "user",
+    "content": "For every Sentry issue of project \"jobs\" with at least 100 events, whatever its status, return { shortId, count, status, latestRelease }, where latestRelease is the release of its newest event, or null if it has none. Return them as one array, most events first. Change nothing."
+  },
+  {
+    "role": "assistant",
+    "content": "I'll start by exploring the available SDK tools.\n\n",
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-81fac49975033793",
+        "function": {
+          "name": "search_sdk",
+          "arguments": "{\"query\": \"sentry issues list project events\"}"
+        },
+        "type": "function"
+      },
+      {
+        "id": "chatcmpl-tool-999bba1e25e0809b",
+        "function": {
+          "name": "search_sdk",
+          "arguments": "{\"query\": \"sentry event release\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-81fac49975033793",
+    "content": "/** List the events recorded for a Sentry issue, newest first. */\nsdk.sentry.listIssueEvents(args: { issueId: string }): Promise<{ events: { id: string; issueId: string; timestamp: string; release: string; message: string }[] }>\n\n/** List the issues of a Sentry project. */\nsdk.sentry.listIssues(args: { project: string }): Promise<{ issues: { id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }[] }>\n\n/** List the Sentry projects of the organization. */\nsdk.sentry.listProjects(args?: { platform?: string }): Promise<unknown>\n\n/** Get the members of a Sentry project's team. */\nsdk.sentry.getProjectTeam(args: { slug: string }): Promise<unknown>\n\n/** Get one Sentry issue by its id. */\nsdk.sentry.getIssue(args: { id: string }): Promise<{ id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }>\n\n/** List the repository's commits, newest first, in pages of 50. Pass a page's nextCursor to get the next one. */\nsdk.github.listCommits(args?: { since?: string; cursor?: string }): Promise<{ commits: { sha: string; authorName: string; authorEmail: string; message: string; committedAt: string }[]; nextCursor: string | null }>\n\n/** Search Linear issues whose title or description contains the query. */\nsdk.linear.searchIssues(args: { query: string }): Promise<{ issues: { id: string; identifier: string; title: string; description: string; assigneeEmail: string | null; state: \"Todo\" | \"In Progress\" | \"Done\" }[] }>\n\n/** Create a Linear issue. Write Tool: a run records this call in its Write Plan instead of sending it, and gets a Placeholder back. */\nsdk.linear.createIssue(args: { title: string; description?: string; assigneeEmail?: string }): Promise<Placeholder<{ id: string; identifier: string; title: string; url: string }>>"
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-999bba1e25e0809b",
+    "content": "/** List the events recorded for a Sentry issue, newest first. */\nsdk.sentry.listIssueEvents(args: { issueId: string }): Promise<{ events: { id: string; issueId: string; timestamp: string; release: string; message: string }[] }>\n\n/** Get one Sentry issue by its id. */\nsdk.sentry.getIssue(args: { id: string }): Promise<{ id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }>\n\n/** List the issues of a Sentry project. */\nsdk.sentry.listIssues(args: { project: string }): Promise<{ issues: { id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }[] }>\n\n/** List the Sentry projects of the organization. */\nsdk.sentry.listProjects(args?: { platform?: string }): Promise<unknown>\n\n/** Get the members of a Sentry project's team. */\nsdk.sentry.getProjectTeam(args: { slug: string }): Promise<unknown>"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-bc8a75a47370b62b",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input) {\\n  const res = await sdk.sentry.listIssues({ project: \\\"jobs\\\" });\\n  return res;\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-bc8a75a47370b62b",
+    "content": "Error: TS7006: Parameter 'input' implicitly has an 'any' type.\n    at program.ts:1:28"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-aacb75cf2db96d91",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: Record<string, never>) {\\n  const res = await sdk.sentry.listIssues({ project: \\\"jobs\\\" });\\n  return res;\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-aacb75cf2db96d91",
+    "content": "{\"issues\":[{\"id\":\"4701\",\"shortId\":\"JOBS-1\",\"project\":\"jobs\",\"title\":\"JobError: sendDigest failed\",\"culprit\":\"mailer.ts in sendDigest\",\"filename\":\"src/jobs/mailer.ts\",\"lineNumber\":31,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T10:00:00Z\",\"count\":412,\"userCount\":0,\"status\":\"unresolved\"},{\"id\":\"4702\",\"shortId\":\"JOBS-2\",\"project\":\"jobs\",\"title\":\"JobError: chargeCard failed\",\"culprit\":\"billing.ts in chargeCard\",\"filename\":\"src/jobs/billing.ts\",\"lineNumber\":77,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T11:00:00Z\",\"count\":260,\"userCount\":0,\"status\":\"unresolved\"},{\"id\":\"4703\",\"shortId\":\"JOBS-3\",\"project\":\"jobs\",\"title\":\"JobError: writeCsv failed\",\"culprit\":\"export.ts in writeCsv\",\"filename\":\"src/jobs/export.ts\",\"lineNumber\":12,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T12:00:00Z\",\"count\":198,\"userCount\":0,\"status\":\"unresolved\"},{\"id\":\"4704\",\"shortId\":\"JOBS-4\",\"project\":\"jobs\",\"title\":\"JobError: purgeOld failed\",\"culprit\":\"cleanup.ts in purgeOld\",\"filename\":\"src/jobs/cleanup.ts\",\"lineNumber\":54,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T13:00:00Z\",\"count\":151,\"userCount\":0,\"status\":\"unresolved\"},{\"id\":\"4705\",\"shortId\":\"JOBS-5\",\"project\":\"jobs\",\"title\":\"JobError: sendDigest failed\",\"culprit\":\"mailer.ts in sendDigest\",\"filename\":\"src/jobs/mailer.ts\",\"lineNumber\":31,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T14:00:00Z\",\"count\":133,\"userCount\":0,\"status\":\"unresolved\"},{\"id\":\"4706\",\"shortId\":\"JOBS-6\",\"project\":\"jobs\",\"title\":\"JobError: pullVendors failed\",\"culprit\":\"sync.ts in pullVendors\",\"filename\":\"src/jobs/sync.ts\",\"lineNumber\":140,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T15:00:00Z\",\"count\":120,\"userCount\":0,\"status\":\"unresolved\"},{\"id\":\"4707\",\"shortId\":\"JOBS-7\",\"project\":\"jobs\",\"title\":\"JobError: buildWeekly failed\",\"culprit\":\"report.ts in buildWeekly\",\"filename\":\"src/jobs/report.ts\",\"lineNumber\":66,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T16:00:00Z\",\"count\":97,\"userCount\":0,\"status\":\"unresolved\"},{\"id\":\"4708\",\"shortId\":\"JOBS-8\",\"project\":\"jobs\",\"title\":\"JobError: refund failed\",\"culprit\":\"billing.ts in refund\",\"filename\":\"src/jobs/billing.ts\",\"lineNumber\":203,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T17:00:00Z\",\"count\":88,\"userCount\":0,\"status\":\"unresolved\"},{\"id\":\"4709\",\"shortId\":\"JOBS-9\",\"project\":\"jobs\",\"title\":\"JobError: writeCsv failed\",\"culprit\":\"export.ts in writeCsv\",\"filename\":\"src/jobs/export.ts\",\"lineNumber\":12,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T18:00:00Z\",\"count\":75,\"userCount\":0,\"status\":\"unresolved\"},{\"id\":\"4710\",\"shortId\":\"JOBS-A\",\"project\":\"jobs\",\"title\":\"JobError: vacuum failed\",\"culprit\":\"cleanup.ts in vacuum\",\"filename\":\"src/jobs/cleanup.ts\",\"lineNumber\":99,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T19:00:00Z\",\"count\":64,\"userCount\":0,\"status\":\"resolved\"},{\"id\":\"4711\",\"shortId\":\"JOBS-B\",\"project\":\"jobs\",\"title\":\"JobError: pushOrders failed\",\"culprit\":\"sync.ts in pushOrders\",\"filename\":\"src/jobs/sync.ts\",\"lineNumber\":18,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T20:00:00Z\",\"count\":41,\"userCount\":0,\"status\":\"unresolved\"},{\"id\":\"4712\",\"shortId\":\"JOBS-C\",\"project\":\"jobs\",\"title\":\"JobError: emailPdf failed\",\"culprit\":\"report.ts in emailPdf\",\"filename\":\"src/jobs/report.ts\",\"lineNumber\":150,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T21:00:00Z\",\"count\":23,\"userCount\":0,\"status\":\"ignored\"}]}\n\nExploration Run 4620b50b. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-81de908ba17994ad",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: Record<string, never>) {\\n  const { issues } = await sdk.sentry.listIssues({ project: \\\"jobs\\\" });\\n  const qualifying = issues.filter((i) => i.count >= 100);\\n  const out = [];\\n  for (const issue of qualifying) {\\n    const { events } = await sdk.sentry.listIssueEvents({ issueId: issue.id });\\n    out.push({ issue, events });\\n  }\\n  return out;\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-81de908ba17994ad",
+    "content": "[{\"issue\":{\"id\":\"4701\",\"shortId\":\"JOBS-1\",\"project\":\"jobs\",\"title\":\"JobError: sendDigest failed\",\"culprit\":\"mailer.ts in sendDigest\",\"filename\":\"src/jobs/mailer.ts\",\"lineNumber\":31,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T10:00:00Z\",\"count\":412,\"userCount\":0,\"status\":\"unresolved\"},\"events\":[{\"id\":\"e-9201\",\"issueId\":\"4701\",\"timestamp\":\"2026-10-17T10:00:00Z\",\"release\":\"jobs@2.1.0\",\"message\":\"SMTP connection reset\"},{\"id\":\"e-9202\",\"issueId\":\"4701\",\"timestamp\":\"2026-10-16T09:00:00Z\",\"release\":\"jobs@2.0.3\",\"message\":\"SMTP connection reset\"}]},{\"issue\":{\"id\":\"4702\",\"shortId\":\"JOBS-2\",\"project\":\"jobs\",\"title\":\"JobError: chargeCard failed\",\"culprit\":\"billing.ts in chargeCard\",\"filename\":\"src/jobs/billing.ts\",\"lineNumber\":77,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T11:00:00Z\",\"count\":260,\"userCount\":0,\"status\":\"unresolved\"},\"events\":[{\"id\":\"e-9203\",\"issueId\":\"4702\",\"timestamp\":\"2026-10-17T11:00:00Z\",\"release\":\"jobs@2.1.0\",\"message\":\"card declined: insufficient funds\"}]},{\"issue\":{\"id\":\"4703\",\"shortId\":\"JOBS-3\",\"project\":\"jobs\",\"title\":\"JobError: writeCsv failed\",\"culprit\":\"export.ts in writeCsv\",\"filename\":\"src/jobs/export.ts\",\"lineNumber\":12,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T12:00:00Z\",\"count\":198,\"userCount\":0,\"status\":\"unresolved\"},\"events\":[]},{\"issue\":{\"id\":\"4704\",\"shortId\":\"JOBS-4\",\"project\":\"jobs\",\"title\":\"JobError: purgeOld failed\",\"culprit\":\"cleanup.ts in purgeOld\",\"filename\":\"src/jobs/cleanup.ts\",\"lineNumber\":54,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T13:00:00Z\",\"count\":151,\"userCount\":0,\"status\":\"unresolved\"},\"events\":[]},{\"issue\":{\"id\":\"4705\",\"shortId\":\"JOBS-5\",\"project\":\"jobs\",\"title\":\"JobError: sendDigest failed\",\"culprit\":\"mailer.ts in sendDigest\",\"filename\":\"src/jobs/mailer.ts\",\"lineNumber\":31,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T14:00:00Z\",\"count\":133,\"userCount\":0,\"status\":\"unresolved\"},\"events\":[]},{\"issue\":{\"id\":\"4706\",\"shortId\":\"JOBS-6\",\"project\":\"jobs\",\"title\":\"JobError: pullVendors failed\",\"culprit\":\"sync.ts in pullVendors\",\"filename\":\"src/jobs/sync.ts\",\"lineNumber\":140,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T15:00:00Z\",\"count\":120,\"userCount\":0,\"status\":\"unresolved\"},\"events\":[]}]\n\nExploration Run fef89b4d. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-804acaea8f695dea",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: Record<string, never>) {\\n  const { issues } = await sdk.sentry.listIssues({ project: \\\"jobs\\\" });\\n  const qualifying = issues.filter((i) => i.project === \\\"jobs\\\" && i.count >= 100);\\n\\n  const rows: { shortId: string; count: number; status: string; latestRelease: string | null }[] = [];\\n  for (const issue of qualifying) {\\n    const { events } = await sdk.sentry.listIssueEvents({ issueId: issue.id });\\n    const sorted = [...events].sort(\\n      (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)\\n    );\\n    const newest = sorted[0];\\n    const release =\\n      newest && typeof newest.release === \\\"string\\\" && newest.release.trim() !== \\\"\\\"\\n        ? newest.release\\n        : null;\\n    rows.push({\\n      shortId: issue.shortId,\\n      count: issue.count,\\n      status: issue.status,\\n      latestRelease: release,\\n    });\\n  }\\n\\n  rows.sort((a, b) => b.count - a.count);\\n  return rows;\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-804acaea8f695dea",
+    "content": "[{\"shortId\":\"JOBS-1\",\"count\":412,\"status\":\"unresolved\",\"latestRelease\":\"jobs@2.1.0\"},{\"shortId\":\"JOBS-2\",\"count\":260,\"status\":\"unresolved\",\"latestRelease\":\"jobs@2.1.0\"},{\"shortId\":\"JOBS-3\",\"count\":198,\"status\":\"unresolved\",\"latestRelease\":null},{\"shortId\":\"JOBS-4\",\"count\":151,\"status\":\"unresolved\",\"latestRelease\":null},{\"shortId\":\"JOBS-5\",\"count\":133,\"status\":\"unresolved\",\"latestRelease\":null},{\"shortId\":\"JOBS-6\",\"count\":120,\"status\":\"unresolved\",\"latestRelease\":null}]\n\nExploration Run cf675a41. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": "```json\n[\n  { \"shortId\": \"JOBS-1\", \"count\": 412, \"status\": \"unresolved\", \"latestRelease\": \"jobs@2.1.0\" },\n  { \"shortId\": \"JOBS-2\", \"count\": 260, \"status\": \"unresolved\", \"latestRelease\": \"jobs@2.1.0\" },\n  { \"shortId\": \"JOBS-3\", \"count\": 198, \"status\": \"unresolved\", \"latestRelease\": null },\n  { \"shortId\": \"JOBS-4\", \"count\": 151, \"status\": \"unresolved\", \"latestRelease\": null },\n  { \"shortId\": \"JOBS-5\", \"count\": 133, \"status\": \"unresolved\", \"latestRelease\": null },\n  { \"shortId\": \"JOBS-6\", \"count\": 120, \"status\": \"unresolved\", \"latestRelease\": null }\n]\n```"
+  }
+]
