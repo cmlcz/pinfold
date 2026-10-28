@@ -28,6 +28,16 @@ export type HarnessOptions = {
 export class BudgetExceeded extends Error {}
 
 /**
+ * Why a benchmark stops early, keeping the runs so far: the budget cap, or
+ * a model that stayed unavailable. Undefined for any other error.
+ */
+export function stopReason(error: unknown): string | undefined {
+  return error instanceof BudgetExceeded || error instanceof ModelUnavailable
+    ? error.message
+    : undefined;
+}
+
+/**
  * Spending on model calls, refused once it might pass the cap: before each
  * run, what was spent plus the dearest run so far must fit.
  */
@@ -91,13 +101,8 @@ export async function runBenchmark(
               record = { ...(await runA4(bench, task, input)), repeat };
             }
           } catch (error) {
-            if (
-              error instanceof BudgetExceeded ||
-              error instanceof ModelUnavailable
-            ) {
-              stopped = error.message;
-              break runs;
-            }
+            stopped = stopReason(error);
+            if (stopped !== undefined) break runs;
             throw error;
           }
           records.push(record);

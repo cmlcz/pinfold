@@ -4,14 +4,13 @@
 // then for every Repair and Approval pause; an agent Arm pays every run.
 import { openPlans, readStats, type Stats } from "../../core/index.ts";
 import type { DriftKitServerName } from "../../drift-kit/index.ts";
-import { addUsage, ModelUnavailable, noUsage, type Usage } from "./agent.ts";
+import { addUsage, noUsage, type Usage } from "./agent.ts";
 import { runAgentArm, type ArmName } from "./arms.ts";
 import type { Bench } from "./bench.ts";
 import type { Driver } from "./drivers.ts";
-import { saveApplied } from "./h2.ts";
-import { BudgetExceeded, openBudget } from "./harness.ts";
+import { saveApplied, type GridScenario } from "./h2.ts";
+import { openBudget, stopReason } from "./harness.ts";
 import type { AgentArm } from "./surface.ts";
-import type { GridScenario } from "./h2.ts";
 import type { Task } from "./tasks.ts";
 
 export type ScheduledDrift = {
@@ -176,9 +175,8 @@ export async function runLifecycle(
       }
     }
   } catch (error) {
-    if (error instanceof BudgetExceeded || error instanceof ModelUnavailable) {
-      return result(error.message);
-    }
+    const reason = stopReason(error);
+    if (reason !== undefined) return result(reason);
     throw error;
   } finally {
     await bench.dropDrift();

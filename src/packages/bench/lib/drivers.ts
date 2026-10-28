@@ -4,8 +4,10 @@ import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Client } from "@modelcontextprotocol/client";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import {
+  Client,
+  StreamableHTTPClientTransport,
+} from "@modelcontextprotocol/client";
 import {
   ModelUnavailable,
   noUsage,
@@ -461,15 +463,14 @@ function runCli(
   });
 }
 
-async function output(command: string, args: string[]): Promise<string> {
-  const run = await new Promise<string>((resolve, reject) => {
+function output(command: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "ignore"] });
     let text = "";
     child.stdout.on("data", (chunk: Buffer) => (text += chunk.toString()));
     child.on("error", reject);
     child.on("close", () => resolve(text.trim()));
   });
-  return run;
 }
 
 async function callText(

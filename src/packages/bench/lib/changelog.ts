@@ -9,8 +9,16 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { openCore, type WorkflowRunResult } from "../../core/index.ts";
-import { connectControl, serveDriftKitHttp } from "../../drift-kit/index.ts";
+import {
+  openCore,
+  type Core,
+  type WorkflowRunResult,
+} from "../../core/index.ts";
+import {
+  connectControl,
+  serveDriftKitHttp,
+  type ControlClient,
+} from "../../drift-kit/index.ts";
 import { approvedRun } from "./h2.ts";
 
 type Call = { tool: string; args: Record<string, unknown>[] };
@@ -199,54 +207,12 @@ export async function runChangelog(
         { root }
       );
       try {
-        results.push({ ...scenario, ...(await tryScenario(scenario)) });
+        results.push({
+          ...scenario,
+          ...(await tryScenario(core, root, world, scenario)),
+        });
       } finally {
         await core.close();
-      }
-
-      async function tryScenario(
-        entry: ChangelogScenario
-      ): Promise<{ outcome: ChangelogOutcome; detail: string }> {
-        const explored = await core.explore({
-          code: programFor(entry),
-          input: {},
-        });
-        if (!explored.ok) throw new Error(`${entry.read}: ${explored.error}`);
-        const saved = await core.saveWorkflow({
-          run: explored.exploration,
-          name: "w",
-          confirmed: true,
-        });
-        if (!saved.ok) throw new Error(`${entry.read}: ${saved.error}`);
-        const before = valueOf(await approvedRun(core, root, {}));
-        await world.reset();
-        await world.startDrift(entry.scenario);
-        const after = await approvedRun(core, root, {});
-        if (!after.ok) {
-          const detail = after.error.split("\n")[0]!;
-          return {
-            outcome: /drifted|manual fix/.test(after.error)
-              ? "unrepaired"
-              : "missed",
-            detail: reasonOf(after.error) ?? detail,
-          };
-        }
-        const same = isDeepStrictEqual(after.value, before);
-        if (after.repairs !== undefined) {
-          return {
-            outcome: same ? "repaired" : "wrong repair",
-            // The ops the Repair added, as its diff marks them.
-            detail: after.repairs
-              .flatMap(({ diff }) =>
-                diff.filter((line) => line.startsWith("+"))
-              )
-              .join(", "),
-          };
-        }
-        return {
-          outcome: same ? "unaffected" : "missed",
-          detail: same ? "" : "the run read other values, with no Drift found",
-        };
       }
     }
   } finally {
@@ -254,6 +220,52 @@ export async function runChangelog(
     await rm(dir, { recursive: true, force: true });
   }
   return results;
+}
+
+// Saves a Workflow that reads the scenario's field, then runs it with the
+// trim on, and judges the run against the values it read before.
+async function tryScenario(
+  core: Core,
+  root: string,
+  world: ControlClient,
+  entry: ChangelogScenario
+): Promise<{ outcome: ChangelogOutcome; detail: string }> {
+  const explored = await core.explore({
+    code: programFor(entry),
+    input: {},
+  });
+  if (!explored.ok) throw new Error(`${entry.read}: ${explored.error}`);
+  const saved = await core.saveWorkflow({
+    run: explored.exploration,
+    name: "w",
+    confirmed: true,
+  });
+  if (!saved.ok) throw new Error(`${entry.read}: ${saved.error}`);
+  const before = valueOf(await approvedRun(core, root, {}));
+  await world.reset();
+  await world.startDrift(entry.scenario);
+  const after = await approvedRun(core, root, {});
+  if (!after.ok) {
+    const detail = after.error.split("\n")[0]!;
+    return {
+      outcome: /drifted|manual fix/.test(after.error) ? "unrepaired" : "missed",
+      detail: reasonOf(after.error) ?? detail,
+    };
+  }
+  const same = isDeepStrictEqual(after.value, before);
+  if (after.repairs !== undefined) {
+    return {
+      outcome: same ? "repaired" : "wrong repair",
+      // The ops the Repair added, as its diff marks them.
+      detail: after.repairs
+        .flatMap(({ diff }) => diff.filter((line) => line.startsWith("+")))
+        .join(", "),
+    };
+  }
+  return {
+    outcome: same ? "unaffected" : "missed",
+    detail: same ? "" : "the run read other values, with no Drift found",
+  };
 }
 
 function valueOf(result: WorkflowRunResult): unknown {
