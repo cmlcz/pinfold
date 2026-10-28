@@ -2,7 +2,7 @@
 // budget cap, and writes every run and a summary with its provenance.
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ChatModel, Usage } from "./agent.ts";
+import { ModelUnavailable, type ChatModel, type Usage } from "./agent.ts";
 import { runA2, runA4, type ArmName, type RunRecord } from "./arms.ts";
 import type { Bench } from "./bench.ts";
 import type { Task } from "./tasks.ts";
@@ -89,7 +89,10 @@ export async function runBenchmark(
               record = { ...(await runA4(bench, task, input)), repeat };
             }
           } catch (error) {
-            if (error instanceof BudgetExceeded) {
+            if (
+              error instanceof BudgetExceeded ||
+              error instanceof ModelUnavailable
+            ) {
               stopped = error.message;
               break runs;
             }
