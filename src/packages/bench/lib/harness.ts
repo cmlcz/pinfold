@@ -46,8 +46,9 @@ export function openBudget(budgetUsd: number) {
   let dearest = 0;
   return {
     spent: () => spent,
-    check() {
-      if (spent + dearest > budgetUsd) {
+    /** Throws if `inFlight` runs, each as dear as the dearest, could pass the cap. */
+    check(inFlight = 1) {
+      if (spent + inFlight * dearest > budgetUsd) {
         throw new BudgetExceeded(
           `the budget of $${budgetUsd} would be passed: $${spent.toFixed(4)} spent, and a run has cost up to $${dearest.toFixed(4)}`
         );
