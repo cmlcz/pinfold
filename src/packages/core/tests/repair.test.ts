@@ -150,6 +150,45 @@ describe("Deterministic Repair", () => {
     expect(await readFile(workflowFile, "utf8")).toBe(source);
   });
 
+  it("repairs a wrap on top of a repaired rename, running the rename again after the unwrap (#47)", async () => {
+    const core = await openTriage();
+    const before = await saveApplied(core, "triage_sentry");
+    await ws.control("sentry").startDrift("rename");
+    const renamed = succeeded(
+      await core.runWorkflow({ name: "triage_sentry", input })
+    );
+    await openPlans(ws.dir).approve(renamed.plan.id);
+    succeeded(await core.runWorkflow({ name: "triage_sentry", input }));
+    // The rename stays on; the response now also moves under data, where
+    // the Adapter's rename finds nothing.
+    await ws.control("sentry").startDrift("wrap");
+
+    const paused = succeeded(
+      await core.runWorkflow({ name: "triage_sentry", input })
+    );
+
+    const rename = {
+      op: "rename",
+      from: "issues[].eventCount",
+      to: "issues[].count",
+    };
+    expect(paused.status).toBe("pending");
+    expect(formatWorkflowRun(paused)).toContain(
+      [
+        "pinfold repaired the Response Adapter of sentry.listIssues, now version 2:",
+        `    ${JSON.stringify(rename)}`,
+        '  + {"op":"unwrap","field":"data"}',
+        `  + ${JSON.stringify(rename)}`,
+      ].join("\n")
+    );
+    await openPlans(ws.dir).approve(paused.plan.id);
+    const applied = succeeded(
+      await core.runWorkflow({ name: "triage_sentry", input })
+    );
+    expect(applied.status).toBe("applied");
+    expect(applied.plan.writes).toEqual(before.plan.writes);
+  });
+
   it("proposes no rename when the Fixtures hold too few values to check it against", async () => {
     // Project api has one issue, so the Fixtures hold one count.
     const core = await ws.open({
