@@ -1,6 +1,7 @@
 // The minimal agent loop: a chat model with tools, called until it answers
 // without asking for a tool. The benchmark drives it through OpenRouter
 // with the model and provider pinned and fallbacks off (ADR 0006).
+import { setTimeout as sleep } from "node:timers/promises";
 import * as z from "zod";
 
 /** A message of an OpenAI-compatible chat. */
@@ -99,28 +100,74 @@ const responseSchema = z.object({
   }),
 });
 
-/** A model on OpenRouter, pinned to one provider with fallbacks off. */
+/** A model call that still failed after every retry. */
+export class ModelUnavailable extends Error {}
+
+/**
+ * A model on OpenRouter, pinned to one provider with fallbacks off. A call
+ * that fails on the network, times out or gets 408, 429 or a 5xx is sent
+ * again after each of `retryDelaysMs`; other statuses fail at once.
+ */
 export function openRouterModel({
   model,
   provider,
   apiKey,
   url = "https://openrouter.ai/api/v1/chat/completions",
+  retryDelaysMs = [5_000, 15_000, 30_000, 60_000, 120_000],
+  log = () => {},
 }: {
   model: string;
   provider: string;
   apiKey: string;
   url?: string;
+  retryDelaysMs?: readonly number[];
+  log?: (line: string) => void;
 }): ChatModel {
+  const send = async (body: string): Promise<unknown> => {
+    for (let attempt = 0; ; attempt++) {
+      let status: number | undefined;
+      let failure: string;
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${apiKey}`,
+            "content-type": "application/json",
+          },
+          body,
+          signal: AbortSignal.timeout(180_000),
+        });
+        status = response.status;
+        if (response.ok) return await response.json();
+        failure = `${url} answered ${status}: ${(await response.text()).slice(0, 300)}`;
+      } catch (error) {
+        // The network failed, the timeout fired or the body broke off.
+        const { message, cause } = error as Error & {
+          cause?: { code?: string };
+        };
+        failure = `${url} failed: ${message}${cause?.code ? ` (${cause.code})` : ""}`;
+      }
+      if (
+        status !== undefined &&
+        status < 500 &&
+        status !== 408 &&
+        status !== 429
+      ) {
+        throw new Error(failure);
+      }
+      const delay = retryDelaysMs[attempt];
+      if (delay === undefined) {
+        throw new ModelUnavailable(`${failure}, after ${attempt + 1} attempts`);
+      }
+      log(`${failure}; trying again in ${delay / 1000} s`);
+      await sleep(delay);
+    }
+  };
   return {
     id: `${model}@${provider}`,
     async chat(messages, tools) {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${apiKey}`,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
+      const reply = await send(
+        JSON.stringify({
           model,
           messages,
           tools: tools.map((tool) => ({ type: "function", function: tool })),
@@ -130,15 +177,9 @@ export function openRouterModel({
             allow_fallbacks: false,
             require_parameters: true,
           },
-        }),
-        signal: AbortSignal.timeout(180_000),
-      });
-      if (!response.ok) {
-        throw new Error(
-          `${url} answered ${response.status}: ${(await response.text()).slice(0, 300)}`
-        );
-      }
-      const { choices, usage } = responseSchema.parse(await response.json());
+        })
+      );
+      const { choices, usage } = responseSchema.parse(reply);
       const { content, tool_calls } = choices[0]!.message;
       return {
         message: {

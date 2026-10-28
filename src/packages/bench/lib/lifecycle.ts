@@ -4,7 +4,13 @@
 // then for every Repair and Approval pause; A2 pays for every run.
 import { openPlans } from "../../core/index.ts";
 import type { DriftKitServerName } from "../../drift-kit/index.ts";
-import { addUsage, noUsage, type ChatModel, type Usage } from "./agent.ts";
+import {
+  addUsage,
+  ModelUnavailable,
+  noUsage,
+  type ChatModel,
+  type Usage,
+} from "./agent.ts";
 import { runA2 } from "./arms.ts";
 import type { Bench } from "./bench.ts";
 import { saveApplied } from "./h2.ts";
@@ -151,7 +157,9 @@ export async function runLifecycle(
       );
     }
   } catch (error) {
-    if (error instanceof BudgetExceeded) return result(error.message);
+    if (error instanceof BudgetExceeded || error instanceof ModelUnavailable) {
+      return result(error.message);
+    }
     throw error;
   } finally {
     await bench.dropDrift();

@@ -16,6 +16,7 @@ export {
 } from "./lib/h2.ts";
 export { startBench, type Bench } from "./lib/bench.ts";
 export {
+  ModelUnavailable,
   openRouterModel,
   runAgent,
   type ChatMessage,

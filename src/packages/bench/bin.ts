@@ -52,6 +52,7 @@ const model =
         model: values.model,
         provider: values.provider,
         apiKey,
+        log: (line) => console.log(line),
       })
     : undefined;
 if (arms.includes("A2") && model === undefined) {
