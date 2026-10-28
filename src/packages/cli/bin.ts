@@ -12,7 +12,7 @@
 //   node bin.ts stats [--json] [--config pinfold.json]
 //   node bin.ts bench --model <id> --provider <slug> --budget <usd> [...]
 import { spawnSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
+import { dirname, extname, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import {
@@ -75,7 +75,10 @@ const pausedExitCode = 3;
 
 // The benchmark has options of its own, and needs no project.
 if (process.argv[2] === "bench") {
-  const bench = fileURLToPath(new URL("../bench/bin.ts", import.meta.url));
+  // bin.ts from the sources, bin.js once built.
+  const bench = fileURLToPath(
+    new URL(`../bench/bin${extname(import.meta.url)}`, import.meta.url)
+  );
   const { status } = spawnSync(
     process.execPath,
     [bench, ...process.argv.slice(3)],
