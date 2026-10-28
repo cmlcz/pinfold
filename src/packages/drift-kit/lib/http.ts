@@ -2,7 +2,11 @@
 import { once } from "node:events";
 import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
-import { createMcpHandler } from "@modelcontextprotocol/server";
+import {
+  createMcpHandler,
+  type McpServer,
+  type Server,
+} from "@modelcontextprotocol/server";
 import { serveControl } from "./control.ts";
 import { servers, type DriftKitServerName } from "./servers.ts";
 
@@ -17,7 +21,28 @@ export async function serveHttp(
   options: { control: string; token?: string }
 ): Promise<HttpDriftKitServer> {
   const { world, server } = servers[name]();
-  const handler = createMcpHandler(() => server());
+  const mcp = await serveMcpHttp(() => server(), options);
+  const control = await serveControl(options.control, world);
+  return {
+    url: mcp.url,
+    async close() {
+      await Promise.all([
+        mcp.close(),
+        new Promise((resolve) => control.close(resolve)),
+      ]);
+    },
+  };
+}
+
+/**
+ * Any MCP server over Streamable HTTP, on a free port of the loopback host.
+ * With `token`, a request without it as its bearer token gets 401.
+ */
+export async function serveMcpHttp(
+  factory: () => McpServer | Server,
+  options: { token?: string } = {}
+): Promise<HttpDriftKitServer> {
+  const handler = createMcpHandler(factory);
   const http = createServer(async (req, res) => {
     if (
       options.token !== undefined &&
@@ -33,7 +58,6 @@ export async function serveHttp(
     }
     res.end();
   });
-  const control = await serveControl(options.control, world);
   http.listen(0, "127.0.0.1");
   await once(http, "listening");
   const { port } = http.address() as AddressInfo;
@@ -41,10 +65,7 @@ export async function serveHttp(
     url: `http://127.0.0.1:${port}/mcp`,
     async close() {
       http.closeAllConnections();
-      await Promise.all([
-        new Promise((resolve) => http.close(resolve)),
-        new Promise((resolve) => control.close(resolve)),
-      ]);
+      await new Promise((resolve) => http.close(resolve));
     },
   };
 }

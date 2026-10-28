@@ -3,6 +3,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   formatLifecycle,
   lifecycleDrift,
+  loopDriver,
+  ModelUnavailable,
   runLifecycle,
   startBench,
   tasks,
@@ -88,7 +90,8 @@ describe("the lifecycle experiment", () => {
       input: 0,
       runs: 8,
       drift,
-      model: fakeModel,
+      driver: loopDriver(fakeModel),
+      arms: ["A2"],
       budgetUsd: 1,
     });
 
@@ -123,5 +126,37 @@ describe("the lifecycle experiment", () => {
     expect(report).toContain(
       "A4 reached its Break-even Point against A2 at run 1"
     );
+  });
+
+  it("stops, keeping the runs so far, when the model stays unavailable", async () => {
+    // The Exploration Run and the first A2 run take two calls each.
+    let calls = 0;
+    const failing: ChatModel = {
+      id: fakeModel.id,
+      chat(messages, tools) {
+        if (++calls > 4) {
+          throw new ModelUnavailable("fetch failed, after 6 attempts");
+        }
+        return fakeModel.chat(messages, tools);
+      },
+    };
+
+    const result = await runLifecycle(bench, {
+      task,
+      input: 0,
+      runs: 3,
+      drift: [],
+      driver: loopDriver(failing),
+      arms: ["A2"],
+      budgetUsd: 1,
+    });
+
+    expect(result.stopped).toBe("fetch failed, after 6 attempts");
+    expect(result.runs.map((run) => [run.arm, run.run])).toEqual([
+      ["A4", 1],
+      ["A4", 2],
+      ["A4", 3],
+      ["A2", 1],
+    ]);
   });
 });

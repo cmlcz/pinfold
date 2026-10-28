@@ -1,0 +1,238 @@
+A4 run 1: ok
+A4 run 2: ok
+A4 run 3: ok
+A4 run 4: ok
+A4 run 5: ok
+A4 run 6: ok
+A4 run 7: ok
+A4 run 8: ok
+A4 run 9: ok
+A4 run 10: ok
+A4 run 11: ok
+A4 run 12: ok
+A4 run 13: ok
+A4 run 14: ok
+A4 run 15: ok
+A4 run 16: ok
+A4 run 17: ok
+A4 run 18: ok
+A4 run 19: ok
+A4 run 20: ok
+A4 run 21: ok
+A4 run 22: ok
+A4 run 23: ok
+A4 run 24: ok
+A4 run 25: ok
+A4 run 26: ok, paused
+A4 run 27: ok
+A4 run 28: ok
+A4 run 29: ok
+A4 run 30: ok
+A4 run 31: ok
+A4 run 32: ok
+A4 run 33: ok
+A4 run 34: ok
+A4 run 35: ok
+A4 run 36: ok
+A4 run 37: ok
+A4 run 38: ok
+A4 run 39: ok
+A4 run 40: ok
+A4 run 41: ok
+A4 run 42: ok
+A4 run 43: ok
+A4 run 44: ok
+A4 run 45: ok
+A4 run 46: ok
+A4 run 47: ok
+A4 run 48: ok
+A4 run 49: ok
+A4 run 50: ok
+A4 run 51: ok, paused
+A4 run 52: ok
+A4 run 53: ok
+A4 run 54: ok
+A4 run 55: ok
+A4 run 56: ok
+A4 run 57: ok
+A4 run 58: ok
+A4 run 59: ok
+A4 run 60: ok
+A4 run 61: ok
+A4 run 62: ok
+A4 run 63: ok
+A4 run 64: ok
+A4 run 65: ok
+A4 run 66: ok
+A4 run 67: ok
+A4 run 68: ok
+A4 run 69: ok
+A4 run 70: ok
+A4 run 71: ok
+A4 run 72: ok
+A4 run 73: ok
+A4 run 74: ok
+A4 run 75: ok
+A4 run 76: ok, paused
+A4 run 77: ok
+A4 run 78: ok
+A4 run 79: ok
+A4 run 80: ok
+A4 run 81: ok
+A4 run 82: ok
+A4 run 83: ok
+A4 run 84: ok
+A4 run 85: ok
+A4 run 86: ok
+A4 run 87: ok
+A4 run 88: ok
+A4 run 89: ok
+A4 run 90: ok
+A4 run 91: ok
+A4 run 92: ok
+A4 run 93: ok
+A4 run 94: ok
+A4 run 95: ok
+A4 run 96: ok
+A4 run 97: ok
+A4 run 98: ok
+A4 run 99: ok
+A4 run 100: ok
+A2 run 1: failed, $0.0010, $0.0022 spent
+A2 run 2: ok, $0.0007, $0.0029 spent
+A2 run 3: ok, $0.0014, $0.0043 spent
+A2 run 4: failed, $0.0015, $0.0058 spent
+A2 run 5: ok, $0.0012, $0.0070 spent
+A2 run 6: failed, $0.0008, $0.0079 spent
+A2 run 7: ok, $0.0020, $0.0099 spent
+A2 run 8: ok, $0.0009, $0.0108 spent
+A2 run 9: failed, $0.0012, $0.0120 spent
+A2 run 10: failed, $0.0010, $0.0130 spent
+A2 run 11: failed, $0.0009, $0.0139 spent
+A2 run 12: failed, $0.0015, $0.0154 spent
+A2 run 13: ok, $0.0022, $0.0176 spent
+A2 run 14: failed, $0.0012, $0.0187 spent
+A2 run 15: failed, $0.0009, $0.0196 spent
+A2 run 16: ok, $0.0013, $0.0210 spent
+A2 run 17: failed, $0.0010, $0.0219 spent
+A2 run 18: failed, $0.0016, $0.0235 spent
+A2 run 19: ok, $0.0030, $0.0265 spent
+A2 run 20: failed, $0.0015, $0.0280 spent
+A2 run 21: failed, $0.0013, $0.0294 spent
+A2 run 22: failed, $0.0012, $0.0305 spent
+A2 run 23: failed, $0.0011, $0.0317 spent
+A2 run 24: ok, $0.0017, $0.0333 spent
+A2 run 25: ok, $0.0016, $0.0350 spent
+A2 run 26: failed, $0.0017, $0.0367 spent
+A2 run 27: failed, $0.0019, $0.0386 spent
+A2 run 28: failed, $0.0015, $0.0401 spent
+A2 run 29: ok, $0.0026, $0.0426 spent
+A2 run 30: failed, $0.0017, $0.0443 spent
+A2 run 31: failed, $0.0019, $0.0462 spent
+A2 run 32: ok, $0.0020, $0.0482 spent
+A2 run 33: failed, $0.0009, $0.0491 spent
+A2 run 34: ok, $0.0011, $0.0502 spent
+A2 run 35: failed, $0.0014, $0.0517 spent
+A2 run 36: ok, $0.0027, $0.0544 spent
+A2 run 37: ok, $0.0035, $0.0579 spent
+A2 run 38: ok, $0.0015, $0.0594 spent
+A2 run 39: failed, $0.0010, $0.0603 spent
+A2 run 40: failed, $0.0018, $0.0621 spent
+A2 run 41: failed, $0.0014, $0.0635 spent
+A2 run 42: ok, $0.0023, $0.0658 spent
+A2 run 43: failed, $0.0019, $0.0677 spent
+A2 run 44: ok, $0.0021, $0.0698 spent
+A2 run 45: ok, $0.0015, $0.0713 spent
+A2 run 46: ok, $0.0017, $0.0730 spent
+A2 run 47: ok, $0.0019, $0.0749 spent
+A2 run 48: ok, $0.0019, $0.0768 spent
+A2 run 49: ok, $0.0017, $0.0785 spent
+A2 run 50: failed, $0.0015, $0.0800 spent
+A2 run 51: failed, $0.0008, $0.0807 spent
+A2 run 52: failed, $0.0013, $0.0821 spent
+A2 run 53: ok, $0.0016, $0.0837 spent
+A2 run 54: ok, $0.0014, $0.0851 spent
+A2 run 55: ok, $0.0014, $0.0865 spent
+A2 run 56: failed, $0.0028, $0.0894 spent
+A2 run 57: failed, $0.0018, $0.0912 spent
+A2 run 58: ok, $0.0013, $0.0925 spent
+A2 run 59: failed, $0.0021, $0.0946 spent
+A2 run 60: failed, $0.0013, $0.0959 spent
+A2 run 61: failed, $0.0017, $0.0976 spent
+A2 run 62: ok, $0.0020, $0.0996 spent
+A2 run 63: failed, $0.0021, $0.1017 spent
+A2 run 64: failed, $0.0022, $0.1039 spent
+A2 run 65: failed, $0.0075, $0.1114 spent
+A2 run 66: ok, $0.0014, $0.1128 spent
+A2 run 67: failed, $0.0015, $0.1143 spent
+A2 run 68: failed, $0.0013, $0.1156 spent
+A2 run 69: failed, $0.0013, $0.1169 spent
+A2 run 70: ok, $0.0020, $0.1190 spent
+A2 run 71: failed, $0.0011, $0.1201 spent
+A2 run 72: failed, $0.0021, $0.1221 spent
+A2 run 73: ok, $0.0016, $0.1237 spent
+A2 run 74: failed, $0.0011, $0.1248 spent
+A2 run 75: ok, $0.0012, $0.1261 spent
+A2 run 76: ok, $0.0047, $0.1308 spent
+A2 run 77: failed, $0.0016, $0.1323 spent
+A2 run 78: failed, $0.0018, $0.1342 spent
+A2 run 79: failed, $0.0019, $0.1360 spent
+A2 run 80: failed, $0.0018, $0.1378 spent
+A2 run 81: ok, $0.0036, $0.1415 spent
+A2 run 82: failed, $0.0014, $0.1429 spent
+A2 run 83: failed, $0.0011, $0.1440 spent
+A2 run 84: ok, $0.0033, $0.1473 spent
+A2 run 85: failed, $0.0012, $0.1485 spent
+A2 run 86: ok, $0.0027, $0.1512 spent
+A2 run 87: ok, $0.0017, $0.1529 spent
+A2 run 88: ok, $0.0022, $0.1551 spent
+A2 run 89: failed, $0.0022, $0.1573 spent
+A2 run 90: ok, $0.0035, $0.1608 spent
+A2 run 91: ok, $0.0012, $0.1620 spent
+A2 run 92: failed, $0.0013, $0.1633 spent
+A2 run 93: failed, $0.0033, $0.1667 spent
+A2 run 94: failed, $0.0036, $0.1703 spent
+A2 run 95: ok, $0.0039, $0.1741 spent
+A2 run 96: failed, $0.0015, $0.1756 spent
+A2 run 97: failed, $0.0025, $0.1782 spent
+A2 run 98: failed, $0.0018, $0.1800 spent
+A2 run 99: failed, $0.0013, $0.1813 spent
+A2 run 100: ok, $0.0014, $0.1827 spent
+# Lifecycle experiment
+
+- Measured on: 2026-10-28T17:22:43.593Z
+- Commit: 209d758
+- pinfold: 0.0.0
+- Node: v26.12.0
+- Model: deepseek/deepseek-v4.1-flash-1017@deepinfra/fp8
+- Budget cap (USD): 1
+- Mode: full
+- Task: triage-assign, input 0
+- Before run 26: `rename:getBlame:authorEmail` on github, kept on
+- Before run 51: `type-change:listIssues:issues[].count` on sentry, kept on
+- Before run 76: `wrap:getBlame` on github, kept on
+
+A4's totals include its Exploration Run, one agent run: 23841 tokens, $0.0012. Repairs are deterministic and cost no tokens; a run that paused waited for the developer's Approval of a changed Response Adapter or a new plan.
+
+| Arm | Runs | Failed | Approval pauses | Tokens | Cost (USD) |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| A2 | 100 | 58 | 100 | 3883859 | 0.1815 |
+| A4 | 100 | 0 | 3 | 23841 | 0.0012 |
+
+A4 reached its Break-even Point against A2 at run 2: from there on, its cumulative cost is at most A2's.
+
+Cumulative cost (USD) by run:
+
+| Run | A2 | A4 |
+| ---: | ---: | ---: |
+| 1 | 0.0010 | 0.0012 |
+| 10 | 0.0118 | 0.0012 |
+| 25 | 0.0338 | 0.0012 |
+| 26 | 0.0355 | 0.0012 |
+| 50 | 0.0788 | 0.0012 |
+| 51 | 0.0796 | 0.0012 |
+| 75 | 0.1249 | 0.0012 |
+| 76 | 0.1296 | 0.0012 |
+| 100 | 0.1815 | 0.0012 |
+
+exit 0

@@ -1,0 +1,10 @@
+{
+  "Measured on": "2026-10-28T18:27:43.434Z",
+  "Commit": "a5b28c9",
+  "pinfold": "0.0.0",
+  "Node": "v26.12.0",
+  "Driver": "codex 0.153.4 deepseek/deepseek-v4.1-flash-1017@deepinfra/fp8",
+  "Budget cap (USD)": "0.4",
+  "Mode": "full",
+  "Merged from": "bench-results/full-2026-10-28/codex-error-digest, bench-results/full-2026-10-28/codex-issue-owners, bench-results/full-2026-10-28/codex-file-issues, bench-results/full-2026-10-28/codex-commit-counts, bench-results/full-2026-10-28/codex-triage-once, bench-results/full-2026-10-28/codex-triage-assign"
+}

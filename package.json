@@ -8,16 +8,22 @@
     "node": ">=22.18"
   },
   "bin": {
-    "pinfold": "src/packages/cli/bin.ts",
-    "pinfold-gateway": "src/packages/gateway/bin.ts"
+    "pinfold": "dist/packages/cli/bin.js",
+    "pinfold-gateway": "dist/packages/gateway/bin.js"
   },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && cp src/packages/bench/h2-scenarios.json dist/packages/bench/",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:boundaries": "depcruise src",
     "check": "npm run typecheck && npm run lint && npm run lint:boundaries",
     "test": "vitest run",
-    "prepare": "husky"
+    "prepare": "husky && npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "^2.3.1",

@@ -2,6 +2,7 @@
 // checker busy holds up neither the host nor its other requests, and is cut
 // off at a time limit. (A heap limit on the worker is no help: when the
 // checker reaches it, V8 aborts the whole process.)
+import { extname } from "node:path";
 import { Worker } from "node:worker_threads";
 import type { JsonSchema } from "./signature.ts";
 
@@ -52,7 +53,8 @@ function inWorker(
   declarations: string
 ): Promise<Outcome> {
   const current = (worker ??= new Worker(
-    new URL("./check-worker.ts", import.meta.url)
+    // check-worker.ts from the sources, check-worker.js once built.
+    new URL(`./check-worker${extname(import.meta.url)}`, import.meta.url)
   ));
   return new Promise((resolve) => {
     // A worker that ran over or failed is dropped; the next check gets a new one.

@@ -12,7 +12,7 @@
 //   node bin.ts stats [--json] [--config pinfold.json]
 //   node bin.ts bench --model <id> --provider <slug> --budget <usd> [...]
 import { spawnSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
+import { dirname, extname, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import {
@@ -46,7 +46,8 @@ const usage = `usage:
   pinfold run <workflow> [<value> | --<field> <value>...] [--config <path>]
   pinfold stats [--json] [--config <path>]
   pinfold bench --model <id> --provider <slug> --budget <usd> [--pilot]
-    [--tasks <a,b>] [--inputs <0,1,2>] [--arms A2,A4] [--repeats <k>] [--out <dir>]
+    [--driver loop|claude-code|codex] [--tasks <a,b>] [--inputs <0,1,2>]
+    [--arms A1,A2,A3,A4] [--repeats <k>] [--lifecycle] [--runs <n>] [--out <dir>]
 
 pinfold run takes one value for a Workflow whose input is not an object, or
 else a flag per input field; a value starting with -- is given as
@@ -64,8 +65,9 @@ pinfold stats shows what pinfold measured: runs and their wall time, tool
 calls and the bytes of their responses, repairs and repair model tokens;
 --json prints it for machines.
 
-pinfold bench runs the benchmark tasks against the Drift Kit, Arm A2
-through OPENROUTER_API_KEY, and stops before spending past --budget.`;
+pinfold bench runs the benchmark tasks against the Drift Kit, the agent
+Arms through OPENROUTER_API_KEY with the minimal agent loop, Claude Code or
+Codex, and stops before spending past --budget.`;
 
 // A Workflow Run that pauses for Approval exits with this code, so that cron
 // or CI can tell it from a failure.
@@ -73,7 +75,10 @@ const pausedExitCode = 3;
 
 // The benchmark has options of its own, and needs no project.
 if (process.argv[2] === "bench") {
-  const bench = fileURLToPath(new URL("../bench/bin.ts", import.meta.url));
+  // bin.ts from the sources, bin.js once built.
+  const bench = fileURLToPath(
+    new URL(`../bench/bin${extname(import.meta.url)}`, import.meta.url)
+  );
   const { status } = spawnSync(
     process.execPath,
     [bench, ...process.argv.slice(3)],

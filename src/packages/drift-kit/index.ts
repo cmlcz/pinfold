@@ -1,3 +1,4 @@
+import { extname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { DriftKitServerName } from "./lib/servers.ts";
@@ -12,7 +13,10 @@ export function driftKitCommand(
   return {
     command: process.execPath,
     args: [
-      fileURLToPath(new URL("./bin.ts", import.meta.url)),
+      // bin.ts from the sources, bin.js once built.
+      fileURLToPath(
+        new URL(`./bin${extname(import.meta.url)}`, import.meta.url)
+      ),
       server,
       "--control",
       options.control,
@@ -25,6 +29,8 @@ export { connectControl, type ControlClient } from "./lib/control.ts";
 export {
   /** Runs a Drift Kit server as a Streamable HTTP Downstream Server. */
   serveHttp as serveDriftKitHttp,
+  /** Serves any MCP server over Streamable HTTP, as the Drift Kit does. */
+  serveMcpHttp,
   type HttpDriftKitServer,
 } from "./lib/http.ts";
 export type { ReceivedWrite } from "./lib/world.ts";

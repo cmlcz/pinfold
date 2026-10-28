@@ -1,0 +1,10 @@
+{
+  "Measured on": "2026-10-28T18:11:15.026Z",
+  "Commit": "d7810f5",
+  "pinfold": "0.0.0",
+  "Node": "v26.12.0",
+  "Driver": "deepseek/deepseek-v4.1-flash-1017@deepinfra/fp8",
+  "Budget cap (USD)": "0.4",
+  "Mode": "full",
+  "Merged from": "bench-results/full-2026-10-28/loop-error-digest, bench-results/full-2026-10-28/loop-issue-owners, bench-results/full-2026-10-28/loop-file-issues, bench-results/full-2026-10-28/loop-commit-counts, bench-results/full-2026-10-28/loop-triage-once, bench-results/full-2026-10-28/loop-triage-assign"
+}
