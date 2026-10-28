@@ -25,14 +25,18 @@ export type ProxiedCall = {
 export async function servePinProxy({
   provider,
   upstream = "https://openrouter.ai",
+  log = () => {},
 }: {
   provider: string;
   upstream?: string;
+  /** Gets a line per model call answered, to show a run is alive. */
+  log?: (line: string) => void;
 }): Promise<PinProxy> {
   let calls: ProxiedCall[] = [];
   const http = createServer(async (req, res) => {
     try {
       let body = await readBody(req);
+      const started = Date.now();
       if (req.method === "POST" && isJson(req)) {
         const parsed = JSON.parse(body.toString()) as Record<string, unknown>;
         if (typeof parsed.model === "string") {
@@ -78,7 +82,11 @@ export async function servePinProxy({
       // A refused call is not charged. Claude Code makes some on purpose: it
       // first asks for deferred tool loading, then falls back.
       if (response.ok && response.headers.has("x-generation-id")) {
-        calls.push(readCall(text));
+        const call = readCall(text);
+        calls.push(call);
+        log(
+          `  model call ${calls.length}: ${Date.now() - started} ms, $${(call.cost ?? 0).toFixed(5)}`
+        );
       }
     } catch (error) {
       if (!res.headersSent) res.writeHead(502);
