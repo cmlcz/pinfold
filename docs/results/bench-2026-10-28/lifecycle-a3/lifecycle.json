@@ -1,0 +1,2841 @@
+{
+  "provenance": {
+    "Measured on": "2026-10-28T18:24:33.714Z",
+    "Commit": "f0208d3",
+    "pinfold": "0.0.0",
+    "Node": "v26.12.0",
+    "Driver": "deepseek/deepseek-v4.1-flash-1017@deepinfra/fp8",
+    "Budget cap (USD)": "1",
+    "Mode": "full"
+  },
+  "task": "triage-assign",
+  "input": 0,
+  "drift": [
+    {
+      "at": 26,
+      "server": "github",
+      "scenario": "rename:getBlame:authorEmail"
+    },
+    {
+      "at": 51,
+      "server": "sentry",
+      "scenario": "type-change:listIssues:issues[].count"
+    },
+    {
+      "at": 76,
+      "server": "github",
+      "scenario": "wrap:getBlame"
+    }
+  ],
+  "exploration": {
+    "promptTokens": 40081,
+    "cachedTokens": 34944,
+    "cacheWriteTokens": 0,
+    "completionTokens": 7805,
+    "reasoningTokens": 6460,
+    "cost": 0.00290083136
+  },
+  "runs": [
+    {
+      "arm": "A4",
+      "run": 1,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 2,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 3,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 4,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 5,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 6,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 7,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 8,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 9,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 10,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 11,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 12,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 13,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 14,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 15,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 16,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 17,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 18,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 19,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 20,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 21,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 22,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 23,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 24,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 25,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 26,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A4",
+      "run": 27,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 28,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 29,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 30,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 31,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 32,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 33,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 34,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 35,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 36,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 37,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 38,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 39,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 40,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 41,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 42,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 43,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 44,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 45,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 46,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 47,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 48,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 49,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 50,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 51,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A4",
+      "run": 52,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 53,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 54,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 55,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 56,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 57,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 58,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 59,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 60,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 61,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 62,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 63,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 64,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 65,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 66,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 67,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 68,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 69,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 70,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 71,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 72,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 73,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 74,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 75,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 76,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A4",
+      "run": 77,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 78,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 79,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 80,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 81,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 82,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 83,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 84,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 85,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 86,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 87,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 88,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 89,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 90,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 91,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 92,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 93,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 94,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 95,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 96,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 97,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 98,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 99,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A4",
+      "run": 100,
+      "usage": {
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "cost": 0
+      },
+      "success": true,
+      "paused": false
+    },
+    {
+      "arm": "A3",
+      "run": 1,
+      "usage": {
+        "promptTokens": 11648,
+        "cachedTokens": 9856,
+        "cacheWriteTokens": 0,
+        "completionTokens": 1678,
+        "reasoningTokens": 1135,
+        "cost": 0.00069792464
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 2,
+      "usage": {
+        "promptTokens": 21779,
+        "cachedTokens": 18816,
+        "cacheWriteTokens": 0,
+        "completionTokens": 3181,
+        "reasoningTokens": 2237,
+        "cost": 0.0012809070400000002
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 3,
+      "usage": {
+        "promptTokens": 13148,
+        "cachedTokens": 10368,
+        "cacheWriteTokens": 0,
+        "completionTokens": 1790,
+        "reasoningTokens": 1036,
+        "cost": 0.00082918192
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 4,
+      "usage": {
+        "promptTokens": 27200,
+        "cachedTokens": 23680,
+        "cacheWriteTokens": 0,
+        "completionTokens": 3383,
+        "reasoningTokens": 2016,
+        "cost": 0.0014091812
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 5,
+      "usage": {
+        "promptTokens": 11562,
+        "cachedTokens": 9728,
+        "cacheWriteTokens": 0,
+        "completionTokens": 1277,
+        "reasoningTokens": 823,
+        "cost": 0.00058377032
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 6,
+      "usage": {
+        "promptTokens": 7021,
+        "cachedTokens": 6144,
+        "cacheWriteTokens": 0,
+        "completionTokens": 565,
+        "reasoningTokens": 193,
+        "cost": 0.00027011935999999995
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 7,
+      "usage": {
+        "promptTokens": 17580,
+        "cachedTokens": 15872,
+        "cacheWriteTokens": 0,
+        "completionTokens": 2809,
+        "reasoningTokens": 1822,
+        "cost": 0.00103989368
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 8,
+      "usage": {
+        "promptTokens": 15444,
+        "cachedTokens": 13312,
+        "cacheWriteTokens": 0,
+        "completionTokens": 1761,
+        "reasoningTokens": 1038,
+        "cost": 0.0007658072799999999
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 9,
+      "usage": {
+        "promptTokens": 15978,
+        "cachedTokens": 13568,
+        "cacheWriteTokens": 0,
+        "completionTokens": 1922,
+        "reasoningTokens": 1190,
+        "cost": 0.0008411379200000001
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 10,
+      "usage": {
+        "promptTokens": 7022,
+        "cachedTokens": 6144,
+        "cacheWriteTokens": 0,
+        "completionTokens": 855,
+        "reasoningTokens": 482,
+        "cost": 0.00035547736
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 11,
+      "usage": {
+        "promptTokens": 16995,
+        "cachedTokens": 14208,
+        "cacheWriteTokens": 0,
+        "completionTokens": 2647,
+        "reasoningTokens": 1556,
+        "cost": 0.00109311552
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 12,
+      "usage": {
+        "promptTokens": 8130,
+        "cachedTokens": 6656,
+        "cacheWriteTokens": 0,
+        "completionTokens": 1319,
+        "reasoningTokens": 905,
+        "cost": 0.00055180664
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 13,
+      "usage": {
+        "promptTokens": 27792,
+        "cachedTokens": 23936,
+        "cacheWriteTokens": 0,
+        "completionTokens": 3401,
+        "reasoningTokens": 2268,
+        "cost": 0.0014481538399999999
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 14,
+      "usage": {
+        "promptTokens": 19750,
+        "cachedTokens": 16896,
+        "cacheWriteTokens": 0,
+        "completionTokens": 3706,
+        "reasoningTokens": 2631,
+        "cost": 0.00141893024
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 15,
+      "usage": {
+        "promptTokens": 15433,
+        "cachedTokens": 13184,
+        "cacheWriteTokens": 0,
+        "completionTokens": 1824,
+        "reasoningTokens": 1231,
+        "cost": 0.00079541896
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 16,
+      "usage": {
+        "promptTokens": 22613,
+        "cachedTokens": 19200,
+        "cacheWriteTokens": 0,
+        "completionTokens": 2533,
+        "reasoningTokens": 1472,
+        "cost": 0.00125787312
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 17,
+      "usage": {
+        "promptTokens": 20501,
+        "cachedTokens": 17536,
+        "cacheWriteTokens": 0,
+        "completionTokens": 3194,
+        "reasoningTokens": 2378,
+        "cost": 0.00128116184
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 18,
+      "usage": {
+        "promptTokens": 13996,
+        "cachedTokens": 9856,
+        "cacheWriteTokens": 0,
+        "completionTokens": 2015,
+        "reasoningTokens": 1013,
+        "cost": 0.0010271066400000001
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 19,
+      "usage": {
+        "promptTokens": 12941,
+        "cachedTokens": 10240,
+        "cacheWriteTokens": 0,
+        "completionTokens": 3516,
+        "reasoningTokens": 2512,
+        "cost": 0.0013285076000000002
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 20,
+      "usage": {
+        "promptTokens": 22433,
+        "cachedTokens": 19072,
+        "cacheWriteTokens": 0,
+        "completionTokens": 2979,
+        "reasoningTokens": 1884,
+        "cost": 0.00126127568
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 21,
+      "usage": {
+        "promptTokens": 25483,
+        "cachedTokens": 17152,
+        "cacheWriteTokens": 0,
+        "completionTokens": 4182,
+        "reasoningTokens": 3124,
+        "cost": 0.00209637288
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 22,
+      "usage": {
+        "promptTokens": 17031,
+        "cachedTokens": 14208,
+        "cacheWriteTokens": 0,
+        "completionTokens": 3197,
+        "reasoningTokens": 2277,
+        "cost": 0.00125834352
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 23,
+      "usage": {
+        "promptTokens": 22775,
+        "cachedTokens": 19200,
+        "cacheWriteTokens": 0,
+        "completionTokens": 2217,
+        "reasoningTokens": 1200,
+        "cost": 0.001058596
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 24,
+      "usage": {
+        "promptTokens": 21727,
+        "cachedTokens": 17024,
+        "cacheWriteTokens": 0,
+        "completionTokens": 2256,
+        "reasoningTokens": 1331,
+        "cost": 0.0011742085599999999
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 25,
+      "usage": {
+        "promptTokens": 20661,
+        "cachedTokens": 17664,
+        "cacheWriteTokens": 0,
+        "completionTokens": 4361,
+        "reasoningTokens": 3211,
+        "cost": 0.00162777216
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 26,
+      "usage": {
+        "promptTokens": 40887,
+        "cachedTokens": 35072,
+        "cacheWriteTokens": 0,
+        "completionTokens": 4623,
+        "reasoningTokens": 3009,
+        "cost": 0.00203214368
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 27,
+      "usage": {
+        "promptTokens": 81926,
+        "cachedTokens": 70016,
+        "cacheWriteTokens": 0,
+        "completionTokens": 13455,
+        "reasoningTokens": 11196,
+        "cost": 0.0053287970399999995
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 28,
+      "usage": {
+        "promptTokens": 53333,
+        "cachedTokens": 47872,
+        "cacheWriteTokens": 0,
+        "completionTokens": 9718,
+        "reasoningTokens": 7941,
+        "cost": 0.00353301368
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 29,
+      "usage": {
+        "promptTokens": 15788,
+        "cachedTokens": 13184,
+        "cacheWriteTokens": 0,
+        "completionTokens": 2015,
+        "reasoningTokens": 1222,
+        "cost": 0.00088636296
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 30,
+      "usage": {
+        "promptTokens": 49545,
+        "cachedTokens": 42496,
+        "cacheWriteTokens": 0,
+        "completionTokens": 9570,
+        "reasoningTokens": 7589,
+        "cost": 0.00362932024
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 31,
+      "usage": {
+        "promptTokens": 14522,
+        "cachedTokens": 12416,
+        "cacheWriteTokens": 0,
+        "completionTokens": 1061,
+        "reasoningTokens": 382,
+        "cost": 0.00055482504
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 32,
+      "usage": {
+        "promptTokens": 64157,
+        "cachedTokens": 56704,
+        "cacheWriteTokens": 0,
+        "completionTokens": 13041,
+        "reasoningTokens": 11270,
+        "cost": 0.00473115776
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 33,
+      "usage": {
+        "promptTokens": 25198,
+        "cachedTokens": 19968,
+        "cacheWriteTokens": 0,
+        "completionTokens": 3083,
+        "reasoningTokens": 2223,
+        "cost": 0.0014776479200000001
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 34,
+      "usage": {
+        "promptTokens": 67810,
+        "cachedTokens": 59520,
+        "cacheWriteTokens": 0,
+        "completionTokens": 6890,
+        "reasoningTokens": 4777,
+        "cost": 0.0030130688
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 35,
+      "usage": {
+        "promptTokens": 28540,
+        "cachedTokens": 22656,
+        "cacheWriteTokens": 0,
+        "completionTokens": 5170,
+        "reasoningTokens": 3418,
+        "cost": 0.00216322064
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 36,
+      "usage": {
+        "promptTokens": 53501,
+        "cachedTokens": 47616,
+        "cacheWriteTokens": 0,
+        "completionTokens": 6953,
+        "reasoningTokens": 5383,
+        "cost": 0.0027609030400000006
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 37,
+      "usage": {
+        "promptTokens": 66271,
+        "cachedTokens": 58368,
+        "cacheWriteTokens": 0,
+        "completionTokens": 10779,
+        "reasoningTokens": 8006,
+        "cost": 0.00411512192
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 38,
+      "usage": {
+        "promptTokens": 7022,
+        "cachedTokens": 6144,
+        "cacheWriteTokens": 0,
+        "completionTokens": 640,
+        "reasoningTokens": 264,
+        "cost": 0.00029226736
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 39,
+      "usage": {
+        "promptTokens": 29144,
+        "cachedTokens": 27136,
+        "cacheWriteTokens": 0,
+        "completionTokens": 3172,
+        "reasoningTokens": 2124,
+        "cost": 0.00120913184
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 40,
+      "usage": {
+        "promptTokens": 44715,
+        "cachedTokens": 37632,
+        "cacheWriteTokens": 0,
+        "completionTokens": 9090,
+        "reasoningTokens": 6897,
+        "cost": 0.00347723208
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 41,
+      "usage": {
+        "promptTokens": 20720,
+        "cachedTokens": 17664,
+        "cacheWriteTokens": 0,
+        "completionTokens": 2527,
+        "reasoningTokens": 1590,
+        "cost": 0.00109435816
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 42,
+      "usage": {
+        "promptTokens": 15658,
+        "cachedTokens": 13312,
+        "cacheWriteTokens": 0,
+        "completionTokens": 1861,
+        "reasoningTokens": 1197,
+        "cost": 0.00081617928
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 43,
+      "usage": {
+        "promptTokens": 57829,
+        "cachedTokens": 51072,
+        "cacheWriteTokens": 0,
+        "completionTokens": 8756,
+        "reasoningTokens": 6588,
+        "cost": 0.0033866016800000003
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 44,
+      "usage": {
+        "promptTokens": 42063,
+        "cachedTokens": 36864,
+        "cacheWriteTokens": 0,
+        "completionTokens": 7065,
+        "reasoningTokens": 5524,
+        "cost": 0.00269499216
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 45,
+      "usage": {
+        "promptTokens": 117171,
+        "cachedTokens": 107520,
+        "cacheWriteTokens": 0,
+        "completionTokens": 14458,
+        "reasoningTokens": 11405,
+        "cost": 0.005512558800000001
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 46,
+      "usage": {
+        "promptTokens": 42227,
+        "cachedTokens": 36480,
+        "cacheWriteTokens": 0,
+        "completionTokens": 5400,
+        "reasoningTokens": 3816,
+        "cost": 0.0022580572000000004
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 47,
+      "usage": {
+        "promptTokens": 22500,
+        "cachedTokens": 18944,
+        "cacheWriteTokens": 0,
+        "completionTokens": 4676,
+        "reasoningTokens": 3202,
+        "cost": 0.00177892736
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 48,
+      "usage": {
+        "promptTokens": 46243,
+        "cachedTokens": 38016,
+        "cacheWriteTokens": 0,
+        "completionTokens": 10429,
+        "reasoningTokens": 7185,
+        "cost": 0.00398413904
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 49,
+      "usage": {
+        "promptTokens": 32334,
+        "cachedTokens": 26112,
+        "cacheWriteTokens": 0,
+        "completionTokens": 3342,
+        "reasoningTokens": 2296,
+        "cost": 0.0016690732799999998
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 50,
+      "usage": {
+        "promptTokens": 62976,
+        "cachedTokens": 51584,
+        "cacheWriteTokens": 0,
+        "completionTokens": 7408,
+        "reasoningTokens": 4976,
+        "cost": 0.00344602496
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 51,
+      "usage": {
+        "promptTokens": 41906,
+        "cachedTokens": 36352,
+        "cacheWriteTokens": 0,
+        "completionTokens": 6684,
+        "reasoningTokens": 4560,
+        "cost": 0.0026162628800000002
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 52,
+      "usage": {
+        "promptTokens": 32405,
+        "cachedTokens": 27904,
+        "cacheWriteTokens": 0,
+        "completionTokens": 7629,
+        "reasoningTokens": 6149,
+        "cost": 0.0027660617599999998
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 53,
+      "usage": {
+        "promptTokens": 7022,
+        "cachedTokens": 6784,
+        "cacheWriteTokens": 0,
+        "completionTokens": 665,
+        "reasoningTokens": 286,
+        "cost": 0.00023877896
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 54,
+      "usage": {
+        "promptTokens": 17405,
+        "cachedTokens": 15616,
+        "cacheWriteTokens": 0,
+        "completionTokens": 1851,
+        "reasoningTokens": 974,
+        "cost": 0.0007654270399999999
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 55,
+      "usage": {
+        "promptTokens": 7022,
+        "cachedTokens": 6784,
+        "cacheWriteTokens": 0,
+        "completionTokens": 778,
+        "reasoningTokens": 399,
+        "cost": 0.00027200096
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 56,
+      "usage": {
+        "promptTokens": 25135,
+        "cachedTokens": 22272,
+        "cacheWriteTokens": 0,
+        "completionTokens": 3783,
+        "reasoningTokens": 2579,
+        "cost": 0.0014582556800000002
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 57,
+      "usage": {
+        "promptTokens": 56908,
+        "cachedTokens": 51584,
+        "cacheWriteTokens": 0,
+        "completionTokens": 8430,
+        "reasoningTokens": 6888,
+        "cost": 0.0031518289600000002
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 58,
+      "usage": {
+        "promptTokens": 11857,
+        "cachedTokens": 9856,
+        "cacheWriteTokens": 0,
+        "completionTokens": 2415,
+        "reasoningTokens": 1845,
+        "cost": 0.00093508464
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 59,
+      "usage": {
+        "promptTokens": 40433,
+        "cachedTokens": 35200,
+        "cacheWriteTokens": 0,
+        "completionTokens": 9137,
+        "reasoningTokens": 7662,
+        "cost": 0.0033026
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 60,
+      "usage": {
+        "promptTokens": 7023,
+        "cachedTokens": 6784,
+        "cacheWriteTokens": 0,
+        "completionTokens": 839,
+        "reasoningTokens": 448,
+        "cost": 0.00029003296000000003
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 61,
+      "usage": {
+        "promptTokens": 39779,
+        "cachedTokens": 36480,
+        "cacheWriteTokens": 0,
+        "completionTokens": 6065,
+        "reasoningTokens": 4756,
+        "cost": 0.0022136632
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 62,
+      "usage": {
+        "promptTokens": 67043,
+        "cachedTokens": 53632,
+        "cacheWriteTokens": 0,
+        "completionTokens": 14692,
+        "reasoningTokens": 12103,
+        "cost": 0.00579140408
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 63,
+      "usage": {
+        "promptTokens": 26690,
+        "cachedTokens": 23168,
+        "cacheWriteTokens": 0,
+        "completionTokens": 4178,
+        "reasoningTokens": 3168,
+        "cost": 0.0016416019200000001
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 64,
+      "usage": {
+        "promptTokens": 38052,
+        "cachedTokens": 33536,
+        "cacheWriteTokens": 0,
+        "completionTokens": 7334,
+        "reasoningTokens": 5755,
+        "cost": 0.00269735984
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 65,
+      "usage": {
+        "promptTokens": 12567,
+        "cachedTokens": 9216,
+        "cacheWriteTokens": 0,
+        "completionTokens": 1771,
+        "reasoningTokens": 907,
+        "cost": 0.00087616704
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 66,
+      "usage": {
+        "promptTokens": 45660,
+        "cachedTokens": 40832,
+        "cacheWriteTokens": 0,
+        "completionTokens": 9146,
+        "reasoningTokens": 7038,
+        "cost": 0.00328211408
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 67,
+      "usage": {
+        "promptTokens": 7023,
+        "cachedTokens": 6784,
+        "cacheWriteTokens": 0,
+        "completionTokens": 691,
+        "reasoningTokens": 316,
+        "cost": 0.00024652096000000003
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 68,
+      "usage": {
+        "promptTokens": 32677,
+        "cachedTokens": 28672,
+        "cacheWriteTokens": 0,
+        "completionTokens": 5704,
+        "reasoningTokens": 4013,
+        "cost": 0.00215376168
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 69,
+      "usage": {
+        "promptTokens": 33669,
+        "cachedTokens": 29056,
+        "cacheWriteTokens": 0,
+        "completionTokens": 5818,
+        "reasoningTokens": 4055,
+        "cost": 0.00224799064
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 70,
+      "usage": {
+        "promptTokens": 170504,
+        "cachedTokens": 156416,
+        "cacheWriteTokens": 0,
+        "completionTokens": 31162,
+        "reasoningTokens": 28583,
+        "cost": 0.01100211504
+      },
+      "success": false,
+      "paused": true,
+      "error": "the agent ran out of turns"
+    },
+    {
+      "arm": "A3",
+      "run": 71,
+      "usage": {
+        "promptTokens": 22826,
+        "cachedTokens": 18688,
+        "cacheWriteTokens": 0,
+        "completionTokens": 4874,
+        "reasoningTokens": 3281,
+        "cost": 0.0018934227199999998
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 72,
+      "usage": {
+        "promptTokens": 65441,
+        "cachedTokens": 58496,
+        "cacheWriteTokens": 0,
+        "completionTokens": 11139,
+        "reasoningTokens": 8942,
+        "cost": 0.00412745424
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 73,
+      "usage": {
+        "promptTokens": 7025,
+        "cachedTokens": 6784,
+        "cacheWriteTokens": 0,
+        "completionTokens": 737,
+        "reasoningTokens": 361,
+        "cost": 0.00026024096000000003
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 74,
+      "usage": {
+        "promptTokens": 111757,
+        "cachedTokens": 103424,
+        "cacheWriteTokens": 0,
+        "completionTokens": 15960,
+        "reasoningTokens": 13423,
+        "cost": 0.0058129405599999994
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 75,
+      "usage": {
+        "promptTokens": 10042,
+        "cachedTokens": 9472,
+        "cacheWriteTokens": 0,
+        "completionTokens": 982,
+        "reasoningTokens": 462,
+        "cost": 0.00037241568000000007
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 76,
+      "usage": {
+        "promptTokens": 50058,
+        "cachedTokens": 45568,
+        "cacheWriteTokens": 0,
+        "completionTokens": 3830,
+        "reasoningTokens": 2279,
+        "cost": 0.00170000992
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 77,
+      "usage": {
+        "promptTokens": 35144,
+        "cachedTokens": 30208,
+        "cacheWriteTokens": 0,
+        "completionTokens": 7410,
+        "reasoningTokens": 5011,
+        "cost": 0.00275107952
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 78,
+      "usage": {
+        "promptTokens": 61914,
+        "cachedTokens": 54400,
+        "cacheWriteTokens": 0,
+        "completionTokens": 12775,
+        "reasoningTokens": 11189,
+        "cost": 0.004652157999999999
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 79,
+      "usage": {
+        "promptTokens": 7024,
+        "cachedTokens": 6784,
+        "cacheWriteTokens": 0,
+        "completionTokens": 837,
+        "reasoningTokens": 461,
+        "cost": 0.00028954296
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 80,
+      "usage": {
+        "promptTokens": 33151,
+        "cachedTokens": 29568,
+        "cacheWriteTokens": 0,
+        "completionTokens": 5664,
+        "reasoningTokens": 4487,
+        "cost": 0.00210327992
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 81,
+      "usage": {
+        "promptTokens": 51104,
+        "cachedTokens": 46336,
+        "cacheWriteTokens": 0,
+        "completionTokens": 7697,
+        "reasoningTokens": 6159,
+        "cost": 0.0028664098400000004
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 82,
+      "usage": {
+        "promptTokens": 28824,
+        "cachedTokens": 25216,
+        "cacheWriteTokens": 0,
+        "completionTokens": 4461,
+        "reasoningTokens": 3022,
+        "cost": 0.00173925304
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 83,
+      "usage": {
+        "promptTokens": 8310,
+        "cachedTokens": 6912,
+        "cacheWriteTokens": 0,
+        "completionTokens": 1461,
+        "reasoningTokens": 1045,
+        "cost": 0.0005868592800000001
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 84,
+      "usage": {
+        "promptTokens": 32083,
+        "cachedTokens": 27904,
+        "cacheWriteTokens": 0,
+        "completionTokens": 6221,
+        "reasoningTokens": 4487,
+        "cost": 0.00232055376
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 85,
+      "usage": {
+        "promptTokens": 58989,
+        "cachedTokens": 51072,
+        "cacheWriteTokens": 0,
+        "completionTokens": 10996,
+        "reasoningTokens": 8695,
+        "cost": 0.00415884168
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 86,
+      "usage": {
+        "promptTokens": 10125,
+        "cachedTokens": 8064,
+        "cacheWriteTokens": 0,
+        "completionTokens": 1462,
+        "reasoningTokens": 935,
+        "cost": 0.0006555141600000001
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 87,
+      "usage": {
+        "promptTokens": 47172,
+        "cachedTokens": 40576,
+        "cacheWriteTokens": 0,
+        "completionTokens": 11364,
+        "reasoningTokens": 9312,
+        "cost": 0.00410671744
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 88,
+      "usage": {
+        "promptTokens": 61659,
+        "cachedTokens": 56832,
+        "cacheWriteTokens": 0,
+        "completionTokens": 6877,
+        "reasoningTokens": 4387,
+        "cost": 0.00266197008
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 89,
+      "usage": {
+        "promptTokens": 52357,
+        "cachedTokens": 45184,
+        "cacheWriteTokens": 0,
+        "completionTokens": 5898,
+        "reasoningTokens": 3838,
+        "cost": 0.00256980696
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 90,
+      "usage": {
+        "promptTokens": 7023,
+        "cachedTokens": 6144,
+        "cacheWriteTokens": 0,
+        "completionTokens": 672,
+        "reasoningTokens": 300,
+        "cost": 0.00030177336
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 91,
+      "usage": {
+        "promptTokens": 66223,
+        "cachedTokens": 59392,
+        "cacheWriteTokens": 0,
+        "completionTokens": 12719,
+        "reasoningTokens": 10219,
+        "cost": 0.00458343648
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 92,
+      "usage": {
+        "promptTokens": 93024,
+        "cachedTokens": 83200,
+        "cacheWriteTokens": 0,
+        "completionTokens": 21154,
+        "reasoningTokens": 18313,
+        "cost": 0.007426636
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 93,
+      "usage": {
+        "promptTokens": 15883,
+        "cachedTokens": 13312,
+        "cacheWriteTokens": 0,
+        "completionTokens": 1475,
+        "reasoningTokens": 684,
+        "cost": 0.00072474528
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 94,
+      "usage": {
+        "promptTokens": 26723,
+        "cachedTokens": 22912,
+        "cacheWriteTokens": 0,
+        "completionTokens": 6610,
+        "reasoningTokens": 4590,
+        "cost": 0.00238417928
+      },
+      "success": true,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 95,
+      "usage": {
+        "promptTokens": 15865,
+        "cachedTokens": 13568,
+        "cacheWriteTokens": 0,
+        "completionTokens": 2283,
+        "reasoningTokens": 1233,
+        "cost": 0.0009361979200000001
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 96,
+      "usage": {
+        "promptTokens": 44716,
+        "cachedTokens": 37504,
+        "cacheWriteTokens": 0,
+        "completionTokens": 11585,
+        "reasoningTokens": 9483,
+        "cost": 0.00422302776
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 97,
+      "usage": {
+        "promptTokens": 7022,
+        "cachedTokens": 6784,
+        "cacheWriteTokens": 0,
+        "completionTokens": 691,
+        "reasoningTokens": 319,
+        "cost": 0.00024642296
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 98,
+      "usage": {
+        "promptTokens": 15891,
+        "cachedTokens": 13696,
+        "cacheWriteTokens": 0,
+        "completionTokens": 2210,
+        "reasoningTokens": 1481,
+        "cost": 0.00090511624
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 99,
+      "usage": {
+        "promptTokens": 45732,
+        "cachedTokens": 41216,
+        "cacheWriteTokens": 0,
+        "completionTokens": 5669,
+        "reasoningTokens": 3939,
+        "cost": 0.0022304290399999998
+      },
+      "success": false,
+      "paused": true
+    },
+    {
+      "arm": "A3",
+      "run": 100,
+      "usage": {
+        "promptTokens": 7024,
+        "cachedTokens": 6784,
+        "cacheWriteTokens": 0,
+        "completionTokens": 946,
+        "reasoningTokens": 566,
+        "cost": 0.00032158896
+      },
+      "success": false,
+      "paused": true
+    }
+  ]
+}
