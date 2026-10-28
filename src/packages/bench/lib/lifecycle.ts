@@ -6,10 +6,10 @@ import { openPlans, readStats, type Stats } from "../../core/index.ts";
 import type { DriftKitServerName } from "../../drift-kit/index.ts";
 import { addUsage, noUsage, type Usage } from "./agent.ts";
 import { runAgentArm, type ArmName } from "./arms.ts";
-import { startBench, type Bench } from "./bench.ts";
+import type { Bench } from "./bench.ts";
 import type { Driver } from "./drivers.ts";
 import { saveApplied, type GridScenario } from "./h2.ts";
-import { openBudget, stopReason } from "./harness.ts";
+import { inLanes, openBudget, openLanes, stopReason } from "./harness.ts";
 import type { AgentArm } from "./surface.ts";
 import type { Task } from "./tasks.ts";
 
@@ -165,15 +165,11 @@ export async function runLifecycle(
       );
     }
 
-    const lanes = [
-      bench,
-      ...(await Promise.all(
-        Array.from({ length: parallel - 1 }, () => startBench())
-      )),
-    ];
+    const { lanes, close } = await openLanes(bench, parallel);
     try {
       for (const arm of options.arms) {
-        const done = await runLanes(lanes, options.runs, async (on, run) => {
+        const done = await inLanes(lanes, options.runs, async (on, job) => {
+          const run = job + 1;
           // The Drift scheduled up to this run, on this lane's servers.
           await on.dropDrift();
           for (const scheduled of drift.filter((entry) => entry.at <= run)) {
@@ -193,11 +189,11 @@ export async function runLifecycle(
             ...(ran.error !== undefined && { error: ran.error }),
           };
         });
-        runs.push(...done.runs);
+        runs.push(...done.results);
         if (done.stopped !== undefined) return result(done.stopped);
       }
     } finally {
-      await Promise.all(lanes.slice(1).map((lane) => lane.close()));
+      await close();
     }
   } catch (error) {
     const reason = stopReason(error);
@@ -207,38 +203,6 @@ export async function runLifecycle(
     await bench.dropDrift();
   }
   return result();
-}
-
-/**
- * Runs 1 to `runs` across the lanes, each lane taking the next run when it
- * is free, and returns them in order. A run that stops the benchmark, on
- * the budget or an unavailable model, lets no lane start another; the runs
- * finished are kept.
- */
-async function runLanes(
-  lanes: readonly Bench[],
-  runs: number,
-  each: (lane: Bench, run: number) => Promise<LifecycleRun>
-): Promise<{ runs: LifecycleRun[]; stopped?: string }> {
-  const finished: LifecycleRun[] = [];
-  let next = 1;
-  let stopped: string | undefined;
-  await Promise.all(
-    lanes.map(async (lane) => {
-      while (stopped === undefined && next <= runs) {
-        const run = next++;
-        try {
-          finished.push(await each(lane, run));
-        } catch (error) {
-          const reason = stopReason(error);
-          if (reason === undefined) throw error;
-          stopped ??= reason;
-        }
-      }
-    })
-  );
-  finished.sort((a, b) => a.run - b.run);
-  return { runs: finished, ...(stopped !== undefined && { stopped }) };
 }
 
 // What the Repair Model spent between two readings of the stats.

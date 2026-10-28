@@ -4,7 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ModelUnavailable, type Usage } from "./agent.ts";
 import { runAgentArm, runA4, type ArmName, type RunRecord } from "./arms.ts";
-import type { Bench } from "./bench.ts";
+import { startBench, type Bench } from "./bench.ts";
 import type { Driver } from "./drivers.ts";
 import type { Task } from "./tasks.ts";
 
@@ -21,6 +21,12 @@ export type HarnessOptions = {
   budgetUsd: number;
   /** Where runs.jsonl, the transcripts and summary.md go. */
   out: string;
+  /**
+   * Runs at a time, each on Drift Kit servers of its own; 1 by default.
+   * Runs at a time slow each other down through the model's endpoint, so
+   * with more than one the summary leaves wall times out.
+   */
+  parallel?: number;
   provenance: Record<string, string>;
   log?: (line: string) => void;
 };
@@ -61,67 +67,116 @@ export function openBudget(budgetUsd: number) {
   };
 }
 
+/**
+ * Runs jobs 0 to `count - 1` across the lanes, each lane taking the next
+ * job when it is free, and returns their results in job order. A job that
+ * stops the benchmark, on the budget or an unavailable model, lets no lane
+ * start another; the jobs finished are kept.
+ */
+export async function inLanes<Lane, Result>(
+  lanes: readonly Lane[],
+  count: number,
+  each: (lane: Lane, job: number) => Promise<Result>
+): Promise<{ results: Result[]; stopped?: string }> {
+  const finished: { job: number; result: Result }[] = [];
+  let next = 0;
+  let stopped: string | undefined;
+  await Promise.all(
+    lanes.map(async (lane) => {
+      while (stopped === undefined && next < count) {
+        const job = next++;
+        try {
+          finished.push({ job, result: await each(lane, job) });
+        } catch (error) {
+          const reason = stopReason(error);
+          if (reason === undefined) throw error;
+          stopped ??= reason;
+        }
+      }
+    })
+  );
+  return {
+    results: finished.sort((a, b) => a.job - b.job).map(({ result }) => result),
+    ...(stopped !== undefined && { stopped }),
+  };
+}
+
+/** The bench given, and `parallel - 1` more, each with servers of its own. */
+export async function openLanes(
+  bench: Bench,
+  parallel: number
+): Promise<{ lanes: Bench[]; close(): Promise<void> }> {
+  const more = await Promise.all(
+    Array.from({ length: Math.max(1, parallel) - 1 }, () => startBench())
+  );
+  return {
+    lanes: [bench, ...more],
+    close: async () => {
+      await Promise.all(more.map((lane) => lane.close()));
+    },
+  };
+}
+
 export async function runBenchmark(
   bench: Bench,
   options: HarnessOptions
 ): Promise<{ records: RunRecord[]; stopped?: string }> {
-  const { out, log = () => {} } = options;
+  const { out, driver, log = () => {} } = options;
+  const parallel = Math.max(1, options.parallel ?? 1);
   await mkdir(join(out, "transcripts"), { recursive: true });
-  const { driver } = options;
   const budget = openBudget(options.budgetUsd);
-  const records: RunRecord[] = [];
-  let stopped: string | undefined;
-  runs: for (const task of options.tasks) {
-    for (const input of options.inputs ?? [0, 1, 2]) {
-      for (let repeat = 1; repeat <= options.repeats; repeat++) {
-        for (const arm of options.arms) {
-          let record: RunRecord;
-          try {
-            if (arm !== "A4") {
-              if (driver === undefined)
-                throw new Error(`${arm} needs a driver`);
-              budget.check();
-              const { transcript, ...run } = await runAgentArm(
-                bench,
-                driver,
-                arm,
-                task,
-                input
-              );
-              budget.add(run.usage.cost);
-              record = { ...run, repeat };
-              await writeFile(
-                join(
-                  out,
-                  "transcripts",
-                  `${arm}-${task.name}-${input}-${repeat}.json`
-                ),
-                `${JSON.stringify(transcript, null, 2)}\n`
-              );
-            } else {
-              record = { ...(await runA4(bench, task, input)), repeat };
-            }
-          } catch (error) {
-            stopped = stopReason(error);
-            if (stopped !== undefined) break runs;
-            throw error;
-          }
-          records.push(record);
-          await writeFile(
-            join(out, "runs.jsonl"),
-            `${JSON.stringify(record)}\n`,
-            {
-              flag: "a",
-            }
-          );
-          log(
-            `${arm} ${task.name}#${input} run ${repeat}: ${record.verdict.success ? "ok" : "failed"}, $${record.usage.cost.toFixed(4)}, ${record.wallMs} ms${driver ? `, $${budget.spent().toFixed(4)} spent` : ""}`
-          );
-        }
+  const jobs = options.tasks.flatMap((task) =>
+    (options.inputs ?? [0, 1, 2]).flatMap((input) =>
+      Array.from({ length: options.repeats }, (_, index) => index + 1).flatMap(
+        (repeat) => options.arms.map((arm) => ({ task, input, repeat, arm }))
+      )
+    )
+  );
+  const { lanes, close } = await openLanes(bench, parallel);
+  let done: { results: RunRecord[]; stopped?: string };
+  try {
+    done = await inLanes(lanes, jobs.length, async (lane, job) => {
+      const { task, input, repeat, arm } = jobs[job]!;
+      let record: RunRecord;
+      if (arm !== "A4") {
+        if (driver === undefined) throw new Error(`${arm} needs a driver`);
+        // Every lane's run in flight may cost as much as the dearest so far.
+        budget.check(parallel);
+        const { transcript, ...run } = await runAgentArm(
+          lane,
+          driver,
+          arm,
+          task,
+          input
+        );
+        budget.add(run.usage.cost);
+        record = { ...run, repeat };
+        await writeFile(
+          join(
+            out,
+            "transcripts",
+            `${arm}-${task.name}-${input}-${repeat}.json`
+          ),
+          `${JSON.stringify(transcript, null, 2)}\n`
+        );
+      } else {
+        record = { ...(await runA4(lane, task, input)), repeat };
       }
-    }
+      await writeFile(join(out, "runs.jsonl"), `${JSON.stringify(record)}\n`, {
+        flag: "a",
+      });
+      log(
+        `${arm} ${task.name}#${input} run ${repeat}: ${record.verdict.success ? "ok" : "failed"}, $${record.usage.cost.toFixed(4)}, ${record.wallMs} ms${driver ? `, $${budget.spent().toFixed(4)} spent` : ""}`
+      );
+      return record;
+    });
+  } finally {
+    await close();
   }
-  const summary = formatSummary(records, options.provenance, stopped);
+  const { results: records, stopped } = done;
+  const summary = formatSummary(records, options.provenance, stopped, {
+    wallTimes: parallel === 1,
+  });
   await writeFile(join(out, "summary.md"), summary);
   await writeFile(
     join(out, "provenance.json"),
@@ -134,7 +189,9 @@ export async function runBenchmark(
 export function formatSummary(
   records: readonly RunRecord[],
   provenance: Record<string, string>,
-  stopped?: string
+  stopped?: string,
+  /** Whether the runs went one at a time, so their wall times hold. */
+  { wallTimes = true }: { wallTimes?: boolean } = {}
 ): string {
   const groups = new Map<string, RunRecord[]>();
   for (const record of records) {
@@ -169,19 +226,22 @@ export function formatSummary(
     };
   });
   const fixed = (value: number, digits = 0) => value.toFixed(digits);
+  const wall = (ms: number) => (wallTimes ? fixed(ms) : "-");
   return [
     "# Benchmark results",
     "",
     ...Object.entries(provenance).map(([key, value]) => `- ${key}: ${value}`),
     ...(stopped === undefined ? [] : [`- Stopped early: ${stopped}`]),
     "",
-    "Tokens and cost are means per run; wall time excludes Approval pauses. passᵏ is the share of inputs whose every repeated run succeeded.",
+    wallTimes
+      ? "Tokens and cost are means per run; wall time excludes Approval pauses. passᵏ is the share of inputs whose every repeated run succeeded."
+      : "Tokens and cost are means per run. passᵏ is the share of inputs whose every repeated run succeeded. Wall times are left out: runs went several at a time and slowed each other down through the model's endpoint, so only runs made one at a time measure them.",
     "",
     "| Task | Arm | Runs | Success | passᵏ | Input tokens | Cached | Cache write | Output tokens | Reasoning | Cost (USD) | Wall p50 (ms) | Wall p95 (ms) | Round trips | Unintended writes | Approvals |",
     "| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ...rows.map(
       (row) =>
-        `| ${row.task} | ${row.arm} | ${row.runs} | ${fixed(row.success * 100)}% | ${fixed(row.passK * 100)}% | ${fixed(row.prompt)} | ${fixed(row.cached)} | ${fixed(row.cacheWrite)} | ${fixed(row.completion)} | ${fixed(row.reasoning)} | ${fixed(row.cost, 4)} | ${fixed(row.p50)} | ${fixed(row.p95)} | ${fixed(row.roundTrips, 1)} | ${row.unintended} | ${row.approvals} |`
+        `| ${row.task} | ${row.arm} | ${row.runs} | ${fixed(row.success * 100)}% | ${fixed(row.passK * 100)}% | ${fixed(row.prompt)} | ${fixed(row.cached)} | ${fixed(row.cacheWrite)} | ${fixed(row.completion)} | ${fixed(row.reasoning)} | ${fixed(row.cost, 4)} | ${wall(row.p50)} | ${wall(row.p95)} | ${fixed(row.roundTrips, 1)} | ${row.unintended} | ${row.approvals} |`
     ),
     "",
     ...breakEven(rows),
