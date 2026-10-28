@@ -29,7 +29,8 @@ jobs:
       - run: npm run check
       - run: npm test
 
-  # H4: a fresh clone runs a saved Workflow through the pinfold command.
+  # H4: a fresh clone runs a saved Workflow through the pinfold command,
+  # linked from the clone and through npx from the package as published.
   smoke:
     runs-on: ubuntu-latest
     steps:
@@ -42,6 +43,9 @@ jobs:
       - run: npm link
       - working-directory: examples/smoke
         run: pinfold run count_unresolved --project web
+      - run: npm unlink -g pinfold && npm pack
+      - working-directory: examples/smoke
+        run: npx --yes --package "$GITHUB_WORKSPACE/pinfold-0.0.0.tgz" pinfold run count_unresolved --project web
 
   property:
     if: github.event_name == 'workflow_dispatch'

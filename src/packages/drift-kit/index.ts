@@ -1,3 +1,4 @@
+import { extname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { DriftKitServerName } from "./lib/servers.ts";
@@ -12,7 +13,10 @@ export function driftKitCommand(
   return {
     command: process.execPath,
     args: [
-      fileURLToPath(new URL("./bin.ts", import.meta.url)),
+      // bin.ts from the sources, bin.js once built.
+      fileURLToPath(
+        new URL(`./bin${extname(import.meta.url)}`, import.meta.url)
+      ),
       server,
       "--control",
       options.control,
