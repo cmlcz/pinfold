@@ -23,6 +23,9 @@ if (command !== "grid" && command !== "run") {
   process.exit(2);
 }
 
+// No Repair Model, whatever the environment names: H2 measures
+// deterministic Repair alone.
+delete process.env.PINFOLD_REPAIR_MODEL;
 const bench = await startBench();
 try {
   if (command === "grid") {
