@@ -129,7 +129,7 @@ type CliOptions = {
   proxy: PinProxy;
   provider: string;
   apiKey: string;
-  /** A run that takes longer is stopped. */
+  /** A run that takes longer is stopped; 30 minutes by default. */
   timeoutMs?: number;
 };
 
@@ -436,7 +436,7 @@ function runCli(
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill("SIGTERM");
-    }, options.timeoutMs ?? 600_000);
+    }, options.timeoutMs ?? 1_800_000);
     child.on("error", reject);
     child.on("close", (code) => {
       clearTimeout(timer);
