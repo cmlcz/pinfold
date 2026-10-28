@@ -213,7 +213,8 @@ export async function claudeCodeDriver(options: CliOptions): Promise<Driver> {
 /**
  * Codex CLI, run headless with JSON events, routed through OpenRouter as a
  * custom model provider, with a fresh CODEX_HOME so that no login or
- * setting of the developer's applies. It runs in a read-only sandbox. The
+ * setting of the developer's applies. It runs in a read-only sandbox, with
+ * the Surface's MCP tools allowed without asking. The
  * instruction line goes to AGENTS.md; Codex has no option for a system
  * prompt, so the harness's opens the prompt.
  */
@@ -249,9 +250,13 @@ export async function codexDriver(options: CliOptions): Promise<Driver> {
             `model_providers.openrouter={ name = "OpenRouter", base_url = "${options.proxy.url}/api/v1", env_key = "OPENROUTER_API_KEY", wire_api = "responses" }`,
             "-c",
             'approval_policy="never"',
+            // Every MCP tool is allowed without asking, as for Claude Code:
+            // under approval_policy "never", Codex refuses any it would ask.
             ...Object.entries(surface.servers).flatMap(([name, url]) => [
               "-c",
               `mcp_servers.${name}.url="${url}"`,
+              "-c",
+              `mcp_servers.${name}.default_tools_approval_mode="approve"`,
             ]),
             `${system}\n\n${prompt}`,
           ],
