@@ -15,6 +15,9 @@ const options: ts.CompilerOptions = {
   strict: true,
   noEmit: true,
   types: [],
+  // The standard library is TypeScript's own: checking it again on every
+  // run took most of each check's time. The SDK declarations are checked.
+  skipDefaultLibCheck: true,
 };
 
 const defaultHost = ts.createCompilerHost(options);

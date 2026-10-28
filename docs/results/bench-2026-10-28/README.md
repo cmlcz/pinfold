@@ -27,7 +27,7 @@ Each driver ran six tasks, three inputs each, three runs per Arm: 216 runs per d
 - **A4 succeeded on all 100 runs and paused for Approval three times, once per Drift.** The rename and the type change were repaired by pinfold's deterministic search. The wrap was repaired by the Repair Model, which the environment named; deterministic Repair alone stopped the Workflow there, with nothing sent ([#47](https://github.com/cmlcz/pinfold/issues/47)). Since then, deterministic Repair settles it by running the earlier rename again after the unwrap.
 - **A2 succeeded on 42 of 100 runs**, 10 of the first 25, before any Drift. It cost $0.18 and 3.9 million tokens over the 100 runs.
 - **A4 reached its Break-even Point against A2 at run 2**, counting its Exploration Run ($0.0012) and its Approval pauses. **H5 holds against A2.** The Repair Model's one call is not in A4's total; the harness now counts it for future runs.
-- An A3 lifecycle, `lifecycle-a3/`, is added when it ends.
+- **Against A3** (`lifecycle-a3/`, same task, Drift and driver): A3 succeeded on 29 of 100 runs: 24 of the 25 before any Drift, then 5 of 75. Its saved program reads the renamed field as missing and files wrong writes; nothing in the Gateway's fresh Exploration Runs tells the agent its program no longer fits. It cost $0.21. **A4 reached its Break-even Point against A3 at run 4, so H5 holds against A3 too.** The same Repair Model caveat applies to its A4 runs.
 
 ## How to read it
 

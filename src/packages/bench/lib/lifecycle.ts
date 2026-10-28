@@ -4,14 +4,13 @@
 // then for every Repair and Approval pause; an agent Arm pays every run.
 import { openPlans, readStats, type Stats } from "../../core/index.ts";
 import type { DriftKitServerName } from "../../drift-kit/index.ts";
-import { addUsage, ModelUnavailable, noUsage, type Usage } from "./agent.ts";
+import { addUsage, noUsage, type Usage } from "./agent.ts";
 import { runAgentArm, type ArmName } from "./arms.ts";
 import type { Bench } from "./bench.ts";
 import type { Driver } from "./drivers.ts";
-import { saveApplied } from "./h2.ts";
-import { BudgetExceeded, openBudget } from "./harness.ts";
+import { saveApplied, type GridScenario } from "./h2.ts";
+import { inLanes, openBudget, openLanes, stopReason } from "./harness.ts";
 import type { AgentArm } from "./surface.ts";
-import type { GridScenario } from "./h2.ts";
 import type { Task } from "./tasks.ts";
 
 export type ScheduledDrift = {
@@ -30,6 +29,8 @@ export type LifecycleRun = {
   paused: boolean;
   /** For A4: the Repairs the run made, by who made them. */
   repairs?: { pinfold: number; model: number };
+  /** Why the checker failed the run. */
+  problems?: string[];
   error?: string;
 };
 
@@ -77,14 +78,21 @@ export async function runLifecycle(
     /** The agent Arms A4 is compared with. */
     arms: readonly AgentArm[];
     budgetUsd: number;
+    /**
+     * Agent runs at a time, each on Drift Kit servers of its own: the runs
+     * are independent, as each starts a fresh project. 1 by default.
+     */
+    parallel?: number;
     log?: (line: string) => void;
   }
 ): Promise<LifecycleResult> {
   const { task, input, drift, driver, log = () => {} } = options;
+  const parallel = Math.max(1, options.parallel ?? 1);
   const budget = openBudget(options.budgetUsd);
-  const agent = async (arm: AgentArm) => {
-    budget.check();
-    const run = await runAgentArm(bench, driver, arm, task, input);
+  const agent = async (on: Bench, arm: AgentArm) => {
+    // Every lane's run in flight may cost as much as the dearest so far.
+    budget.check(parallel);
+    const run = await runAgentArm(on, driver, arm, task, input);
     budget.add(run.usage.cost);
     return run;
   };
@@ -106,7 +114,7 @@ export async function runLifecycle(
   try {
     // A4: an agent explores the task once; the developer saves the task's
     // program as a Workflow and approves its first run.
-    exploration = (await agent("A2")).usage;
+    exploration = (await agent(bench, "A2")).usage;
     const { core, root } = await bench.fresh();
     const setup = await saveApplied(core, root, task, input);
     if (!setup.ok) throw new Error(`${task.name}: ${setup.error}`);
@@ -157,28 +165,39 @@ export async function runLifecycle(
       );
     }
 
-    for (const arm of options.arms) {
-      await bench.dropDrift();
-      for (let run = 1; run <= options.runs; run++) {
-        await turnOn(run);
-        const done = await agent(arm);
-        runs.push({
-          arm,
-          run,
-          usage: done.usage,
-          success: done.verdict.success,
-          paused: done.approvals > 0,
-          ...(done.error !== undefined && { error: done.error }),
+    const { lanes, close } = await openLanes(bench, parallel);
+    try {
+      for (const arm of options.arms) {
+        const done = await inLanes(lanes, options.runs, async (on, job) => {
+          const run = job + 1;
+          // The Drift scheduled up to this run, on this lane's servers.
+          await on.dropDrift();
+          for (const scheduled of drift.filter((entry) => entry.at <= run)) {
+            await on.keepDrift(scheduled.server, scheduled.scenario);
+          }
+          const ran = await agent(on, arm);
+          log(
+            `${arm} run ${run}: ${ran.verdict.success ? "ok" : "failed"}, $${ran.usage.cost.toFixed(4)}, $${budget.spent().toFixed(4)} spent`
+          );
+          return {
+            arm,
+            run,
+            usage: ran.usage,
+            success: ran.verdict.success,
+            paused: ran.approvals > 0,
+            ...(!ran.verdict.success && { problems: ran.verdict.problems }),
+            ...(ran.error !== undefined && { error: ran.error }),
+          };
         });
-        log(
-          `${arm} run ${run}: ${done.verdict.success ? "ok" : "failed"}, $${done.usage.cost.toFixed(4)}, $${budget.spent().toFixed(4)} spent`
-        );
+        runs.push(...done.results);
+        if (done.stopped !== undefined) return result(done.stopped);
       }
+    } finally {
+      await close();
     }
   } catch (error) {
-    if (error instanceof BudgetExceeded || error instanceof ModelUnavailable) {
-      return result(error.message);
-    }
+    const reason = stopReason(error);
+    if (reason !== undefined) return result(reason);
     throw error;
   } finally {
     await bench.dropDrift();

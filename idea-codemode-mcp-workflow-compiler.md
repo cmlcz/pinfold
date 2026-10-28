@@ -350,7 +350,7 @@ _Partly built._ The work is split across four issues:
 
 It is built in three stages, each ending with results that stand on their own:
 
-1. **H2, no LLM.** The GitHub-shaped server, the six tasks and their checkers (#19), and the Drift Scenario suite run against deterministic Repair alone. Done: deterministic Repair alone repaired 46 of 53 runs of mappable scenarios (86.8%), with no wrong Repair ([results](docs/results/h2-2026-10-27.md)).
+1. **H2, no LLM.** The GitHub-shaped server, the six tasks and their checkers (#19), and the Drift Scenario suite run against deterministic Repair alone. Done: deterministic Repair alone repaired 46 of 53 runs of mappable scenarios (86.8%), with no wrong Repair ([results](docs/results/h2-2026-10-27.md)). On the changelog set, ported from github/github-mcp-server's trims of its responses, it repaired 3 of 10 fields an Adapter could map back, again with no wrong Repair: it misses every object that became one of its fields, since it proposes `wrap` only for a missing field ([results](docs/results/h2-changelog-2026-10-28.md)).
 2. **H1 and H5 on A2 and A4.** The harness with the minimal OpenRouter agent loop (#20), run on A2 against A4, and the lifecycle experiment for those two Arms (#22). H1 measured: A4 ran 85 to 500 times faster than A2 at the median, with no tokens ([results](docs/results/bench-2026-10-27/README.md)).
 3. **The other Arms and clients.** A1, A3, and the Claude Code and Codex CLI drivers (#21), added only once stages 1 and 2 have results. Measured: A4 succeeded on all 162 runs across the three drivers, against 76% to 100% for the agent Arms, and over the 100-run lifecycle A4 reached its Break-even Point against A2 at run 2 ([results](docs/results/bench-2026-10-28/README.md)).
 

@@ -147,6 +147,33 @@ describe("the benchmark harness", () => {
     expect(summary).toContain("| file-issues | 1 |");
   });
 
+  it("gives the same runs on parallel lanes, and then leaves wall times out", async () => {
+    const options = {
+      tasks: chosen,
+      inputs: [0],
+      arms: ["A2", "A4"] as const,
+      repeats: 2,
+      driver: loopDriver(fakeModel),
+      budgetUsd: 1,
+      provenance: {},
+    };
+    const outcome = (records: RunRecord[]) =>
+      records.map((r) => [r.task, r.arm, r.repeat, r.verdict.success]);
+    const sequential = await runBenchmark(bench, { ...options, out });
+    const parallelOut = join(out, "parallel");
+
+    const parallel = await runBenchmark(bench, {
+      ...options,
+      out: parallelOut,
+      parallel: 3,
+    });
+
+    expect(outcome(parallel.records)).toEqual(outcome(sequential.records));
+    const summary = await readFile(join(parallelOut, "summary.md"), "utf8");
+    expect(summary).toContain("Wall times are left out");
+    expect(summary).toMatch(/\| file-issues \| A4 \| 2 \| .* \| - \| - \|/);
+  });
+
   it("stops before a model call could pass the budget cap", async () => {
     const { records, stopped } = await runBenchmark(bench, {
       tasks: chosen.slice(0, 1),

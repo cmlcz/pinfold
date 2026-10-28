@@ -1,15 +1,20 @@
 // Merges benchmark results run in parallel, one directory per task, into
 // one directory with a single summary:
-//   node summarize.ts --out <dir> <dir>...
+//   node summarize.ts --out <dir> [--concurrent] <dir>...
 // It joins their runs.jsonl, copies their transcripts and writes
 // summary.md and provenance.json, with the first directory's provenance.
+// --concurrent says the directories' runs went at the same time, and
+// leaves wall times out of the summary.
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { formatSummary, type RunRecord } from "./index.ts";
 
 const { values, positionals } = parseArgs({
-  options: { out: { type: "string" } },
+  options: {
+    out: { type: "string" },
+    concurrent: { type: "boolean", default: false },
+  },
   allowPositionals: true,
 });
 if (values.out === undefined || positionals.length === 0) {
@@ -45,7 +50,11 @@ await writeFile(
   formatSummary(
     records,
     merged,
-    stopped.length > 0 ? stopped.join("; ") : undefined
+    stopped.length > 0 ? stopped.join("; ") : undefined,
+    {
+      wallTimes:
+        !values.concurrent && (provenance?.["Runs at a time"] ?? "1") === "1",
+    }
   )
 );
 await writeFile(

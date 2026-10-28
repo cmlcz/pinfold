@@ -14,11 +14,14 @@ on:
         default: "1"
 
 jobs:
+  # The tests run in three shards per Node version: vitest runs files in
+  # parallel but each file alone, and a runner has few cores.
   check:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         node: [22, 24]
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -26,8 +29,9 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
-      - run: npm run check
-      - run: npm test
+      - if: matrix.shard == 1
+        run: npm run check
+      - run: npx vitest run --shard=${{ matrix.shard }}/3
 
   # H4: a fresh clone runs a saved Workflow through the pinfold command,
   # linked from the clone and through npx from the package as published.
