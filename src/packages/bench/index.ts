@@ -16,6 +16,15 @@ export {
 } from "./lib/h2.ts";
 export { startBench, type Bench } from "./lib/bench.ts";
 export {
+  changelogScenarios,
+  formatChangelog,
+  programFor,
+  runChangelog,
+  type ChangelogOutcome,
+  type ChangelogResult,
+  type ChangelogScenario,
+} from "./lib/changelog.ts";
+export {
   ModelUnavailable,
   openRouterModel,
   runAgent,

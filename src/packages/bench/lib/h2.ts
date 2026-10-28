@@ -10,13 +10,12 @@ import {
   type Core,
   type WorkflowRunResult,
 } from "../../core/index.ts";
-import type { DriftKitServerName } from "../../drift-kit/index.ts";
-import type { Bench } from "./bench.ts";
+import type { Bench, BenchServer } from "./bench.ts";
 import { tasks, type Task } from "./tasks.ts";
 
 /** One Drift Scenario of the grid, and the Workflows it is tried on. */
 export type GridScenario = {
-  server: DriftKitServerName;
+  server: BenchServer;
   /** The field-level scenario's name, as the Drift Kit takes it. */
   scenario: string;
   /** Whether a Response Adapter can express the change. */
@@ -82,7 +81,7 @@ export async function approvedRun(
 export async function generateGrid(bench: Bench): Promise<GridScenario[]> {
   const grid = new Map<string, GridScenario>();
   const add = (
-    server: DriftKitServerName,
+    server: BenchServer,
     scenario: string,
     run: { task: string; input: number }
   ) => {
@@ -106,7 +105,7 @@ export async function generateGrid(bench: Bench): Promise<GridScenario[]> {
       ) as { contract: Record<string, string[]> };
       const baselines = await readBaselines(root);
       for (const [name, paths] of Object.entries(record.contract)) {
-        const [server, tool] = name.split(".") as [DriftKitServerName, string];
+        const [server, tool] = name.split(".") as [BenchServer, string];
         const schema = baselines.get(name);
         const run = { task: task.name, input };
         for (const path of paths) {

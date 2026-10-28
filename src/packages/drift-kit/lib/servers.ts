@@ -1,4 +1,8 @@
 import { createGithubServer, createGithubWorld } from "./github/server.ts";
+import {
+  createGithubMcpServer,
+  createGithubMcpWorld,
+} from "./github-mcp/server.ts";
 import { createLinearServer, createLinearWorld } from "./linear/server.ts";
 import { createSentryServer, createSentryWorld } from "./sentry/server.ts";
 
@@ -18,6 +22,10 @@ export const servers = {
   github: () => {
     const world = createGithubWorld();
     return { world, server: () => createGithubServer(world) };
+  },
+  githubMcp: () => {
+    const world = createGithubMcpWorld();
+    return { world, server: () => createGithubMcpServer(world) };
   },
 };
 
