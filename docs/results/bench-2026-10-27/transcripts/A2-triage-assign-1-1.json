@@ -1,0 +1,154 @@
+[
+  {
+    "role": "system",
+    "content": "You are a coding agent. Do the developer's task with the tools you have; do not ask the developer anything. When you are done, reply with the task's result as JSON and nothing else."
+  },
+  {
+    "role": "user",
+    "content": "Find the unresolved Sentry issues of project \"api\" with at least 0 events. For each culprit among them that no Linear issue mentions yet, find who last changed the crashing line with GitHub blame, and create one Linear issue titled \"[Sentry] <title of the first such Sentry issue>\", with the culprit as its description, assigned to that author's email. Return { checked, created }: how many Sentry issues you checked, and the IDs of the issues you created."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-afba0f0fdabca05b",
+        "function": {
+          "name": "search_sdk",
+          "arguments": "{\"query\": \"sentry issues project unresolved\"}"
+        },
+        "type": "function"
+      },
+      {
+        "id": "chatcmpl-tool-9a6a5d5be2d08146",
+        "function": {
+          "name": "search_sdk",
+          "arguments": "{\"query\": \"linear issue create search\"}"
+        },
+        "type": "function"
+      },
+      {
+        "id": "chatcmpl-tool-a8ee7a8c09778f85",
+        "function": {
+          "name": "search_sdk",
+          "arguments": "{\"query\": \"github blame file last changed\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-afba0f0fdabca05b",
+    "content": "/** List the issues of a Sentry project. */\nsdk.sentry.listIssues(args: { project: string }): Promise<{ issues: { id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }[] }>\n\n/** List the Sentry projects of the organization. */\nsdk.sentry.listProjects(args?: { platform?: string }): Promise<unknown>\n\n/** Get the members of a Sentry project's team. */\nsdk.sentry.getProjectTeam(args: { slug: string }): Promise<unknown>\n\n/** Get one Sentry issue by its id. */\nsdk.sentry.getIssue(args: { id: string }): Promise<{ id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }>\n\n/** List the events recorded for a Sentry issue, newest first. */\nsdk.sentry.listIssueEvents(args: { issueId: string }): Promise<{ events: { id: string; issueId: string; timestamp: string; release: string; message: string }[] }>\n\n/** Search Linear issues whose title or description contains the query. */\nsdk.linear.searchIssues(args: { query: string }): Promise<{ issues: { id: string; identifier: string; title: string; description: string; assigneeEmail: string | null; state: \"Todo\" | \"In Progress\" | \"Done\" }[] }>\n\n/** Create a Linear issue. Write Tool: a run records this call in its Write Plan instead of sending it, and gets a Placeholder back. */\nsdk.linear.createIssue(args: { title: string; description?: string; assigneeEmail?: string }): Promise<Placeholder<{ id: string; identifier: string; title: string; url: string }>>"
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-9a6a5d5be2d08146",
+    "content": "/** Search Linear issues whose title or description contains the query. */\nsdk.linear.searchIssues(args: { query: string }): Promise<{ issues: { id: string; identifier: string; title: string; description: string; assigneeEmail: string | null; state: \"Todo\" | \"In Progress\" | \"Done\" }[] }>\n\n/** Create a Linear issue. Write Tool: a run records this call in its Write Plan instead of sending it, and gets a Placeholder back. */\nsdk.linear.createIssue(args: { title: string; description?: string; assigneeEmail?: string }): Promise<Placeholder<{ id: string; identifier: string; title: string; url: string }>>\n\n/** Get one Sentry issue by its id. */\nsdk.sentry.getIssue(args: { id: string }): Promise<{ id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }>\n\n/** List the issues of a Sentry project. */\nsdk.sentry.listIssues(args: { project: string }): Promise<{ issues: { id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }[] }>\n\n/** List the events recorded for a Sentry issue, newest first. */\nsdk.sentry.listIssueEvents(args: { issueId: string }): Promise<{ events: { id: string; issueId: string; timestamp: string; release: string; message: string }[] }>"
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-a8ee7a8c09778f85",
+    "content": "/** Get who last changed a line of a file in the repository. */\nsdk.github.getBlame(args: { file: string; line: number }): Promise<{ file: string; line: number; commit: string; authorName: string; authorEmail: string; committedAt: string }>\n\n/** List the repository's commits, newest first, in pages of 50. Pass a page's nextCursor to get the next one. */\nsdk.github.listCommits(args?: { since?: string; cursor?: string }): Promise<{ commits: { sha: string; authorName: string; authorEmail: string; message: string; committedAt: string }[]; nextCursor: string | null }>"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-bcf3b77b62911895",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: unknown) {\\n  const res = await sdk.sentry.listIssues({ project: \\\"api\\\" });\\n  return { count: res.issues.length, issues: res.issues };\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-bcf3b77b62911895",
+    "content": "{\"count\":1,\"issues\":[{\"id\":\"4601\",\"shortId\":\"API-2A\",\"project\":\"api\",\"title\":\"DatabaseError: deadlock detected\",\"culprit\":\"orders.ts in reserveStock\",\"filename\":\"src/orders.ts\",\"lineNumber\":88,\"level\":\"fatal\",\"firstSeen\":\"2026-10-17T06:45:00Z\",\"lastSeen\":\"2026-10-17T23:10:00Z\",\"count\":54,\"userCount\":30,\"status\":\"unresolved\"}]}\n\nExploration Run 96ba0f5a. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-a4cd3a250d49d189",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: unknown) {\\n  const a = await sdk.linear.searchIssues({ query: \\\"orders.ts in reserveStock\\\" });\\n  const b = await sdk.linear.searchIssues({ query: \\\"reserveStock\\\" });\\n  const c = await sdk.linear.searchIssues({ query: \\\"DatabaseError: deadlock detected\\\" });\\n  return { a, b, c };\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-a4cd3a250d49d189",
+    "content": "{\"a\":{\"issues\":[{\"id\":\"lin-1\",\"identifier\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\",\"assigneeEmail\":\"li@example.com\",\"state\":\"In Progress\"}]},\"b\":{\"issues\":[{\"id\":\"lin-1\",\"identifier\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\",\"assigneeEmail\":\"li@example.com\",\"state\":\"In Progress\"}]},\"c\":{\"issues\":[{\"id\":\"lin-1\",\"identifier\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\",\"assigneeEmail\":\"li@example.com\",\"state\":\"In Progress\"}]}}\n\nExploration Run c1c57efe. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-9ede24368d9d6cdb",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: unknown) {\\n  const projects = await sdk.sentry.listProjects();\\n  const issues = await sdk.sentry.listIssues({ project: \\\"api\\\" });\\n  const unresolved = issues.issues.filter(i => i.status === \\\"unresolved\\\" && i.count >= 0);\\n  return { projects, unresolved };\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-9ede24368d9d6cdb",
+    "content": "{\"projects\":{\"projects\":[{\"slug\":\"web\",\"name\":\"Web storefront\",\"platform\":\"javascript\",\"team\":\"storefront\",\"archivedAt\":null},{\"slug\":\"api\",\"name\":\"Orders API\",\"platform\":\"node\",\"team\":null,\"archivedAt\":null},{\"slug\":\"jobs\",\"name\":\"Batch jobs\",\"platform\":\"node\",\"team\":null,\"archivedAt\":null}]},\"unresolved\":[{\"id\":\"4601\",\"shortId\":\"API-2A\",\"project\":\"api\",\"title\":\"DatabaseError: deadlock detected\",\"culprit\":\"orders.ts in reserveStock\",\"filename\":\"src/orders.ts\",\"lineNumber\":88,\"level\":\"fatal\",\"firstSeen\":\"2026-10-17T06:45:00Z\",\"lastSeen\":\"2026-10-17T23:10:00Z\",\"count\":54,\"userCount\":30,\"status\":\"unresolved\"}]}\n\nExploration Run c0433f4b. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-b048bfe487406453",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: unknown) {\\n  const queries = [\\\"orders.ts\\\", \\\"deadlock\\\", \\\"Sentry\\\", \\\"reserveStock\\\", \\\"api\\\", \\\"DatabaseError\\\"];\\n  const out: Record<string, unknown> = {};\\n  for (const q of queries) out[q] = await sdk.linear.searchIssues({ query: q });\\n  const blame = await sdk.github.getBlame({ file: \\\"src/orders.ts\\\", line: 88 });\\n  return { out, blame };\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-b048bfe487406453",
+    "content": "{\"out\":{\"orders.ts\":{\"issues\":[{\"id\":\"lin-1\",\"identifier\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\",\"assigneeEmail\":\"li@example.com\",\"state\":\"In Progress\"}]},\"deadlock\":{\"issues\":[{\"id\":\"lin-1\",\"identifier\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\",\"assigneeEmail\":\"li@example.com\",\"state\":\"In Progress\"}]},\"Sentry\":{\"issues\":[{\"id\":\"lin-1\",\"identifier\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\",\"assigneeEmail\":\"li@example.com\",\"state\":\"In Progress\"}]},\"reserveStock\":{\"issues\":[{\"id\":\"lin-1\",\"identifier\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\",\"assigneeEmail\":\"li@example.com\",\"state\":\"In Progress\"}]},\"api\":{\"issues\":[]},\"DatabaseError\":{\"issues\":[{\"id\":\"lin-1\",\"identifier\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\",\"assigneeEmail\":\"li@example.com\",\"state\":\"In Progress\"}]}},\"blame\":{\"file\":\"src/orders.ts\",\"line\":88,\"commit\":\"c0ffee7\",\"authorName\":\"Li\",\"authorEmail\":\"li@example.com\",\"committedAt\":\"2026-10-01T12:00:00Z\"}}\n\nExploration Run 19480cdb. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-b09a330ca1c39ad5",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: unknown) {\\n  const { issues } = await sdk.sentry.listIssues({ project: \\\"api\\\" });\\n  const candidates = issues.filter(i => i.status === \\\"unresolved\\\" && i.count >= 0);\\n  const checked = candidates.length;\\n  const created: string[] = [];\\n  const skipped: { id: string; culprit: string; reason: string }[] = [];\\n  let titleUsed: string | null = null;\\n\\n  for (const issue of candidates) {\\n    const search = await sdk.linear.searchIssues({ query: issue.culprit });\\n    const mentioned = search.issues.some(\\n      li => li.description.includes(issue.culprit) || li.title.includes(issue.culprit),\\n    );\\n    if (mentioned) {\\n      skipped.push({ id: issue.id, culprit: issue.culprit, reason: \\\"already mentioned in Linear\\\" });\\n      continue;\\n    }\\n    if (titleUsed === null) titleUsed = issue.title;\\n    const blame = await sdk.github.getBlame({ file: issue.filename, line: issue.lineNumber });\\n    const res = await sdk.linear.createIssue({\\n      title: `[Sentry] ${titleUsed}`,\\n      description: issue.culprit,\\n      assigneeEmail: blame.authorEmail,\\n    });\\n    created.push(res.identifier);\\n  }\\n\\n  return { checked, created, skipped };\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-b09a330ca1c39ad5",
+    "content": "{\"checked\":1,\"created\":[],\"skipped\":[{\"id\":\"4601\",\"culprit\":\"orders.ts in reserveStock\",\"reason\":\"already mentioned in Linear\"}]}\n\nExploration Run a8e43c0b. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": "{\"checked\":1,\"created\":[]}"
+  }
+]

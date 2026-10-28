@@ -1,0 +1,103 @@
+[
+  {
+    "role": "system",
+    "content": "You are a coding agent. Do the developer's task with the tools you have; do not ask the developer anything. When you are done, reply with the task's result as JSON and nothing else."
+  },
+  {
+    "role": "user",
+    "content": "For every unresolved Sentry issue of project \"jobs\" with at least 100 events, find who last changed the line it crashes on, using GitHub blame of the issue's filename and lineNumber. Return an array of { shortId, owner }, where owner is the author's email. Change nothing."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-bfe6c4f85143f0b6",
+        "function": {
+          "name": "search_sdk",
+          "arguments": "{\"query\": \"sentry issues list project unresolved\"}"
+        },
+        "type": "function"
+      },
+      {
+        "id": "chatcmpl-tool-9a3345b108723f15",
+        "function": {
+          "name": "search_sdk",
+          "arguments": "{\"query\": \"github blame file line author email\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-bfe6c4f85143f0b6",
+    "content": "/** List the issues of a Sentry project. */\nsdk.sentry.listIssues(args: { project: string }): Promise<{ issues: { id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }[] }>\n\n/** List the Sentry projects of the organization. */\nsdk.sentry.listProjects(args?: { platform?: string }): Promise<unknown>\n\n/** List the events recorded for a Sentry issue, newest first. */\nsdk.sentry.listIssueEvents(args: { issueId: string }): Promise<{ events: { id: string; issueId: string; timestamp: string; release: string; message: string }[] }>\n\n/** Get the members of a Sentry project's team. */\nsdk.sentry.getProjectTeam(args: { slug: string }): Promise<unknown>\n\n/** Get one Sentry issue by its id. */\nsdk.sentry.getIssue(args: { id: string }): Promise<{ id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }>\n\n/** List the repository's commits, newest first, in pages of 50. Pass a page's nextCursor to get the next one. */\nsdk.github.listCommits(args?: { since?: string; cursor?: string }): Promise<{ commits: { sha: string; authorName: string; authorEmail: string; message: string; committedAt: string }[]; nextCursor: string | null }>\n\n/** Search Linear issues whose title or description contains the query. */\nsdk.linear.searchIssues(args: { query: string }): Promise<{ issues: { id: string; identifier: string; title: string; description: string; assigneeEmail: string | null; state: \"Todo\" | \"In Progress\" | \"Done\" }[] }>\n\n/** Create a Linear issue. Write Tool: a run records this call in its Write Plan instead of sending it, and gets a Placeholder back. */\nsdk.linear.createIssue(args: { title: string; description?: string; assigneeEmail?: string }): Promise<Placeholder<{ id: string; identifier: string; title: string; url: string }>>"
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-9a3345b108723f15",
+    "content": "/** Get who last changed a line of a file in the repository. */\nsdk.github.getBlame(args: { file: string; line: number }): Promise<{ file: string; line: number; commit: string; authorName: string; authorEmail: string; committedAt: string }>\n\n/** Create a Linear issue. Write Tool: a run records this call in its Write Plan instead of sending it, and gets a Placeholder back. */\nsdk.linear.createIssue(args: { title: string; description?: string; assigneeEmail?: string }): Promise<Placeholder<{ id: string; identifier: string; title: string; url: string }>>\n\n/** List the repository's commits, newest first, in pages of 50. Pass a page's nextCursor to get the next one. */\nsdk.github.listCommits(args?: { since?: string; cursor?: string }): Promise<{ commits: { sha: string; authorName: string; authorEmail: string; message: string; committedAt: string }[]; nextCursor: string | null }>"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-b3cf9bb696fa1e51",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input) {\\n  const { issues } = await sdk.sentry.listIssues({ project: \\\"jobs\\\" });\\n  const targets = issues.filter(i => i.status === \\\"unresolved\\\" && i.count >= 100);\\n  const out = [];\\n  for (const i of targets) {\\n    const blame = await sdk.github.getBlame({ file: i.filename, line: i.lineNumber });\\n    out.push({ shortId: i.shortId, owner: blame.authorEmail });\\n  }\\n  return { total: issues.length, targets: targets.length, out };\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-b3cf9bb696fa1e51",
+    "content": "Error: TS7006: Parameter 'input' implicitly has an 'any' type.\n    at program.ts:1:28"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-9e3ee04330bb05b0",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: Record<string, never>) {\\n  const { issues } = await sdk.sentry.listIssues({ project: \\\"jobs\\\" });\\n  const targets = issues.filter(i => i.status === \\\"unresolved\\\" && i.count >= 100);\\n  const out = [];\\n  for (const i of targets) {\\n    const blame = await sdk.github.getBlame({ file: i.filename, line: i.lineNumber });\\n    out.push({ shortId: i.shortId, owner: blame.authorEmail });\\n  }\\n  return { total: issues.length, targets: targets.length, out };\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-9e3ee04330bb05b0",
+    "content": "{\"total\":12,\"targets\":6,\"out\":[{\"shortId\":\"JOBS-1\",\"owner\":\"sam@example.com\"},{\"shortId\":\"JOBS-2\",\"owner\":\"kim@example.com\"},{\"shortId\":\"JOBS-3\",\"owner\":\"li@example.com\"},{\"shortId\":\"JOBS-4\",\"owner\":\"ana@example.com\"},{\"shortId\":\"JOBS-5\",\"owner\":\"sam@example.com\"},{\"shortId\":\"JOBS-6\",\"owner\":\"sam@example.com\"}]}\n\nExploration Run ce7c6ca7. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-a67f3058aa7cab27",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: Record<string, never>) {\\n  const { issues } = await sdk.sentry.listIssues({ project: \\\"jobs\\\" });\\n  return issues.map(i => ({ shortId: i.shortId, project: i.project, status: i.status, count: i.count, file: i.filename, line: i.lineNumber }));\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-a67f3058aa7cab27",
+    "content": "[{\"shortId\":\"JOBS-1\",\"project\":\"jobs\",\"status\":\"unresolved\",\"count\":412,\"file\":\"src/jobs/mailer.ts\",\"line\":31},{\"shortId\":\"JOBS-2\",\"project\":\"jobs\",\"status\":\"unresolved\",\"count\":260,\"file\":\"src/jobs/billing.ts\",\"line\":77},{\"shortId\":\"JOBS-3\",\"project\":\"jobs\",\"status\":\"unresolved\",\"count\":198,\"file\":\"src/jobs/export.ts\",\"line\":12},{\"shortId\":\"JOBS-4\",\"project\":\"jobs\",\"status\":\"unresolved\",\"count\":151,\"file\":\"src/jobs/cleanup.ts\",\"line\":54},{\"shortId\":\"JOBS-5\",\"project\":\"jobs\",\"status\":\"unresolved\",\"count\":133,\"file\":\"src/jobs/mailer.ts\",\"line\":31},{\"shortId\":\"JOBS-6\",\"project\":\"jobs\",\"status\":\"unresolved\",\"count\":120,\"file\":\"src/jobs/sync.ts\",\"line\":140},{\"shortId\":\"JOBS-7\",\"project\":\"jobs\",\"status\":\"unresolved\",\"count\":97,\"file\":\"src/jobs/report.ts\",\"line\":66},{\"shortId\":\"JOBS-8\",\"project\":\"jobs\",\"status\":\"unresolved\",\"count\":88,\"file\":\"src/jobs/billing.ts\",\"line\":203},{\"shortId\":\"JOBS-9\",\"project\":\"jobs\",\"status\":\"unresolved\",\"count\":75,\"file\":\"src/jobs/export.ts\",\"line\":12},{\"shortId\":\"JOBS-A\",\"project\":\"jobs\",\"status\":\"resolved\",\"count\":64,\"file\":\"src/jobs/cleanup.ts\",\"line\":99},{\"shortId\":\"JOBS-B\",\"project\":\"jobs\",\"status\":\"unresolved\",\"count\":41,\"file\":\"src/jobs/sync.ts\",\"line\":18},{\"shortId\":\"JOBS-C\",\"project\":\"jobs\",\"status\":\"ignored\",\"count\":23,\"file\":\"src/jobs/report.ts\",\"line\":150}]\n\nExploration Run 59788f3c. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": "{\"result\":[{\"shortId\":\"JOBS-1\",\"owner\":\"sam@example.com\"},{\"shortId\":\"JOBS-2\",\"owner\":\"kim@example.com\"},{\"shortId\":\"JOBS-3\",\"owner\":\"li@example.com\"},{\"shortId\":\"JOBS-4\",\"owner\":\"ana@example.com\"},{\"shortId\":\"JOBS-5\",\"owner\":\"sam@example.com\"},{\"shortId\":\"JOBS-6\",\"owner\":\"sam@example.com\"}],\"notes\":\"6 of 12 issues in project 'jobs' are unresolved with >=100 events (JOBS-1 412, JOBS-2 260, JOBS-3 198, JOBS-4 151, JOBS-5 133, JOBS-6 120); owner is the GitHub blame author email for each issue's filename/lineNumber. Nothing was changed.\"}"
+  }
+]

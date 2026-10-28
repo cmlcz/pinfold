@@ -1,0 +1,84 @@
+[
+  {
+    "role": "system",
+    "content": "You are a coding agent. Do the developer's task with the tools you have; do not ask the developer anything. When you are done, reply with the task's result as JSON and nothing else."
+  },
+  {
+    "role": "user",
+    "content": "For every unresolved Sentry issue of project \"web\" with at least 50 events, find who last changed the line it crashes on, using GitHub blame of the issue's filename and lineNumber. Return an array of { shortId, owner }, where owner is the author's email. Change nothing."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-b16c8a86fe2ad254",
+        "function": {
+          "name": "search_sdk",
+          "arguments": "{\"query\": \"Sentry list issues project events\"}"
+        },
+        "type": "function"
+      },
+      {
+        "id": "chatcmpl-tool-96cb24776cb77c20",
+        "function": {
+          "name": "search_sdk",
+          "arguments": "{\"query\": \"GitHub blame file line author\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-b16c8a86fe2ad254",
+    "content": "/** List the events recorded for a Sentry issue, newest first. */\nsdk.sentry.listIssueEvents(args: { issueId: string }): Promise<{ events: { id: string; issueId: string; timestamp: string; release: string; message: string }[] }>\n\n/** List the issues of a Sentry project. */\nsdk.sentry.listIssues(args: { project: string }): Promise<{ issues: { id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }[] }>\n\n/** List the Sentry projects of the organization. */\nsdk.sentry.listProjects(args?: { platform?: string }): Promise<unknown>\n\n/** Get the members of a Sentry project's team. */\nsdk.sentry.getProjectTeam(args: { slug: string }): Promise<unknown>\n\n/** Get one Sentry issue by its id. */\nsdk.sentry.getIssue(args: { id: string }): Promise<{ id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }>\n\n/** List the repository's commits, newest first, in pages of 50. Pass a page's nextCursor to get the next one. */\nsdk.github.listCommits(args?: { since?: string; cursor?: string }): Promise<{ commits: { sha: string; authorName: string; authorEmail: string; message: string; committedAt: string }[]; nextCursor: string | null }>\n\n/** Search Linear issues whose title or description contains the query. */\nsdk.linear.searchIssues(args: { query: string }): Promise<{ issues: { id: string; identifier: string; title: string; description: string; assigneeEmail: string | null; state: \"Todo\" | \"In Progress\" | \"Done\" }[] }>\n\n/** Create a Linear issue. Write Tool: a run records this call in its Write Plan instead of sending it, and gets a Placeholder back. */\nsdk.linear.createIssue(args: { title: string; description?: string; assigneeEmail?: string }): Promise<Placeholder<{ id: string; identifier: string; title: string; url: string }>>"
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-96cb24776cb77c20",
+    "content": "/** Get who last changed a line of a file in the repository. */\nsdk.github.getBlame(args: { file: string; line: number }): Promise<{ file: string; line: number; commit: string; authorName: string; authorEmail: string; committedAt: string }>"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-8151e4e686f40bf6",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: any) {\\n  const { issues } = await sdk.sentry.listIssues({ project: \\\"web\\\" });\\n  const targets = issues.filter(i => i.status === \\\"unresolved\\\" && i.count >= 50);\\n  const results = [];\\n  for (const issue of targets) {\\n    const blame = await sdk.github.getBlame({ file: issue.filename, line: issue.lineNumber });\\n    results.push({ shortId: issue.shortId, owner: blame.authorEmail });\\n  }\\n  return results;\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-8151e4e686f40bf6",
+    "content": "[{\"shortId\":\"WEB-1A\",\"owner\":\"ana@example.com\"},{\"shortId\":\"WEB-1B\",\"owner\":\"kim@example.com\"}]\n\nExploration Run 97e0735f. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-b8d6f013ac514308",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: any) {\\n  const { issues } = await sdk.sentry.listIssues({ project: \\\"web\\\" });\\n  return issues.map(i => ({ shortId: i.shortId, project: i.project, status: i.status, count: i.count, file: i.filename, line: i.lineNumber }));\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-b8d6f013ac514308",
+    "content": "[{\"shortId\":\"WEB-1A\",\"project\":\"web\",\"status\":\"unresolved\",\"count\":128,\"file\":\"src/checkout.ts\",\"line\":42},{\"shortId\":\"WEB-1B\",\"project\":\"web\",\"status\":\"unresolved\",\"count\":73,\"file\":\"src/sync-worker.ts\",\"line\":117},{\"shortId\":\"WEB-1C\",\"project\":\"web\",\"status\":\"resolved\",\"count\":210,\"file\":\"src/format.ts\",\"line\":9}]\n\nExploration Run c058de3b. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": "```json\n[\n  { \"shortId\": \"WEB-1A\", \"owner\": \"ana@example.com\" },\n  { \"shortId\": \"WEB-1B\", \"owner\": \"kim@example.com\" }\n]\n```"
+  }
+]

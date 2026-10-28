@@ -1,0 +1,84 @@
+[
+  {
+    "role": "system",
+    "content": "You are a coding agent. Do the developer's task with the tools you have; do not ask the developer anything. When you are done, reply with the task's result as JSON and nothing else."
+  },
+  {
+    "role": "user",
+    "content": "For every unresolved Sentry issue of project \"web\" with at least 50 events, create one Linear issue titled \"[Sentry] <shortId>\" with the issue's culprit as its description."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-ab6e4f4b02cc3c9b",
+        "function": {
+          "name": "search_sdk",
+          "arguments": "{\"query\": \"sentry issues list project\"}"
+        },
+        "type": "function"
+      },
+      {
+        "id": "chatcmpl-tool-a9021a14a517f1b0",
+        "function": {
+          "name": "search_sdk",
+          "arguments": "{\"query\": \"linear create issue\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-ab6e4f4b02cc3c9b",
+    "content": "/** List the issues of a Sentry project. */\nsdk.sentry.listIssues(args: { project: string }): Promise<{ issues: { id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }[] }>\n\n/** List the Sentry projects of the organization. */\nsdk.sentry.listProjects(args?: { platform?: string }): Promise<unknown>\n\n/** List the events recorded for a Sentry issue, newest first. */\nsdk.sentry.listIssueEvents(args: { issueId: string }): Promise<{ events: { id: string; issueId: string; timestamp: string; release: string; message: string }[] }>\n\n/** Get the members of a Sentry project's team. */\nsdk.sentry.getProjectTeam(args: { slug: string }): Promise<unknown>\n\n/** Get one Sentry issue by its id. */\nsdk.sentry.getIssue(args: { id: string }): Promise<{ id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }>\n\n/** List the repository's commits, newest first, in pages of 50. Pass a page's nextCursor to get the next one. */\nsdk.github.listCommits(args?: { since?: string; cursor?: string }): Promise<{ commits: { sha: string; authorName: string; authorEmail: string; message: string; committedAt: string }[]; nextCursor: string | null }>\n\n/** Search Linear issues whose title or description contains the query. */\nsdk.linear.searchIssues(args: { query: string }): Promise<{ issues: { id: string; identifier: string; title: string; description: string; assigneeEmail: string | null; state: \"Todo\" | \"In Progress\" | \"Done\" }[] }>\n\n/** Create a Linear issue. Write Tool: a run records this call in its Write Plan instead of sending it, and gets a Placeholder back. */\nsdk.linear.createIssue(args: { title: string; description?: string; assigneeEmail?: string }): Promise<Placeholder<{ id: string; identifier: string; title: string; url: string }>>"
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-a9021a14a517f1b0",
+    "content": "/** Create a Linear issue. Write Tool: a run records this call in its Write Plan instead of sending it, and gets a Placeholder back. */\nsdk.linear.createIssue(args: { title: string; description?: string; assigneeEmail?: string }): Promise<Placeholder<{ id: string; identifier: string; title: string; url: string }>>\n\n/** Search Linear issues whose title or description contains the query. */\nsdk.linear.searchIssues(args: { query: string }): Promise<{ issues: { id: string; identifier: string; title: string; description: string; assigneeEmail: string | null; state: \"Todo\" | \"In Progress\" | \"Done\" }[] }>\n\n/** Get one Sentry issue by its id. */\nsdk.sentry.getIssue(args: { id: string }): Promise<{ id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }>\n\n/** List the issues of a Sentry project. */\nsdk.sentry.listIssues(args: { project: string }): Promise<{ issues: { id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }[] }>\n\n/** List the events recorded for a Sentry issue, newest first. */\nsdk.sentry.listIssueEvents(args: { issueId: string }): Promise<{ events: { id: string; issueId: string; timestamp: string; release: string; message: string }[] }>"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-a53416fa59613a18",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: unknown) {\\n  const { issues } = await sdk.sentry.listIssues({ project: \\\"web\\\" });\\n  const matching = issues.filter(i => i.status === \\\"unresolved\\\" && i.count >= 50);\\n  return {\\n    total: issues.length,\\n    statuses: issues.map(i => i.status),\\n    matching: matching.map(i => ({ shortId: i.shortId, title: i.title, culprit: i.culprit, count: i.count, status: i.status, level: i.level }))\\n  };\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-a53416fa59613a18",
+    "content": "{\"total\":3,\"statuses\":[\"unresolved\",\"unresolved\",\"resolved\"],\"matching\":[{\"shortId\":\"WEB-1A\",\"title\":\"TypeError: Cannot read properties of undefined (reading 'total')\",\"culprit\":\"checkout.ts in computeTotal\",\"count\":128,\"status\":\"unresolved\",\"level\":\"error\"},{\"shortId\":\"WEB-1B\",\"title\":\"TimeoutError: sync-worker exceeded 30000ms\",\"culprit\":\"sync-worker.ts in flushQueue\",\"count\":73,\"status\":\"unresolved\",\"level\":\"error\"}]}\n\nExploration Run d92dc55d. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-b7a8aa120ed7c15f",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: unknown) {\\n  const { issues } = await sdk.sentry.listIssues({ project: \\\"web\\\" });\\n  const matching = issues.filter(i => i.status === \\\"unresolved\\\" && i.count >= 50);\\n  const created = [];\\n  for (const issue of matching) {\\n    created.push(await sdk.linear.createIssue({\\n      title: `[Sentry] ${issue.shortId}`,\\n      description: issue.culprit,\\n    }));\\n  }\\n  return { count: created.length, created };\\n}\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-b7a8aa120ed7c15f",
+    "content": "{\"count\":2,\"created\":[{\"id\":\"lin-2\",\"identifier\":\"ENG-102\",\"title\":\"[Sentry] WEB-1A\",\"url\":\"https://linear.example/issue/ENG-102\"},{\"id\":\"lin-3\",\"identifier\":\"ENG-103\",\"title\":\"[Sentry] WEB-1B\",\"url\":\"https://linear.example/issue/ENG-103\"}]}\n\nApplied Write Plan 5a5dfae60315: 2 writes sent.\n\nExploration Run e0e41417. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": "{\"created\":[{\"identifier\":\"ENG-102\",\"title\":\"[Sentry] WEB-1A\",\"description\":\"checkout.ts in computeTotal\",\"url\":\"https://linear.example/issue/ENG-102\"},{\"identifier\":\"ENG-103\",\"title\":\"[Sentry] WEB-1B\",\"description\":\"sync-worker.ts in flushQueue\",\"url\":\"https://linear.example/issue/ENG-103\"}],\"count\":2}"
+  }
+]

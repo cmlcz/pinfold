@@ -1,0 +1,84 @@
+[
+  {
+    "role": "system",
+    "content": "You are a coding agent. Do the developer's task with the tools you have; do not ask the developer anything. When you are done, reply with the task's result as JSON and nothing else."
+  },
+  {
+    "role": "user",
+    "content": "For every Sentry issue of project \"web\" with at least 0 events, whatever its status, return { shortId, count, status, latestRelease }, where latestRelease is the release of its newest event, or null if it has none. Return them as one array, most events first. Change nothing."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-bffbc2b7007a31d6",
+        "function": {
+          "name": "search_sdk",
+          "arguments": "{\"query\": \"Sentry issues project events release\"}"
+        },
+        "type": "function"
+      },
+      {
+        "id": "chatcmpl-tool-a774caeb5359bff0",
+        "function": {
+          "name": "list_workflows",
+          "arguments": "{}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-bffbc2b7007a31d6",
+    "content": "/** List the events recorded for a Sentry issue, newest first. */\nsdk.sentry.listIssueEvents(args: { issueId: string }): Promise<{ events: { id: string; issueId: string; timestamp: string; release: string; message: string }[] }>\n\n/** List the issues of a Sentry project. */\nsdk.sentry.listIssues(args: { project: string }): Promise<{ issues: { id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }[] }>\n\n/** List the Sentry projects of the organization. */\nsdk.sentry.listProjects(args?: { platform?: string }): Promise<unknown>\n\n/** Get the members of a Sentry project's team. */\nsdk.sentry.getProjectTeam(args: { slug: string }): Promise<unknown>\n\n/** Get one Sentry issue by its id. */\nsdk.sentry.getIssue(args: { id: string }): Promise<{ id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }>\n\n/** Search Linear issues whose title or description contains the query. */\nsdk.linear.searchIssues(args: { query: string }): Promise<{ issues: { id: string; identifier: string; title: string; description: string; assigneeEmail: string | null; state: \"Todo\" | \"In Progress\" | \"Done\" }[] }>\n\n/** Create a Linear issue. Write Tool: a run records this call in its Write Plan instead of sending it, and gets a Placeholder back. */\nsdk.linear.createIssue(args: { title: string; description?: string; assigneeEmail?: string }): Promise<Placeholder<{ id: string; identifier: string; title: string; url: string }>>"
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-a774caeb5359bff0",
+    "content": "No saved Workflows."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-b433467eb0a10c18",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: {}) {\\n  const res = await sdk.sentry.listIssues({ project: \\\"web\\\" });\\n  const issues = res.issues ?? [];\\n  const out = [];\\n  for (const iss of issues) {\\n    const ev = await sdk.sentry.listIssueEvents({ issueId: iss.id });\\n    const events = ev.events ?? [];\\n    out.push({\\n      shortId: iss.shortId,\\n      count: iss.count,\\n      status: iss.status,\\n      latestRelease: events.length > 0 ? events[0].release : null,\\n      _ts: events.length > 0 ? events[0].timestamp : null,\\n      _n: events.length,\\n    });\\n  }\\n  out.sort((a, b) => b.count - a.count);\\n  return { total: issues.length, rows: out };\\n}\", \"input\": {}}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-b433467eb0a10c18",
+    "content": "{\"total\":3,\"rows\":[{\"shortId\":\"WEB-1C\",\"count\":210,\"status\":\"resolved\",\"latestRelease\":null,\"_ts\":null,\"_n\":0},{\"shortId\":\"WEB-1A\",\"count\":128,\"status\":\"unresolved\",\"latestRelease\":\"web@3.4.1\",\"_ts\":\"2026-10-17T21:40:00Z\",\"_n\":2},{\"shortId\":\"WEB-1B\",\"count\":73,\"status\":\"unresolved\",\"latestRelease\":null,\"_ts\":null,\"_n\":0}]}\n\nExploration Run 401ca936. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-bb89ee398f202cea",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: {}) {\\n  const res = await sdk.sentry.listIssues({ project: \\\"web\\\" });\\n  const issues = res.issues ?? [];\\n  const rows = [];\\n  for (const iss of issues) {\\n    const ev = await sdk.sentry.listIssueEvents({ issueId: iss.id });\\n    const events = [...(ev.events ?? [])].sort((a, b) => (a.timestamp < b.timestamp ? 1 : a.timestamp > b.timestamp ? -1 : 0));\\n    rows.push({\\n      shortId: iss.shortId,\\n      count: iss.count,\\n      status: iss.status,\\n      latestRelease: events.length > 0 ? events[0].release : null,\\n    });\\n  }\\n  rows.sort((a, b) => b.count - a.count);\\n  return rows;\\n}\", \"input\": {}}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-bb89ee398f202cea",
+    "content": "[{\"shortId\":\"WEB-1C\",\"count\":210,\"status\":\"resolved\",\"latestRelease\":null},{\"shortId\":\"WEB-1A\",\"count\":128,\"status\":\"unresolved\",\"latestRelease\":\"web@3.4.1\"},{\"shortId\":\"WEB-1B\",\"count\":73,\"status\":\"unresolved\",\"latestRelease\":null}]\n\nExploration Run 7c180df1. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": "```json\n[\n  {\"shortId\":\"WEB-1C\",\"count\":210,\"status\":\"resolved\",\"latestRelease\":null},\n  {\"shortId\":\"WEB-1A\",\"count\":128,\"status\":\"unresolved\",\"latestRelease\":\"web@3.4.1\"},\n  {\"shortId\":\"WEB-1B\",\"count\":73,\"status\":\"unresolved\",\"latestRelease\":null}\n]\n```"
+  }
+]

@@ -1,0 +1,255 @@
+[
+  {
+    "role": "system",
+    "content": "You are a coding agent. Do the developer's task with the tools you have; do not ask the developer anything. When you are done, reply with the task's result as JSON and nothing else."
+  },
+  {
+    "role": "user",
+    "content": "For every unresolved Sentry issue of project \"jobs\" with at least 80 events, make sure Linear has an issue for its culprit: unless a Linear issue already mentions the culprit, create one titled \"[Sentry] <culprit>\" with the culprit as its description. Several Sentry issues can share a culprit; create at most one Linear issue per culprit."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-8fa526218f83e30c",
+        "function": {
+          "name": "search_sdk",
+          "arguments": "{\"query\": \"sentry issues list project events\"}"
+        },
+        "type": "function"
+      },
+      {
+        "id": "chatcmpl-tool-afb791faab9ab093",
+        "function": {
+          "name": "search_sdk",
+          "arguments": "{\"query\": \"linear issues create search\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-8fa526218f83e30c",
+    "content": "/** List the events recorded for a Sentry issue, newest first. */\nsdk.sentry.listIssueEvents(args: { issueId: string }): Promise<{ events: { id: string; issueId: string; timestamp: string; release: string; message: string }[] }>\n\n/** List the issues of a Sentry project. */\nsdk.sentry.listIssues(args: { project: string }): Promise<{ issues: { id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }[] }>\n\n/** List the Sentry projects of the organization. */\nsdk.sentry.listProjects(args?: { platform?: string }): Promise<unknown>\n\n/** Get the members of a Sentry project's team. */\nsdk.sentry.getProjectTeam(args: { slug: string }): Promise<unknown>\n\n/** Get one Sentry issue by its id. */\nsdk.sentry.getIssue(args: { id: string }): Promise<{ id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }>\n\n/** List the repository's commits, newest first, in pages of 50. Pass a page's nextCursor to get the next one. */\nsdk.github.listCommits(args?: { since?: string; cursor?: string }): Promise<{ commits: { sha: string; authorName: string; authorEmail: string; message: string; committedAt: string }[]; nextCursor: string | null }>\n\n/** Search Linear issues whose title or description contains the query. */\nsdk.linear.searchIssues(args: { query: string }): Promise<{ issues: { id: string; identifier: string; title: string; description: string; assigneeEmail: string | null; state: \"Todo\" | \"In Progress\" | \"Done\" }[] }>\n\n/** Create a Linear issue. Write Tool: a run records this call in its Write Plan instead of sending it, and gets a Placeholder back. */\nsdk.linear.createIssue(args: { title: string; description?: string; assigneeEmail?: string }): Promise<Placeholder<{ id: string; identifier: string; title: string; url: string }>>"
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-afb791faab9ab093",
+    "content": "/** Search Linear issues whose title or description contains the query. */\nsdk.linear.searchIssues(args: { query: string }): Promise<{ issues: { id: string; identifier: string; title: string; description: string; assigneeEmail: string | null; state: \"Todo\" | \"In Progress\" | \"Done\" }[] }>\n\n/** Create a Linear issue. Write Tool: a run records this call in its Write Plan instead of sending it, and gets a Placeholder back. */\nsdk.linear.createIssue(args: { title: string; description?: string; assigneeEmail?: string }): Promise<Placeholder<{ id: string; identifier: string; title: string; url: string }>>\n\n/** Get one Sentry issue by its id. */\nsdk.sentry.getIssue(args: { id: string }): Promise<{ id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }>\n\n/** List the issues of a Sentry project. */\nsdk.sentry.listIssues(args: { project: string }): Promise<{ issues: { id: string; shortId: string; project: string; title: string; culprit: string; filename: string; lineNumber: number; level: \"fatal\" | \"error\" | \"warning\" | \"info\"; status: \"unresolved\" | \"resolved\" | \"ignored\"; count: number; userCount: number; firstSeen: string; lastSeen: string }[] }>\n\n/** List the events recorded for a Sentry issue, newest first. */\nsdk.sentry.listIssueEvents(args: { issueId: string }): Promise<{ events: { id: string; issueId: string; timestamp: string; release: string; message: string }[] }>"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-85293964eb54abc0",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: {}) {\\n  const res = await sdk.sentry.listIssues({ project: \\\"jobs\\\" });\\n  return res;\\n}\", \"input\": {}}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-85293964eb54abc0",
+    "content": "{\"issues\":[{\"id\":\"4701\",\"shortId\":\"JOBS-1\",\"project\":\"jobs\",\"title\":\"JobError: sendDigest failed\",\"culprit\":\"mailer.ts in sendDigest\",\"filename\":\"src/jobs/mailer.ts\",\"lineNumber\":31,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T10:00:00Z\",\"count\":412,\"userCount\":0,\"status\":\"unresolved\"},{\"id\":\"4702\",\"shortId\":\"JOBS-2\",\"project\":\"jobs\",\"title\":\"JobError: chargeCard failed\",\"culprit\":\"billing.ts in chargeCard\",\"filename\":\"src/jobs/billing.ts\",\"lineNumber\":77,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T11:00:00Z\",\"count\":260,\"userCount\":0,\"status\":\"unresolved\"},{\"id\":\"4703\",\"shortId\":\"JOBS-3\",\"project\":\"jobs\",\"title\":\"JobError: writeCsv failed\",\"culprit\":\"export.ts in writeCsv\",\"filename\":\"src/jobs/export.ts\",\"lineNumber\":12,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T12:00:00Z\",\"count\":198,\"userCount\":0,\"status\":\"unresolved\"},{\"id\":\"4704\",\"shortId\":\"JOBS-4\",\"project\":\"jobs\",\"title\":\"JobError: purgeOld failed\",\"culprit\":\"cleanup.ts in purgeOld\",\"filename\":\"src/jobs/cleanup.ts\",\"lineNumber\":54,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T13:00:00Z\",\"count\":151,\"userCount\":0,\"status\":\"unresolved\"},{\"id\":\"4705\",\"shortId\":\"JOBS-5\",\"project\":\"jobs\",\"title\":\"JobError: sendDigest failed\",\"culprit\":\"mailer.ts in sendDigest\",\"filename\":\"src/jobs/mailer.ts\",\"lineNumber\":31,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T14:00:00Z\",\"count\":133,\"userCount\":0,\"status\":\"unresolved\"},{\"id\":\"4706\",\"shortId\":\"JOBS-6\",\"project\":\"jobs\",\"title\":\"JobError: pullVendors failed\",\"culprit\":\"sync.ts in pullVendors\",\"filename\":\"src/jobs/sync.ts\",\"lineNumber\":140,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T15:00:00Z\",\"count\":120,\"userCount\":0,\"status\":\"unresolved\"},{\"id\":\"4707\",\"shortId\":\"JOBS-7\",\"project\":\"jobs\",\"title\":\"JobError: buildWeekly failed\",\"culprit\":\"report.ts in buildWeekly\",\"filename\":\"src/jobs/report.ts\",\"lineNumber\":66,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T16:00:00Z\",\"count\":97,\"userCount\":0,\"status\":\"unresolved\"},{\"id\":\"4708\",\"shortId\":\"JOBS-8\",\"project\":\"jobs\",\"title\":\"JobError: refund failed\",\"culprit\":\"billing.ts in refund\",\"filename\":\"src/jobs/billing.ts\",\"lineNumber\":203,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T17:00:00Z\",\"count\":88,\"userCount\":0,\"status\":\"unresolved\"},{\"id\":\"4709\",\"shortId\":\"JOBS-9\",\"project\":\"jobs\",\"title\":\"JobError: writeCsv failed\",\"culprit\":\"export.ts in writeCsv\",\"filename\":\"src/jobs/export.ts\",\"lineNumber\":12,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T18:00:00Z\",\"count\":75,\"userCount\":0,\"status\":\"unresolved\"},{\"id\":\"4710\",\"shortId\":\"JOBS-A\",\"project\":\"jobs\",\"title\":\"JobError: vacuum failed\",\"culprit\":\"cleanup.ts in vacuum\",\"filename\":\"src/jobs/cleanup.ts\",\"lineNumber\":99,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T19:00:00Z\",\"count\":64,\"userCount\":0,\"status\":\"resolved\"},{\"id\":\"4711\",\"shortId\":\"JOBS-B\",\"project\":\"jobs\",\"title\":\"JobError: pushOrders failed\",\"culprit\":\"sync.ts in pushOrders\",\"filename\":\"src/jobs/sync.ts\",\"lineNumber\":18,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T20:00:00Z\",\"count\":41,\"userCount\":0,\"status\":\"unresolved\"},{\"id\":\"4712\",\"shortId\":\"JOBS-C\",\"project\":\"jobs\",\"title\":\"JobError: emailPdf failed\",\"culprit\":\"report.ts in emailPdf\",\"filename\":\"src/jobs/report.ts\",\"lineNumber\":150,\"level\":\"error\",\"firstSeen\":\"2026-10-15T00:00:00Z\",\"lastSeen\":\"2026-10-17T21:00:00Z\",\"count\":23,\"userCount\":0,\"status\":\"ignored\"}]}\n\nExploration Run bb859b65. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-96264c8d51f5948b",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: {}) {\\n  const culprits = [\\n    \\\"mailer.ts in sendDigest\\\",\\n    \\\"billing.ts in chargeCard\\\",\\n    \\\"export.ts in writeCsv\\\",\\n    \\\"cleanup.ts in purgeOld\\\",\\n    \\\"sync.ts in pullVendors\\\",\\n    \\\"report.ts in buildWeekly\\\",\\n    \\\"billing.ts in refund\\\",\\n  ];\\n  const out: any = {};\\n  for (const c of culprits) {\\n    const res = await sdk.linear.searchIssues({ query: c });\\n    out[c] = res.issues;\\n  }\\n  return out;\\n}\", \"input\": {}}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-96264c8d51f5948b",
+    "content": "{\"mailer.ts in sendDigest\":[],\"billing.ts in chargeCard\":[],\"export.ts in writeCsv\":[],\"cleanup.ts in purgeOld\":[],\"sync.ts in pullVendors\":[],\"report.ts in buildWeekly\":[],\"billing.ts in refund\":[]}\n\nExploration Run 867ca56e. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-82a6ba74045d34df",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: {}) {\\n  const queries = [\\\"sendDigest\\\", \\\"mailer.ts\\\", \\\"chargeCard\\\", \\\"billing.ts\\\", \\\"writeCsv\\\", \\\"export.ts\\\", \\\"purgeOld\\\", \\\"cleanup.ts\\\", \\\"pullVendors\\\", \\\"sync.ts\\\", \\\"buildWeekly\\\", \\\"report.ts\\\", \\\"refund\\\", \\\"Sentry\\\", \\\"in\\\"];\\n  const out: any = {};\\n  for (const q of queries) {\\n    const res = await sdk.linear.searchIssues({ query: q });\\n    out[q] = res.issues.map(i => ({ id: i.identifier, title: i.title, description: i.description }));\\n  }\\n  return out;\\n}\", \"input\": {}}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-82a6ba74045d34df",
+    "content": "{\"sendDigest\":[],\"mailer.ts\":[],\"chargeCard\":[],\"billing.ts\":[],\"writeCsv\":[],\"export.ts\":[],\"purgeOld\":[],\"cleanup.ts\":[],\"pullVendors\":[],\"sync.ts\":[],\"buildWeekly\":[],\"report.ts\":[],\"refund\":[],\"Sentry\":[{\"id\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\"}],\"in\":[{\"id\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\"}]}\n\nExploration Run e282e8db. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-a848df8fd8700943",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: {}) {\\n  const queries = [\\\"orders.ts\\\", \\\"reserveStock\\\", \\\"deadlock\\\", \\\"MAILER.TS\\\", \\\"Sentry]\\\", \\\"DatabaseError\\\", \\\"mailer\\\"];\\n  const out: any = {};\\n  for (const q of queries) {\\n    const res = await sdk.linear.searchIssues({ query: q });\\n    out[q] = res.issues.map(i => ({ id: i.identifier, title: i.title, description: i.description }));\\n  }\\n  return out;\\n}\", \"input\": {}}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-a848df8fd8700943",
+    "content": "{\"orders.ts\":[{\"id\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\"}],\"reserveStock\":[{\"id\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\"}],\"deadlock\":[{\"id\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\"}],\"MAILER.TS\":[],\"Sentry]\":[{\"id\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\"}],\"DatabaseError\":[{\"id\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\"}],\"mailer\":[]}\n\nExploration Run dc5171ea. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-ba7c0abc12e82688",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: {}) {\\n  const queries = [\\\"e\\\", \\\"a\\\", \\\"s\\\", \\\"t\\\", \\\"o\\\"];\\n  const out: any = {};\\n  for (const q of queries) {\\n    const res = await sdk.linear.searchIssues({ query: q });\\n    out[q] = res.issues.map(i => ({ id: i.identifier, title: i.title, description: i.description }));\\n  }\\n  return out;\\n}\", \"input\": {}}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-ba7c0abc12e82688",
+    "content": "{\"e\":[{\"id\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\"}],\"a\":[{\"id\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\"}],\"s\":[{\"id\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\"}],\"t\":[{\"id\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\"}],\"o\":[{\"id\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\"}]}\n\nExploration Run bbafba4a. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-8f8d2b4917d68ee7",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: {}) {\\n  const queries = [\\\"JobError\\\", \\\"failed\\\", \\\"billing\\\", \\\"cleanup\\\", \\\"sync\\\", \\\"report\\\", \\\"export\\\", \\\"Linear\\\", \\\"issue\\\", \\\"bug\\\", \\\"SENTRY\\\", \\\"jobs\\\"];\\n  const out: any = {};\\n  for (const q of queries) {\\n    const res = await sdk.linear.searchIssues({ query: q });\\n    out[q] = res.issues.map(i => ({ id: i.identifier, title: i.title, description: i.description }));\\n  }\\n  return out;\\n}\", \"input\": {}}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-8f8d2b4917d68ee7",
+    "content": "{\"JobError\":[],\"failed\":[],\"billing\":[],\"cleanup\":[],\"sync\":[],\"report\":[],\"export\":[],\"Linear\":[],\"issue\":[],\"bug\":[],\"SENTRY\":[{\"id\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\"}],\"jobs\":[]}\n\nExploration Run f1b6ec24. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-875cd9ca4ff505e7",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: {}) {\\n  const queries = [\\\"\\\", \\\"i\\\", \\\"n\\\", \\\"r\\\", \\\"l\\\", \\\"c\\\", \\\"d\\\", \\\"p\\\", \\\"u\\\", \\\"m\\\", \\\"y\\\"];\\n  const out: any = {};\\n  for (const q of queries) {\\n    try {\\n      const res = await sdk.linear.searchIssues({ query: q });\\n      out[q] = res.issues.map(i => ({ id: i.identifier, title: i.title, description: i.description }));\\n    } catch (e) {\\n      out[q] = String(e);\\n    }\\n  }\\n  return out;\\n}\", \"input\": {}}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-875cd9ca4ff505e7",
+    "content": "{\"\":[{\"id\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\"}],\"i\":[{\"id\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\"}],\"n\":[{\"id\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\"}],\"r\":[{\"id\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\"}],\"l\":[{\"id\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\"}],\"c\":[{\"id\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\"}],\"d\":[{\"id\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\"}],\"p\":[],\"u\":[],\"m\":[],\"y\":[{\"id\":\"ENG-101\",\"title\":\"[Sentry] DatabaseError: deadlock detected\",\"description\":\"orders.ts in reserveStock\"}]}\n\nExploration Run c821a5e1. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-9905dfac49fecc63",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: {}) {\\n  const out: any = {};\\n  for (const id of [\\\"4701\\\",\\\"4709\\\",\\\"4707\\\"]) {\\n    const res = await sdk.sentry.listIssueEvents({ issueId: id });\\n    out[id] = { n: res.events.length, first: res.events[0], last: res.events[res.events.length-1] };\\n  }\\n  return out;\\n}\", \"input\": {}}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-9905dfac49fecc63",
+    "content": "{\"4701\":{\"n\":2,\"first\":{\"id\":\"e-9201\",\"issueId\":\"4701\",\"timestamp\":\"2026-10-17T10:00:00Z\",\"release\":\"jobs@2.1.0\",\"message\":\"SMTP connection reset\"},\"last\":{\"id\":\"e-9202\",\"issueId\":\"4701\",\"timestamp\":\"2026-10-16T09:00:00Z\",\"release\":\"jobs@2.0.3\",\"message\":\"SMTP connection reset\"}},\"4707\":{\"n\":0},\"4709\":{\"n\":0}}\n\nExploration Run 02343bfa. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-89aac684749f05a4",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: {}) {\\n  const queries = [\\\"b\\\",\\\"f\\\",\\\"g\\\",\\\"h\\\",\\\"j\\\",\\\"k\\\",\\\"q\\\",\\\"v\\\",\\\"w\\\",\\\"x\\\",\\\"z\\\",\\\"1\\\",\\\"2\\\",\\\"3\\\",\\\".\\\",\\\"[\\\",\\\"]\\\",\\\"_\\\",\\\"-\\\"];\\n  const out: any = {};\\n  for (const q of queries) {\\n    const res = await sdk.linear.searchIssues({ query: q });\\n    out[q] = res.issues.map(i => i.identifier + \\\" :: \\\" + i.title + \\\" :: \\\" + i.description);\\n  }\\n  return out;\\n}\", \"input\": {}}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-89aac684749f05a4",
+    "content": "{\"1\":[],\"2\":[],\"3\":[],\"b\":[\"ENG-101 :: [Sentry] DatabaseError: deadlock detected :: orders.ts in reserveStock\"],\"f\":[],\"g\":[],\"h\":[],\"j\":[],\"k\":[\"ENG-101 :: [Sentry] DatabaseError: deadlock detected :: orders.ts in reserveStock\"],\"q\":[],\"v\":[\"ENG-101 :: [Sentry] DatabaseError: deadlock detected :: orders.ts in reserveStock\"],\"w\":[],\"x\":[],\"z\":[],\".\":[\"ENG-101 :: [Sentry] DatabaseError: deadlock detected :: orders.ts in reserveStock\"],\"[\":[\"ENG-101 :: [Sentry] DatabaseError: deadlock detected :: orders.ts in reserveStock\"],\"]\":[\"ENG-101 :: [Sentry] DatabaseError: deadlock detected :: orders.ts in reserveStock\"],\"_\":[],\"-\":[]}\n\nExploration Run c9122622. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-af5ea32dafe279ca",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: {}) {\\n  const queries = [\\\"Error\\\",\\\"API\\\",\\\"fix\\\",\\\"Update\\\",\\\"the\\\",\\\"and\\\",\\\"is\\\",\\\"to\\\",\\\"a bug\\\",\\\"*\\\",\\\"%\\\",\\\"mailer.ts in sendDigest\\\"];\\n  const out: any = {};\\n  for (const q of queries) {\\n    const res = await sdk.linear.searchIssues({ query: q });\\n    out[q] = res.issues.map(i => i.identifier + \\\" :: \\\" + i.title);\\n  }\\n  return out;\\n}\", \"input\": {}}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-af5ea32dafe279ca",
+    "content": "{\"Error\":[\"ENG-101 :: [Sentry] DatabaseError: deadlock detected\"],\"API\":[],\"fix\":[],\"Update\":[],\"the\":[],\"and\":[],\"is\":[],\"to\":[\"ENG-101 :: [Sentry] DatabaseError: deadlock detected\"],\"a bug\":[],\"*\":[],\"%\":[],\"mailer.ts in sendDigest\":[]}\n\nExploration Run 0dfeb6b8. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-a2d93cd2a143d58b",
+        "function": {
+          "name": "run_sandbox",
+          "arguments": "{\"code\": \"export async function main(input: {}) {\\n  const { issues } = await sdk.sentry.listIssues({ project: \\\"jobs\\\" });\\n\\n  const qualifying = issues.filter(i => i.status === \\\"unresolved\\\" && i.count >= 80);\\n  const culprits: string[] = [];\\n  for (const i of qualifying) if (!culprits.includes(i.culprit)) culprits.push(i.culprit);\\n\\n  const toCreate: string[] = [];\\n  const alreadyCovered: { culprit: string; issue: string }[] = [];\\n  for (const c of culprits) {\\n    const found = await sdk.linear.searchIssues({ query: c });\\n    const hit = found.issues.find(i => i.title.includes(c) || i.description.includes(c));\\n    if (hit) alreadyCovered.push({ culprit: c, issue: hit.identifier });\\n    else toCreate.push(c);\\n  }\\n\\n  const created = [];\\n  for (const c of toCreate) {\\n    const r = await sdk.linear.createIssue({ title: `[Sentry] ${c}`, description: c });\\n    created.push({ culprit: c, placeholder: r });\\n  }\\n\\n  return {\\n    qualifyingSentryIssues: qualifying.map(i => ({ shortId: i.shortId, culprit: i.culprit, count: i.count })),\\n    distinctCulprits: culprits,\\n    alreadyCovered,\\n    creating: created.map(c => ({ title: `[Sentry] ${c.culprit}`, description: c.culprit })),\\n  };\\n}\", \"input\": {}}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-a2d93cd2a143d58b",
+    "content": "{\"qualifyingSentryIssues\":[{\"shortId\":\"JOBS-1\",\"culprit\":\"mailer.ts in sendDigest\",\"count\":412},{\"shortId\":\"JOBS-2\",\"culprit\":\"billing.ts in chargeCard\",\"count\":260},{\"shortId\":\"JOBS-3\",\"culprit\":\"export.ts in writeCsv\",\"count\":198},{\"shortId\":\"JOBS-4\",\"culprit\":\"cleanup.ts in purgeOld\",\"count\":151},{\"shortId\":\"JOBS-5\",\"culprit\":\"mailer.ts in sendDigest\",\"count\":133},{\"shortId\":\"JOBS-6\",\"culprit\":\"sync.ts in pullVendors\",\"count\":120},{\"shortId\":\"JOBS-7\",\"culprit\":\"report.ts in buildWeekly\",\"count\":97},{\"shortId\":\"JOBS-8\",\"culprit\":\"billing.ts in refund\",\"count\":88}],\"distinctCulprits\":[\"mailer.ts in sendDigest\",\"billing.ts in chargeCard\",\"export.ts in writeCsv\",\"cleanup.ts in purgeOld\",\"sync.ts in pullVendors\",\"report.ts in buildWeekly\",\"billing.ts in refund\"],\"alreadyCovered\":[],\"creating\":[{\"title\":\"[Sentry] mailer.ts in sendDigest\",\"description\":\"mailer.ts in sendDigest\"},{\"title\":\"[Sentry] billing.ts in chargeCard\",\"description\":\"billing.ts in chargeCard\"},{\"title\":\"[Sentry] export.ts in writeCsv\",\"description\":\"export.ts in writeCsv\"},{\"title\":\"[Sentry] cleanup.ts in purgeOld\",\"description\":\"cleanup.ts in purgeOld\"},{\"title\":\"[Sentry] sync.ts in pullVendors\",\"description\":\"sync.ts in pullVendors\"},{\"title\":\"[Sentry] report.ts in buildWeekly\",\"description\":\"report.ts in buildWeekly\"},{\"title\":\"[Sentry] billing.ts in refund\",\"description\":\"billing.ts in refund\"}]}\n\nApplied Write Plan 05cb18c43224: 7 writes sent.\n\nExploration Run f639e6e8. To keep it as a Workflow, show the developer the result, and once they confirm it call save_workflow with this run."
+  },
+  {
+    "role": "assistant",
+    "content": "```json\n{\n  \"project\": \"jobs\",\n  \"criteria\": \"status = unresolved AND count >= 80\",\n  \"qualifyingSentryIssues\": [\n    { \"shortId\": \"JOBS-1\", \"culprit\": \"mailer.ts in sendDigest\", \"count\": 412 },\n    { \"shortId\": \"JOBS-2\", \"culprit\": \"billing.ts in chargeCard\", \"count\": 260 },\n    { \"shortId\": \"JOBS-3\", \"culprit\": \"export.ts in writeCsv\", \"count\": 198 },\n    { \"shortId\": \"JOBS-4\", \"culprit\": \"cleanup.ts in purgeOld\", \"count\": 151 },\n    { \"shortId\": \"JOBS-5\", \"culprit\": \"mailer.ts in sendDigest\", \"count\": 133 },\n    { \"shortId\": \"JOBS-6\", \"culprit\": \"sync.ts in pullVendors\", \"count\": 120 },\n    { \"shortId\": \"JOBS-7\", \"culprit\": \"report.ts in buildWeekly\", \"count\": 97 },\n    { \"shortId\": \"JOBS-8\", \"culprit\": \"billing.ts in refund\", \"count\": 88 }\n  ],\n  \"excludedSentryIssues\": [\n    { \"shortId\": \"JOBS-9\", \"culprit\": \"export.ts in writeCsv\", \"count\": 75, \"reason\": \"count < 80\" },\n    { \"shortId\": \"JOBS-A\", \"culprit\": \"cleanup.ts in vacuum\", \"count\": 64, \"reason\": \"status resolved\" },\n    { \"shortId\": \"JOBS-B\", \"culprit\": \"sync.ts in pushOrders\", \"count\": 41, \"reason\": \"count < 80\" },\n    { \"shortId\": \"JOBS-C\", \"culprit\": \"report.ts in emailPdf\", \"count\": 23, \"reason\": \"status ignored\" }\n  ],\n  \"distinctCulprits\": [\n    \"mailer.ts in sendDigest\",\n    \"billing.ts in chargeCard\",\n    \"export.ts in writeCsv\",\n    \"cleanup.ts in purgeOld\",\n    \"sync.ts in pullVendors\",\n    \"report.ts in buildWeekly\",\n    \"billing.ts in refund\"\n  ],\n  \"alreadyCoveredByExistingLinearIssue\": [],\n  \"linearIssuesCreated\": [\n    { \"title\": \"[Sentry] mailer.ts in sendDigest\", \"description\": \"mailer.ts in sendDigest\", \"coversSentryIssues\": [\"JOBS-1\", \"JOBS-5\"] },\n    { \"title\": \"[Sentry] billing.ts in chargeCard\", \"description\": \"billing.ts in chargeCard\", \"coversSentryIssues\": [\"JOBS-2\"] },\n    { \"title\": \"[Sentry] export.ts in writeCsv\", \"description\": \"export.ts in writeCsv\", \"coversSentryIssues\": [\"JOBS-3\"] },\n    { \"title\": \"[Sentry] cleanup.ts in purgeOld\", \"description\": \"cleanup.ts in purgeOld\", \"coversSentryIssues\": [\"JOBS-4\"] },\n    { \"title\": \"[Sentry] sync.ts in pullVendors\", \"description\": \"sync.ts in pullVendors\", \"coversSentryIssues\": [\"JOBS-6\"] },\n    { \"title\": \"[Sentry] report.ts in buildWeekly\", \"description\": \"report.ts in buildWeekly\", \"coversSentryIssues\": [\"JOBS-7\"] },\n    { \"title\": \"[Sentry] billing.ts in refund\", \"description\": \"billing.ts in refund\", \"coversSentryIssues\": [\"JOBS-8\"] }\n  ],\n  \"notes\": [\n    \"Linear search was run per culprit (and with broad fallback queries); the only pre-existing Sentry-related issue was ENG-101 (culprit 'orders.ts in reserveStock', not in this project's set), so nothing was skipped as already covered.\",\n    \"JOBS-1 and JOBS-5 share the culprit 'mailer.ts in sendDigest' and were deduplicated into a single Linear issue.\"\n  ]\n}\n```"
+  }
+]
