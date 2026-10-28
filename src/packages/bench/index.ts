@@ -26,14 +26,30 @@ export {
 } from "./lib/agent.ts";
 export {
   parseAnswer,
-  runA2,
+  runAgentArm,
   runA4,
   type ArmName,
   type RunRecord,
 } from "./lib/arms.ts";
+export { openSurface, type AgentArm, type Surface } from "./lib/surface.ts";
+export {
+  claudeCodeDriver,
+  claudeCodeOutcome,
+  codexDriver,
+  codexOutcome,
+  loopDriver,
+  type Driver,
+  type DriverRun,
+} from "./lib/drivers.ts";
+export {
+  readCall,
+  servePinProxy,
+  type PinProxy,
+  type ProxiedCall,
+} from "./lib/pin-proxy.ts";
 export {
   BudgetExceeded,
-  budgeted,
+  openBudget,
   formatSummary,
   runBenchmark,
   type HarnessOptions,

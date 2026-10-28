@@ -25,6 +25,8 @@ export { connectControl, type ControlClient } from "./lib/control.ts";
 export {
   /** Runs a Drift Kit server as a Streamable HTTP Downstream Server. */
   serveHttp as serveDriftKitHttp,
+  /** Serves any MCP server over Streamable HTTP, as the Drift Kit does. */
+  serveMcpHttp,
   type HttpDriftKitServer,
 } from "./lib/http.ts";
 export type { ReceivedWrite } from "./lib/world.ts";

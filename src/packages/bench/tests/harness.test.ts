@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
+  loopDriver,
   ModelUnavailable,
   openRouterModel,
   parseAnswer,
@@ -88,7 +89,7 @@ describe("the benchmark harness", () => {
       inputs: [0],
       arms: ["A2", "A4"],
       repeats: 2,
-      model: fakeModel,
+      driver: loopDriver(fakeModel),
       budgetUsd: 1,
       out,
       provenance: { "Measured on": "test" },
@@ -152,7 +153,7 @@ describe("the benchmark harness", () => {
       inputs: [0],
       arms: ["A2", "A4"],
       repeats: 3,
-      model: fakeModel,
+      driver: loopDriver(fakeModel),
       budgetUsd: 0.025,
       out,
       provenance: {},
@@ -163,7 +164,7 @@ describe("the benchmark harness", () => {
       ["A4", 1],
     ]);
     expect(stopped).toBe(
-      "the budget of $0.025 would be passed: $0.0200 spent, and a call has cost up to $0.0100"
+      "the budget of $0.025 would be passed: $0.0200 spent, and a run has cost up to $0.0200"
     );
     expect(await readFile(join(out, "summary.md"), "utf8")).toContain(
       "- Stopped early: the budget of $0.025 would be passed"
@@ -187,7 +188,7 @@ describe("the benchmark harness", () => {
       inputs: [0],
       arms: ["A2", "A4"],
       repeats: 2,
-      model: failing,
+      driver: loopDriver(failing),
       budgetUsd: 1,
       out,
       provenance: {},
