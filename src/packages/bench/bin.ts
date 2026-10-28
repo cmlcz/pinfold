@@ -1,7 +1,7 @@
 // Runs the benchmark, which `pinfold bench` calls:
 //   node bin.ts --model <id> --provider <slug> --budget <usd> [--pilot]
 //     [--driver loop|claude-code|codex] [--tasks a,b] [--inputs 0,1,2]
-//     [--arms A1,A2,A3,A4] [--repeats 3] [--out dir]
+//     [--arms A1,A2,A3,A4] [--repeats 3] [--parallel <n>] [--out dir]
 // The agent Arms A1 to A3 need OPENROUTER_API_KEY; the driver is the
 // minimal agent loop by default. The pilot runs the first task chosen on
 // its first input, three times per Arm, to estimate the cost of a run.
@@ -9,7 +9,8 @@
 //     [--driver ...] [--arms A2,A3,A4] [--tasks <one>] [--runs 100]
 //     [--parallel <n>] [--out dir]
 // runs the lifecycle experiment on one task, triage-assign by default,
-// with up to --parallel agent runs at a time.
+// with up to --parallel agent runs at a time. With more than one run at a
+// time, the summary leaves wall times out.
 import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -111,6 +112,7 @@ const provenance = {
   "Repair Model": process.env.PINFOLD_REPAIR_MODEL ?? "none",
   "Budget cap (USD)": String(budgetUsd),
   Mode: values.pilot ? "pilot" : "full",
+  "Runs at a time": values.parallel,
 };
 
 const bench = await startBench();
@@ -154,6 +156,7 @@ try {
       repeats: Number(values.repeats),
       ...(driver !== undefined && { driver }),
       budgetUsd,
+      parallel: Number(values.parallel),
       out,
       provenance,
       log: (line) => console.log(line),
