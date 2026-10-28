@@ -100,6 +100,13 @@ describe("Sentry-shaped Drift Kit server", () => {
               team: null,
               archivedAt: null,
             },
+            {
+              slug: "jobs",
+              name: "Batch jobs",
+              platform: "node",
+              team: null,
+              archivedAt: null,
+            },
           ],
         }),
       },
