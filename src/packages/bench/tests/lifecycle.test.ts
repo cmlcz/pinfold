@@ -131,6 +131,32 @@ describe("the lifecycle experiment", () => {
     );
   });
 
+  it("gives the same runs on parallel lanes as one at a time", async () => {
+    const drift = lifecycleDrift(grid, task, 8);
+    const options = {
+      task,
+      input: 0,
+      runs: 8,
+      drift,
+      driver: loopDriver(fakeModel),
+      arms: ["A2"] as const,
+      budgetUsd: 1,
+    };
+    const outcome = (result: Awaited<ReturnType<typeof runLifecycle>>) =>
+      result.runs.map(({ arm, run, success, paused }) => [
+        arm,
+        run,
+        success,
+        paused,
+      ]);
+
+    const sequential = await runLifecycle(bench, options);
+    const parallel = await runLifecycle(bench, { ...options, parallel: 3 });
+
+    expect(outcome(parallel)).toEqual(outcome(sequential));
+    expect(parallel.runs.filter((run) => run.arm === "A2")).toHaveLength(8);
+  });
+
   it("stops, keeping the runs so far, when the model stays unavailable", async () => {
     // The Exploration Run and the first A2 run take two calls each.
     let calls = 0;

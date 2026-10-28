@@ -6,8 +6,10 @@
 // minimal agent loop by default. The pilot runs the first task chosen on
 // its first input, three times per Arm, to estimate the cost of a run.
 //   node bin.ts --lifecycle --model <id> --provider <slug> --budget <usd>
-//     [--driver ...] [--arms A2,A3,A4] [--tasks <one>] [--runs 100] [--out dir]
-// runs the lifecycle experiment on one task, triage-assign by default.
+//     [--driver ...] [--arms A2,A3,A4] [--tasks <one>] [--runs 100]
+//     [--parallel <n>] [--out dir]
+// runs the lifecycle experiment on one task, triage-assign by default,
+// with up to --parallel agent runs at a time.
 import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -46,6 +48,7 @@ const { values } = parseArgs({
     out: { type: "string" },
     lifecycle: { type: "boolean", default: false },
     runs: { type: "string", default: "100" },
+    parallel: { type: "string", default: "1" },
   },
 });
 
@@ -129,6 +132,7 @@ try {
       driver: driver!,
       arms: agentArms,
       budgetUsd,
+      parallel: Number(values.parallel),
       log: (line) => console.log(line),
     });
     await mkdir(out, { recursive: true });
