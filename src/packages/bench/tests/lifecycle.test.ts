@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   formatLifecycle,
   lifecycleDrift,
+  loopDriver,
   ModelUnavailable,
   runLifecycle,
   startBench,
@@ -89,7 +90,8 @@ describe("the lifecycle experiment", () => {
       input: 0,
       runs: 8,
       drift,
-      model: fakeModel,
+      driver: loopDriver(fakeModel),
+      arms: ["A2"],
       budgetUsd: 1,
     });
 
@@ -144,7 +146,8 @@ describe("the lifecycle experiment", () => {
       input: 0,
       runs: 3,
       drift: [],
-      model: failing,
+      driver: loopDriver(failing),
+      arms: ["A2"],
       budgetUsd: 1,
     });
 

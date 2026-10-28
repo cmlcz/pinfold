@@ -1,22 +1,20 @@
-// The Arms the harness compares. A2 is an agent that writes a fresh
-// program through pinfold's Gateway on every run; A4 is a saved Workflow
-// that runs with no LLM.
-import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
+// The Arms the harness compares. A1 is an agent with every Downstream
+// Server Tool loaded; A2 an agent that writes a fresh program through
+// pinfold's Gateway on every run; A3 an agent told to reuse a saved
+// program; A4 a saved Workflow that runs with no LLM.
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { openPlans } from "../../core/index.ts";
-import { createGateway } from "../../gateway/index.ts";
-import {
-  runAgent,
-  noUsage,
-  type ChatModel,
-  type ChatMessage,
-  type Usage,
-} from "./agent.ts";
+import { noUsage, type Usage } from "./agent.ts";
 import type { Bench } from "./bench.ts";
+import type { Driver } from "./drivers.ts";
 import { saveApplied } from "./h2.ts";
 import type { Verdict } from "./state.ts";
+import { openSurface, type AgentArm } from "./surface.ts";
 import type { Task } from "./tasks.ts";
 
-export type ArmName = "A2" | "A4";
+export type ArmName = AgentArm | "A4";
 
 /** One run of one task by one Arm, as the results record it. */
 export type RunRecord = {
@@ -25,7 +23,10 @@ export type RunRecord = {
   input: number;
   /** Which of the repeated runs of this task, input and Arm. */
   repeat: number;
+  /** The driver and model, for an agent Arm. */
   model?: string;
+  /** Each model and provider OpenRouter says served the calls. */
+  served?: string[];
   usage: Usage;
   roundTrips: number;
   /** Wall time, Approval pauses excluded. */
@@ -42,70 +43,52 @@ export const agentSystemPrompt =
   "You are a coding agent. Do the developer's task with the tools you have; do not ask the developer anything. When you are done, reply with the task's result as JSON and nothing else.";
 
 /**
- * Arm A2: the agent solves the task from scratch through the Gateway's
- * tools. A Write Plan that waits for Approval is approved at once, as a
- * developer would, and the same call made again; the agent sees only the
- * applied result, and the pause is not timed.
+ * An agent Arm: the driver's agent does the task through the Arm's
+ * Surface, in a fresh working directory. Approval pauses are not timed.
  */
-export async function runA2(
+export async function runAgentArm(
   bench: Bench,
-  model: ChatModel,
+  driver: Driver,
+  arm: AgentArm,
   task: Task,
   input: number
-): Promise<Omit<RunRecord, "repeat"> & { transcript: ChatMessage[] }> {
-  const { core, root } = await bench.fresh();
-  const { server } = createGateway(core, { root });
-  const [clientEnd, serverEnd] = InMemoryTransport.createLinkedPair();
-  await server.connect(serverEnd);
-  const client = new Client({ name: "pinfold-bench", version: "0.0.0" });
-  await client.connect(clientEnd);
-  let approvals = 0;
-  let pausedMs = 0;
+): Promise<Omit<RunRecord, "repeat"> & { transcript: unknown[] }> {
+  const surface = await openSurface(bench, arm, task);
+  const workdir = await mkdtemp(join(tmpdir(), "pinfold-agent-"));
   try {
-    const { tools } = await client.listTools();
-    const call = async (name: string, args: unknown): Promise<string> => {
-      const text = await callText(client, name, args);
-      if (name !== "run_sandbox") return text;
-      const paused = Date.now();
-      const pending = await openPlans(root).pending();
-      if (pending.length === 0) return text;
-      for (const plan of pending) await openPlans(root).approve(plan.id);
-      approvals += pending.length;
-      pausedMs += Date.now() - paused;
-      return callText(client, name, args);
-    };
+    for (const [path, content] of Object.entries(surface.files)) {
+      await mkdir(dirname(join(workdir, path)), { recursive: true });
+      await writeFile(join(workdir, path), content);
+    }
     const started = Date.now();
-    const run = await runAgent(model, {
+    const run = await driver.run({
       system: agentSystemPrompt,
       prompt: task.instruction(task.inputs[input]!),
-      tools: tools.map((tool) => ({
-        name: tool.name,
-        description: tool.description ?? "",
-        parameters: tool.inputSchema as Record<string, unknown>,
-      })),
-      call,
+      surface,
+      workdir,
     });
-    const wallMs = Date.now() - started - pausedMs;
+    const wallMs = Date.now() - started - surface.pausedMs();
     const value =
       run.answer === undefined ? undefined : parseAnswer(run.answer);
     const verdict = task.check(task.inputs[input]!, await bench.outcome(value));
     return {
-      arm: "A2",
+      arm,
       task: task.name,
       input,
-      model: model.id,
+      model: driver.id,
+      ...(run.served !== undefined && { served: run.served }),
       usage: run.usage,
       roundTrips: run.roundTrips,
       wallMs,
-      approvals,
+      approvals: surface.approvals(),
       verdict,
-      ...(run.answer === undefined
-        ? { error: "the agent ran out of turns" }
-        : { answer: run.answer }),
+      ...(run.answer !== undefined && { answer: run.answer }),
+      ...(run.error !== undefined && { error: run.error }),
       transcript: run.transcript,
     };
   } finally {
-    await client.close();
+    await surface.close();
+    await rm(workdir, { recursive: true, force: true });
   }
 }
 
@@ -156,22 +139,6 @@ export async function runA4(
     verdict,
     ...(!final.ok && { error: final.error }),
   };
-}
-
-async function callText(
-  client: Client,
-  name: string,
-  args: unknown
-): Promise<string> {
-  const result = await client.callTool({
-    name,
-    arguments: (args ?? {}) as Record<string, unknown>,
-  });
-  const text = (result.content as { type: string; text?: string }[])
-    .filter((part) => part.type === "text")
-    .map((part) => part.text)
-    .join("\n");
-  return result.isError ? `Error: ${text}` : text;
 }
 
 /**

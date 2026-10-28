@@ -1,10 +1,12 @@
 // Runs the benchmark, which `pinfold bench` calls:
 //   node bin.ts --model <id> --provider <slug> --budget <usd> [--pilot]
-//     [--tasks a,b] [--inputs 0,1,2] [--arms A2,A4] [--repeats 3] [--out dir]
-// A2 needs OPENROUTER_API_KEY. The pilot runs the first task chosen on its
-// first input, three times per Arm, to estimate the cost of a run.
+//     [--driver loop|claude-code|codex] [--tasks a,b] [--inputs 0,1,2]
+//     [--arms A1,A2,A3,A4] [--repeats 3] [--out dir]
+// The agent Arms A1 to A3 need OPENROUTER_API_KEY; the driver is the
+// minimal agent loop by default. The pilot runs the first task chosen on
+// its first input, three times per Arm, to estimate the cost of a run.
 //   node bin.ts --lifecycle --model <id> --provider <slug> --budget <usd>
-//     [--tasks <one>] [--runs 100] [--out dir]
+//     [--driver ...] [--arms A2,A3,A4] [--tasks <one>] [--runs 100] [--out dir]
 // runs the lifecycle experiment on one task, triage-assign by default.
 import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
@@ -12,15 +14,22 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { mkdir, writeFile } from "node:fs/promises";
 import {
+  claudeCodeDriver,
+  codexDriver,
   formatLifecycle,
   lifecycleDrift,
+  loopDriver,
   openRouterModel,
+  servePinProxy,
   runBenchmark,
   runLifecycle,
   type GridScenario,
   startBench,
   tasks,
+  type AgentArm,
   type ArmName,
+  type Driver,
+  type PinProxy,
 } from "./index.ts";
 
 const { values } = parseArgs({
@@ -32,6 +41,7 @@ const { values } = parseArgs({
     tasks: { type: "string" },
     inputs: { type: "string" },
     arms: { type: "string", default: "A2,A4" },
+    driver: { type: "string", default: "loop" },
     repeats: { type: "string", default: "3" },
     out: { type: "string" },
     lifecycle: { type: "boolean", default: false },
@@ -40,23 +50,35 @@ const { values } = parseArgs({
 });
 
 const arms = values.arms.split(",") as ArmName[];
-if (!arms.every((arm) => arm === "A2" || arm === "A4")) {
-  fail("--arms takes A2 and A4");
+if (!arms.every((arm) => ["A1", "A2", "A3", "A4"].includes(arm))) {
+  fail("--arms takes A1, A2, A3 and A4");
+}
+const agentArms = arms.filter((arm): arm is AgentArm => arm !== "A4");
+if (!["loop", "claude-code", "codex"].includes(values.driver)) {
+  fail("--driver takes loop, claude-code or codex");
 }
 const budgetUsd = Number(values.budget);
 if (!(budgetUsd >= 0)) fail("--budget <usd> is required");
 const apiKey = process.env.OPENROUTER_API_KEY;
-const model =
+const pinned =
   values.model && values.provider && apiKey
-    ? openRouterModel({
-        model: values.model,
-        provider: values.provider,
-        apiKey,
-        log: (line) => console.log(line),
-      })
+    ? { model: values.model, provider: values.provider, apiKey }
     : undefined;
-if (arms.includes("A2") && model === undefined) {
-  fail("A2 needs --model, --provider and OPENROUTER_API_KEY");
+if ((agentArms.length > 0 || values.lifecycle) && pinned === undefined) {
+  fail("the agent Arms need --model, --provider and OPENROUTER_API_KEY");
+}
+let proxy: PinProxy | undefined;
+let driver: Driver | undefined;
+if (pinned !== undefined) {
+  if (values.driver === "loop") {
+    driver = loopDriver(
+      openRouterModel({ ...pinned, log: (line) => console.log(line) })
+    );
+  } else {
+    proxy = await servePinProxy({ provider: pinned.provider });
+    const make = values.driver === "codex" ? codexDriver : claudeCodeDriver;
+    driver = await make({ ...pinned, proxy });
+  }
 }
 const names = values.tasks?.split(",");
 // The pilot runs the first task chosen.
@@ -79,7 +101,7 @@ const provenance = {
     .trim(),
   pinfold: version,
   Node: process.version,
-  Model: model?.id ?? "none",
+  Driver: driver?.id ?? "none",
   "Budget cap (USD)": String(budgetUsd),
   Mode: values.pilot ? "pilot" : "full",
 };
@@ -87,8 +109,6 @@ const provenance = {
 const bench = await startBench();
 try {
   if (values.lifecycle) {
-    if (model === undefined)
-      fail("the lifecycle needs --model, --provider and OPENROUTER_API_KEY");
     const task =
       tasks.find(
         (candidate) => candidate.name === (names?.[0] ?? "triage-assign")
@@ -102,7 +122,8 @@ try {
       input: 0,
       runs,
       drift: lifecycleDrift(grid, task, runs),
-      model,
+      driver: driver!,
+      arms: agentArms.length > 0 ? agentArms : ["A2"],
       budgetUsd,
       log: (line) => console.log(line),
     });
@@ -123,7 +144,7 @@ try {
         : (values.inputs?.split(",").map(Number) ?? [0, 1, 2]),
       arms,
       repeats: Number(values.repeats),
-      ...(model !== undefined && { model }),
+      ...(driver !== undefined && { driver }),
       budgetUsd,
       out,
       provenance,
@@ -140,6 +161,7 @@ try {
   }
 } finally {
   await bench.close();
+  await proxy?.close();
 }
 
 function fail(message: string): never {
