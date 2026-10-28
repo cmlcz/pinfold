@@ -76,7 +76,7 @@ describe("Baselines", () => {
       }`,
     });
 
-    expect(result).toMatchObject({ ok: true, value: ["web", "api"] });
+    expect(result).toMatchObject({ ok: true, value: ["web", "api", "jobs"] });
     expect((await readdir(baselines())).sort()).toEqual([
       expect.stringMatching(/^sentry\.listIssues\.[0-9a-f]{12}\.json$/),
       expect.stringMatching(/^sentry\.listProjects\.[0-9a-f]{12}\.json$/),

@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod";
-import { listed, structured } from "../reply.ts";
+import { listed, respond } from "../reply.ts";
 import { createWorld, type World } from "../world.ts";
 import {
   eventSchema,
@@ -48,7 +48,8 @@ export function createSentryWorld(): World<SentryState> {
       events: structuredClone([...seedEvents]),
       projects: structuredClone([...seedProjects]),
     }),
-    sentryDriftScenarios
+    sentryDriftScenarios,
+    ["listIssues", "getIssue", "listIssueEvents"]
   );
 }
 
@@ -104,7 +105,7 @@ export function createSentryServer(world: World<SentryState>): McpServer {
             nextCursor: issues.length > pageSize ? String(pageSize) : null,
           }
         : { issues };
-      return structured(driftResponse(drift, output));
+      return respond(world, "listIssues", driftResponse(drift, output));
     }
   );
 
@@ -124,7 +125,9 @@ export function createSentryServer(world: World<SentryState>): McpServer {
           isError: true,
         };
       }
-      return structured(
+      return respond(
+        world,
+        "getIssue",
         driftResponse(world.drift, driftIssue(world.drift, issue))
       );
     }
@@ -135,14 +138,14 @@ export function createSentryServer(world: World<SentryState>): McpServer {
     {
       description: "List the events recorded for a Sentry issue, newest first.",
       inputSchema: z.object({ issueId: z.string() }),
-      outputSchema: z.object({ events: z.array(eventSchema) }),
+      outputSchema: listed(z.object({ events: z.array(eventSchema) }), world),
       annotations: { readOnlyHint: true },
     },
     async ({ issueId }) => {
       const output = {
         events: world.state.events.filter((event) => event.issueId === issueId),
       };
-      return structured(output);
+      return respond(world, "listIssueEvents", output);
     }
   );
 

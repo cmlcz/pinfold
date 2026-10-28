@@ -33,6 +33,10 @@ export async function serveControl(
       } else {
         res.writeHead(404).end(`no Drift Scenario ${scenario}`);
       }
+    } else if (route === "GET /state") {
+      res
+        .writeHead(200, { "content-type": "application/json" })
+        .end(JSON.stringify(world.state));
     } else if (route === "GET /writes") {
       res
         .writeHead(200, { "content-type": "application/json" })
@@ -90,6 +94,8 @@ export type ControlClient = {
   reset(): Promise<void>;
   /** Every write the server has received since it started or was last reset. */
   receivedWrites(): Promise<ReceivedWrite[]>;
+  /** The server's state now, such as the issues it holds. */
+  state(): Promise<unknown>;
   /**
    * Makes the `call`-th write from now on (1 is the next) fail with an error
    * result. A failed write changes nothing and is not logged as received.
@@ -108,6 +114,9 @@ export function connectControl(path: string): ControlClient {
     },
     async receivedWrites() {
       return JSON.parse(await send(path, "GET", "/writes")) as ReceivedWrite[];
+    },
+    async state() {
+      return JSON.parse(await send(path, "GET", "/state")) as unknown;
     },
     async failWrite(call) {
       if (!isCall(call)) {

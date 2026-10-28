@@ -1,5 +1,6 @@
 import type { StandardSchemaWithJSON } from "@modelcontextprotocol/server";
 import type * as z from "zod";
+import { applyFieldDrift } from "./field-drift.ts";
 import type { World } from "./world.ts";
 
 /** A Tool result carrying its output both as structured content and as text. */
@@ -10,6 +11,15 @@ export function structured<Output extends Record<string, unknown>>(
     content: [{ type: "text" as const, text: JSON.stringify(output) }],
     structuredContent: output,
   };
+}
+
+/** A Tool's result, as the field-level Drift Scenarios now on change it. */
+export function respond(
+  world: World<unknown>,
+  tool: string,
+  output: Record<string, unknown>
+) {
+  return structured(applyFieldDrift(world.drift, tool, output));
 }
 
 /** The error result of a write the control channel chose to fail. */
