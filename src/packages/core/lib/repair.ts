@@ -107,16 +107,23 @@ export function searchRepair(drift: DriftedTool): RepairSearch {
     const paged = pagedReason(drift, base);
     if (paged !== undefined) return { kind: "manual", reason: paged };
     const live = adaptedWith(base);
-    const scored = candidates(baseline, target, live, history)
+    // A candidate repairs its field and makes no other one drift.
+    const fits = (trial: Op[]) =>
+      driftedWith(trial).every(
+        (mismatch) =>
+          mismatch.path !== target.path &&
+          before.some((other) => sameMismatch(other, mismatch))
+      );
+    const scored = candidates(baseline, target, live, history, ops)
       .flatMap(({ op, name }) => {
-        const trial = [...base, op];
-        // A candidate repairs its field and makes no other one drift.
-        const fits = driftedWith(trial).every(
-          (mismatch) =>
-            mismatch.path !== target.path &&
-            before.some((other) => sameMismatch(other, mismatch))
+        // A wrap or unwrap changes the shape the Adapter's earlier ops were
+        // written for, so they find nothing to map. If the op alone does not
+        // fit, those ops are tried again after it, on the restored shape.
+        const added = [[op], ...(isStructural(op) ? [[op, ...ops]] : [])].find(
+          (tail) => fits([...base, ...tail])
         );
-        if (!fits) return [];
+        if (added === undefined) return [];
+        const trial = [...base, ...added];
         const adapted = adaptedWith(trial);
         const values = mean(
           reads
@@ -127,7 +134,7 @@ export function searchRepair(drift: DriftedTool): RepairSearch {
               return agreement(recorded, valuesIn(adapted, read));
             })
         );
-        return [{ op, score: (name + values) / 2 }];
+        return [{ op, added, score: (name + values) / 2 }];
       })
       .sort((a, b) => b.score - a.score);
     const [best, second] = scored;
@@ -156,7 +163,7 @@ export function searchRepair(drift: DriftedTool): RepairSearch {
         reason: `${JSON.stringify(best.op)} and ${JSON.stringify(second.op)} both fit ${target.path}, and neither stands out`,
       };
     }
-    chosen.push(best.op);
+    chosen.push(...best.added);
   }
 
   const checked = checkRepair(drift, chosen);
@@ -171,6 +178,10 @@ export function searchRepair(drift: DriftedTool): RepairSearch {
     ops: [...ops, ...chosen],
     evidence: checked.evidence,
   };
+}
+
+function isStructural(op: Op): boolean {
+  return op.op === "wrap" || op.op === "unwrap";
 }
 
 /**
@@ -374,7 +385,9 @@ function candidates(
   baseline: JsonSchema,
   target: Mismatch,
   live: unknown[],
-  history: unknown[]
+  history: unknown[],
+  /** The Adapter's ops, which an unwrap may need run again after it. */
+  replay: Op[]
 ): { op: Op; name: number }[] {
   const steps = parsePath(target.path) ?? [];
   const last = steps.at(-1);
@@ -394,10 +407,10 @@ function candidates(
     const at = parent === "" ? {} : { at: parent };
     for (const field of fields) {
       const values = valuesIn(live, childPath(parent, field));
+      const holds = (value: unknown) =>
+        isRecord(value) && Object.hasOwn(value, last.key);
       if (
-        values.some(
-          (value) => isRecord(value) && Object.hasOwn(value, last.key)
-        )
+        values.some((value) => holds(value) || holds(applyOps(replay, value)))
       ) {
         found.push({ op: { op: "unwrap", ...at, field }, name: 1 });
       }

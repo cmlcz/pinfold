@@ -98,11 +98,10 @@ describe("the lifecycle experiment", () => {
     expect(result.stopped).toBeUndefined();
     expect(result.exploration.cost).toBeCloseTo(0.02);
     const a4 = result.runs.filter((run) => run.arm === "A4");
-    // Deterministic Repair keeps A4 working through the rename and the
-    // type change, each Repair waiting once for Approval of the changed
-    // Adapter. The wrap of getBlame, whose Adapter already renames a field,
-    // needs an op before that rename, which Repair does not search: the
-    // Workflow stops, and nothing is sent.
+    // Deterministic Repair keeps A4 working through the rename, the type
+    // change and the wrap, each Repair waiting once for Approval of the
+    // changed Adapter. The wrap of getBlame, whose Adapter already renames
+    // a field, is repaired by running that rename again after the unwrap.
     expect(a4.map((run) => [run.run, run.success, run.paused])).toEqual([
       [1, true, false],
       [2, true, false],
@@ -110,10 +109,14 @@ describe("the lifecycle experiment", () => {
       [4, true, false],
       [5, true, true],
       [6, true, false],
-      [7, false, false],
-      [8, false, false],
+      [7, true, true],
+      [8, true, false],
     ]);
-    expect(a4[6]!.error).toMatch(/github\.getBlame drifted from its Baseline/);
+    expect(a4.flatMap((run) => (run.repairs ? [run.repairs] : []))).toEqual([
+      { pinfold: 1, model: 0 },
+      { pinfold: 1, model: 0 },
+      { pinfold: 1, model: 0 },
+    ]);
     const a2 = result.runs.filter((run) => run.arm === "A2");
     expect(a2).toHaveLength(8);
     // The fake agent reruns its first program unchanged, which Drift breaks.
@@ -121,7 +124,7 @@ describe("the lifecycle experiment", () => {
     expect(a2.slice(2).some((run) => !run.success)).toBe(true);
 
     const report = formatLifecycle(result, { "Measured on": "test" });
-    expect(report).toContain("| A4 | 8 | 2 | 2 | 2200 | 0.0200 |");
+    expect(report).toContain("| A4 | 8 | 0 | 3 | 2200 | 0.0200 |");
     expect(report).toContain("| A2 | 8 |");
     expect(report).toContain(
       "A4 reached its Break-even Point against A2 at run 1"

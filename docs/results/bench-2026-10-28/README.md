@@ -24,7 +24,7 @@ Each driver ran six tasks, three inputs each, three runs per Arm: 216 runs per d
 
 `lifecycle-a2/` runs `triage-assign` on input 0 a hundred times per Arm with the minimal loop. A rename (`github.getBlame`) turns on before run 26, a type change (`sentry.listIssues`) before run 51 and a wrap of the already renamed `github.getBlame` before run 76, and each stays on.
 
-- **A4 succeeded on all 100 runs and paused for Approval three times, once per Drift.** The rename and the type change were repaired by pinfold's deterministic search. The wrap was repaired by the Repair Model, which the environment named; deterministic Repair alone stops the Workflow there, with nothing sent ([#47](https://github.com/cmlcz/pinfold/issues/47)).
+- **A4 succeeded on all 100 runs and paused for Approval three times, once per Drift.** The rename and the type change were repaired by pinfold's deterministic search. The wrap was repaired by the Repair Model, which the environment named; deterministic Repair alone stopped the Workflow there, with nothing sent ([#47](https://github.com/cmlcz/pinfold/issues/47)). Since then, deterministic Repair settles it by running the earlier rename again after the unwrap.
 - **A2 succeeded on 42 of 100 runs**, 10 of the first 25, before any Drift. It cost $0.18 and 3.9 million tokens over the 100 runs.
 - **A4 reached its Break-even Point against A2 at run 2**, counting its Exploration Run ($0.0012) and its Approval pauses. **H5 holds against A2.** The Repair Model's one call is not in A4's total; the harness now counts it for future runs.
 - An A3 lifecycle, `lifecycle-a3/`, is added when it ends.
