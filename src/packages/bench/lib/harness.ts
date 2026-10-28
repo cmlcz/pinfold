@@ -2,9 +2,10 @@
 // budget cap, and writes every run and a summary with its provenance.
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ChatModel, Usage } from "./agent.ts";
-import { runA2, runA4, type ArmName, type RunRecord } from "./arms.ts";
+import { ModelUnavailable, type Usage } from "./agent.ts";
+import { runAgentArm, runA4, type ArmName, type RunRecord } from "./arms.ts";
 import type { Bench } from "./bench.ts";
+import type { Driver } from "./drivers.ts";
 import type { Task } from "./tasks.ts";
 
 export type HarnessOptions = {
@@ -14,8 +15,8 @@ export type HarnessOptions = {
   arms: readonly ArmName[];
   /** Runs of each task, input and Arm, for passᵏ. */
   repeats: number;
-  /** The model behind A2. */
-  model?: ChatModel;
+  /** What drives the agent Arms. */
+  driver?: Driver;
   /** Spending on model calls stops before it would pass this, in USD. */
   budgetUsd: number;
   /** Where runs.jsonl, the transcripts and summary.md go. */
@@ -27,28 +28,24 @@ export type HarnessOptions = {
 export class BudgetExceeded extends Error {}
 
 /**
- * A model that refuses a call once spending might pass the cap: before
- * each call, what was spent plus the dearest call so far must fit.
+ * Spending on model calls, refused once it might pass the cap: before each
+ * run, what was spent plus the dearest run so far must fit.
  */
-export function budgeted(
-  model: ChatModel,
-  budgetUsd: number
-): ChatModel & { spent(): number } {
+export function openBudget(budgetUsd: number) {
   let spent = 0;
   let dearest = 0;
   return {
-    id: model.id,
     spent: () => spent,
-    async chat(messages, tools) {
+    check() {
       if (spent + dearest > budgetUsd) {
         throw new BudgetExceeded(
-          `the budget of $${budgetUsd} would be passed: $${spent.toFixed(4)} spent, and a call has cost up to $${dearest.toFixed(4)}`
+          `the budget of $${budgetUsd} would be passed: $${spent.toFixed(4)} spent, and a run has cost up to $${dearest.toFixed(4)}`
         );
       }
-      const reply = await model.chat(messages, tools);
-      spent += reply.usage.cost;
-      dearest = Math.max(dearest, reply.usage.cost);
-      return reply;
+    },
+    add(cost: number) {
+      spent += cost;
+      dearest = Math.max(dearest, cost);
     },
   };
 }
@@ -59,7 +56,8 @@ export async function runBenchmark(
 ): Promise<{ records: RunRecord[]; stopped?: string }> {
   const { out, log = () => {} } = options;
   await mkdir(join(out, "transcripts"), { recursive: true });
-  const model = options.model && budgeted(options.model, options.budgetUsd);
+  const { driver } = options;
+  const budget = openBudget(options.budgetUsd);
   const records: RunRecord[] = [];
   let stopped: string | undefined;
   runs: for (const task of options.tasks) {
@@ -68,14 +66,18 @@ export async function runBenchmark(
         for (const arm of options.arms) {
           let record: RunRecord;
           try {
-            if (arm === "A2") {
-              if (model === undefined) throw new Error("A2 needs a model");
-              const { transcript, ...run } = await runA2(
+            if (arm !== "A4") {
+              if (driver === undefined)
+                throw new Error(`${arm} needs a driver`);
+              budget.check();
+              const { transcript, ...run } = await runAgentArm(
                 bench,
-                model,
+                driver,
+                arm,
                 task,
                 input
               );
+              budget.add(run.usage.cost);
               record = { ...run, repeat };
               await writeFile(
                 join(
@@ -89,7 +91,10 @@ export async function runBenchmark(
               record = { ...(await runA4(bench, task, input)), repeat };
             }
           } catch (error) {
-            if (error instanceof BudgetExceeded) {
+            if (
+              error instanceof BudgetExceeded ||
+              error instanceof ModelUnavailable
+            ) {
               stopped = error.message;
               break runs;
             }
@@ -104,7 +109,7 @@ export async function runBenchmark(
             }
           );
           log(
-            `${arm} ${task.name}#${input} run ${repeat}: ${record.verdict.success ? "ok" : "failed"}, $${record.usage.cost.toFixed(4)}, ${record.wallMs} ms${model ? `, $${model.spent().toFixed(4)} spent` : ""}`
+            `${arm} ${task.name}#${input} run ${repeat}: ${record.verdict.success ? "ok" : "failed"}, $${record.usage.cost.toFixed(4)}, ${record.wallMs} ms${driver ? `, $${budget.spent().toFixed(4)} spent` : ""}`
           );
         }
       }
@@ -177,27 +182,35 @@ export function formatSummary(
   ].join("\n");
 }
 
-// A4's Break-even Point against A2 per task: the runs after which A4's
-// one-time cost, its Exploration Run priced as one A2 run, is paid back.
-// Drift, Repairs and Approval pauses over a Workflow's life are counted in
-// the lifecycle experiment instead.
+// A4's Break-even Point against each agent Arm per task: the runs after
+// which A4's one-time cost, its Exploration Run priced as one run of that
+// Arm, is paid back. Drift, Repairs and Approval pauses over a Workflow's
+// life are counted in the lifecycle experiment instead.
 function breakEven(
   rows: { task: string; arm: string; cost: number }[]
 ): string[] {
+  const arms = [...new Set(rows.map((row) => row.arm))].filter(
+    (arm) => arm !== "A4"
+  );
   const lines: string[] = [];
   for (const task of new Set(rows.map((row) => row.task))) {
-    const a2 = rows.find((row) => row.task === task && row.arm === "A2");
     const a4 = rows.find((row) => row.task === task && row.arm === "A4");
-    if (a2 === undefined || a4 === undefined || a2.cost <= a4.cost) continue;
-    const runs = Math.ceil(a2.cost / (a2.cost - a4.cost));
-    lines.push(`| ${task} | ${runs} |`);
+    if (a4 === undefined) continue;
+    const cells = arms.map((arm) => {
+      const other = rows.find((row) => row.task === task && row.arm === arm);
+      if (other === undefined || other.cost <= a4.cost) return "-";
+      return String(Math.ceil(other.cost / (other.cost - a4.cost)));
+    });
+    if (cells.some((cell) => cell !== "-")) {
+      lines.push(`| ${task} | ${cells.join(" | ")} |`);
+    }
   }
   if (lines.length === 0) return [];
   return [
-    "Break-even Point of A4 against A2, in runs, with A4's Exploration Run priced as one A2 run:",
+    "Break-even Point of A4 against each agent Arm, in runs, with A4's Exploration Run priced as one run of that Arm:",
     "",
-    "| Task | Runs |",
-    "| :--- | ---: |",
+    `| Task | ${arms.map((arm) => `Against ${arm}`).join(" | ")} |`,
+    `| :--- | ${arms.map(() => "---:").join(" | ")} |`,
     ...lines,
     "",
   ];

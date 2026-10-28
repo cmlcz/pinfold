@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
+  loopDriver,
+  ModelUnavailable,
   openRouterModel,
   parseAnswer,
   runBenchmark,
@@ -87,7 +89,7 @@ describe("the benchmark harness", () => {
       inputs: [0],
       arms: ["A2", "A4"],
       repeats: 2,
-      model: fakeModel,
+      driver: loopDriver(fakeModel),
       budgetUsd: 1,
       out,
       provenance: { "Measured on": "test" },
@@ -151,7 +153,7 @@ describe("the benchmark harness", () => {
       inputs: [0],
       arms: ["A2", "A4"],
       repeats: 3,
-      model: fakeModel,
+      driver: loopDriver(fakeModel),
       budgetUsd: 0.025,
       out,
       provenance: {},
@@ -162,11 +164,41 @@ describe("the benchmark harness", () => {
       ["A4", 1],
     ]);
     expect(stopped).toBe(
-      "the budget of $0.025 would be passed: $0.0200 spent, and a call has cost up to $0.0100"
+      "the budget of $0.025 would be passed: $0.0200 spent, and a run has cost up to $0.0200"
     );
     expect(await readFile(join(out, "summary.md"), "utf8")).toContain(
       "- Stopped early: the budget of $0.025 would be passed"
     );
+  });
+
+  it("stops, keeping the runs so far, when the model stays unavailable", async () => {
+    let calls = 0;
+    const failing: ChatModel = {
+      id: fakeModel.id,
+      chat(messages, tools) {
+        if (++calls > 2) {
+          throw new ModelUnavailable("fetch failed, after 6 attempts");
+        }
+        return fakeModel.chat(messages, tools);
+      },
+    };
+
+    const { records, stopped } = await runBenchmark(bench, {
+      tasks: chosen.slice(0, 1),
+      inputs: [0],
+      arms: ["A2", "A4"],
+      repeats: 2,
+      driver: loopDriver(failing),
+      budgetUsd: 1,
+      out,
+      provenance: {},
+    });
+
+    expect(records.map((r) => [r.arm, r.repeat])).toEqual([
+      ["A2", 1],
+      ["A4", 1],
+    ]);
+    expect(stopped).toBe("fetch failed, after 6 attempts");
   });
 
   it("reads the JSON an agent answers with, alone or in a fenced block", () => {
@@ -285,5 +317,76 @@ describe("the OpenRouter model", () => {
     } finally {
       server.close();
     }
+  });
+
+  // A server that answers each request with the next of `answers`: a
+  // status, or "drop" to close the connection without answering.
+  async function flakyServer(answers: (number | "drop")[]) {
+    let requests = 0;
+    const server = createServer((req, res) => {
+      const answer = answers[requests++] ?? 200;
+      if (answer === "drop") return req.socket.destroy();
+      res.statusCode = answer;
+      res.end(
+        JSON.stringify({
+          choices: [{ message: { content: "done" } }],
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        })
+      );
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const { port } = server.address() as AddressInfo;
+    const lines: string[] = [];
+    const model = openRouterModel({
+      model: "vendor/model-1",
+      provider: "some-provider",
+      apiKey: "key",
+      url: `http://127.0.0.1:${port}/`,
+      retryDelaysMs: [0, 0],
+      log: (line) => lines.push(line),
+    });
+    return {
+      model,
+      lines,
+      requests: () => requests,
+      [Symbol.dispose]: () => server.close(),
+    };
+  }
+
+  it("sends a call again after a dropped connection or a 5xx", async () => {
+    using server = await flakyServer(["drop", 503]);
+
+    const reply = await server.model.chat(
+      [{ role: "user", content: "hi" }],
+      []
+    );
+
+    expect(reply.message.content).toBe("done");
+    expect(server.requests()).toBe(3);
+    expect(server.lines).toEqual([
+      expect.stringMatching(/failed: fetch failed.*; trying again in 0 s$/),
+      expect.stringMatching(/answered 503: .*; trying again in 0 s$/),
+    ]);
+  });
+
+  it("fails at once on a 4xx other than 408 and 429", async () => {
+    using server = await flakyServer([400]);
+
+    const call = server.model.chat([{ role: "user", content: "hi" }], []);
+
+    await expect(call).rejects.toThrow(/answered 400/);
+    await expect(call).rejects.not.toBeInstanceOf(ModelUnavailable);
+    expect(server.requests()).toBe(1);
+  });
+
+  it("gives up once every retry has failed", async () => {
+    using server = await flakyServer([429, 502, 502]);
+
+    const call = server.model.chat([{ role: "user", content: "hi" }], []);
+
+    await expect(call).rejects.toBeInstanceOf(ModelUnavailable);
+    await expect(call).rejects.toThrow(/answered 502: .*, after 3 attempts$/);
+    expect(server.requests()).toBe(3);
   });
 });

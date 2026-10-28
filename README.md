@@ -31,11 +31,49 @@ pinfold is a local MCP server for coding agents. It sits between your agent and 
 ```sh
 git clone https://github.com/cmlcz/pinfold.git
 cd pinfold
-npm ci
+npm ci     # also builds dist/
 npm link   # optional: puts pinfold and pinfold-gateway on your PATH
 ```
 
-With `npm link`, `pinfold <command>` stands for `node src/packages/cli/bin.ts <command>` below, and `pinfold-gateway` for `node src/packages/gateway/bin.ts`. pinfold is not on npm yet: Node runs its TypeScript directly, and it does not do that for packages installed into `node_modules`. `examples/smoke/` holds a small project with a saved workflow, which CI runs from a fresh clone.
+With `npm link`, `pinfold <command>` stands for `node src/packages/cli/bin.ts <command>` below, and `pinfold-gateway` for `node src/packages/gateway/bin.ts`. pinfold is not on npm yet. The package builds to JavaScript in `dist/`, since Node does not run TypeScript from `node_modules`, and CI runs it through `npx` from the packed tarball (`npm pack`) on a fresh runner. `examples/smoke/` holds a small project with a saved workflow, which CI runs that way and from a fresh clone.
+
+## A short demo: drift, repair, approve
+
+`examples/smoke/` runs a saved workflow against the Drift Kit's Sentry-shaped server. The workflow counts a project's unresolved issues:
+
+```console
+$ cd examples/smoke
+$ pinfold run count_unresolved --project web
+2
+```
+
+Now the server renames `status` to `issueStatus`. Add `"--drift", "rename:listIssues:issues[].status"` to the server's `args` in `pinfold.json` and run again. pinfold sees that the response no longer fits the fields the workflow reads, finds the rename itself, with no model, and holds the result back:
+
+```console
+$ pinfold run count_unresolved --project web
+Paused for Approval: the Response Adapter of sentry.listIssues changed since the last finished run of Workflow count_unresolved.
+
+pinfold repaired the Response Adapter of sentry.listIssues, now version 1:
+  + {"op":"rename","from":"issues[].issueStatus","to":"issues[].status"}
+Value evidence, the live responses through this version next to the Fixtures:
+  issues[].status: now "unresolved" ×2, "resolved" ×1; in the Fixtures "unresolved" ×2, "resolved" ×1
+
+The result is held back until the developer approves the changed Response Adapters it was built through, in a terminal:
+  pinfold approve 98b322c37834
+Then run Workflow count_unresolved again with the same input to apply it.
+```
+
+It exits with 3, so cron or CI can tell a pause from a failure. You approve in your own terminal, and the workflow works again without an edit:
+
+```console
+$ pinfold approve 98b322c37834
+...
+Approve Write Plan 98b322c37834? Type yes to confirm: yes
+$ pinfold run count_unresolved --project web
+2
+```
+
+Remove the `--drift` argument and delete `.workflows/adapters/` to start over.
 
 ## Configure
 
@@ -270,6 +308,34 @@ node src/packages/cli/bin.ts stats --json  # for scripts
 - the tokens and cost pinfold spent through the repair model.
 
 It never estimates tokens saved. Runs from before pinfold measured them are counted apart, not as zero. Repairs are counted from the repair log, which began with this version.
+
+## Benchmark
+
+Measured on the Drift Kit with `deepseek/deepseek-v4.1-flash-1017`, pinned to one OpenRouter endpoint, through a minimal agent loop, Claude Code and Codex CLI. These are results on one model and six synthetic tasks, not a general claim:
+
+- A saved workflow ran each task in about 0.1 s with no tokens, 85 to 500 times faster than an agent writing a fresh program ([stage 2](docs/results/bench-2026-10-27/README.md)).
+- It succeeded on all 162 of its runs, against 76% to 100% for agents calling the tools directly, writing fresh code, or reusing a saved program ([stage 3](docs/results/bench-2026-10-28/README.md)).
+- Over 100 runs with three drifts, it paid back its first agent run by run 2 and kept working through every drift, pausing once for approval each time. An agent writing fresh code each run succeeded on 42 of them.
+- Deterministic repair alone fixed 46 of 53 mappable drift cases (86.8%), with no wrong repair ([H2](docs/results/h2-2026-10-27.md)).
+
+## What pinfold guarantees, and what it does not
+
+These hold as long as only you, not your agent, run `pinfold approve`, `classify` and `resolve`, and edit `.pinfold/` and the classification in `pinfold.json` (see [Keep your agent away from approval](#keep-your-agent-away-from-approval)).
+
+- **No write outside an approved or unattended plan.** A write reaches a server only as part of a write plan you approved, or one that met the conditions for running unattended. After approval, a write is sent only if the rebuilt plan is the one you approved.
+- **No placeholder used as data.** A write's result is known only after you approve it, so the type check refuses code that branches on it, compares it or takes its `typeof`.
+- **Safe resumption.** A write that may have reached its server is never sent again until you check and say it did not.
+- **Business logic untouched by repair.** A repair changes only a response adapter, and its mapped responses must fit every workflow that reads the tool.
+
+It does not guarantee:
+
+- **That you see every unattended write.** Approval is per version of a workflow's code. Once approved, that code sends later plans unattended, with other inputs, as long as they stay within its write budget and no adapter changed.
+- **Branches the type check cannot see.** A placeholder cast to `any`, or passed through a call such as `Boolean(x)`, can still decide a branch unseen.
+- **Semantic drift.** If `count` keeps its name and type but starts counting something else, nothing stops the run.
+- **Drift a single response cannot map.** A response that is now paged needs a manual edit and a baseline migration.
+- **That no data leaves.** The sandbox has no network, filesystem or environment, but data can leave through the arguments of a read tool, such as a search query.
+- **A client that answers for you.** A client setting that answers approval dialogs without showing them approves every plan unread.
+- **A misclassified tool.** A write tool you mark as read runs live.
 
 ## Where pinfold keeps its state
 
