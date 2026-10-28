@@ -2,7 +2,7 @@
 // with Drift Scenarios turning on along the way. It counts what each Arm
 // spends over a Workflow's life: A4 pays once for its Exploration Run and
 // then for every Repair and Approval pause; an agent Arm pays every run.
-import { openPlans } from "../../core/index.ts";
+import { openPlans, readStats, type Stats } from "../../core/index.ts";
 import type { DriftKitServerName } from "../../drift-kit/index.ts";
 import { addUsage, ModelUnavailable, noUsage, type Usage } from "./agent.ts";
 import { runAgentArm, type ArmName } from "./arms.ts";
@@ -28,6 +28,8 @@ export type LifecycleRun = {
   success: boolean;
   /** Whether the run waited for the developer's Approval. */
   paused: boolean;
+  /** For A4: the Repairs the run made, by who made them. */
+  repairs?: { pinfold: number; model: number };
   error?: string;
 };
 
@@ -108,6 +110,9 @@ export async function runLifecycle(
     const { core, root } = await bench.fresh();
     const setup = await saveApplied(core, root, task, input);
     if (!setup.ok) throw new Error(`${task.name}: ${setup.error}`);
+    // A Repair Model, if the environment names one, repairs what pinfold
+    // cannot; what it spends is A4's.
+    let before = await readStats(root);
     for (let run = 1; run <= options.runs; run++) {
       await turnOn(run);
       await bench.reset();
@@ -131,16 +136,24 @@ export async function runLifecycle(
         task.inputs[input]!,
         await bench.outcome(result.ok ? result.value : undefined)
       );
+      const after = await readStats(root);
+      const spent = modelSpent(before, after);
+      const repairs = {
+        pinfold: after.repairs.pinfold - before.repairs.pinfold,
+        model: after.repairs.model - before.repairs.model,
+      };
+      before = after;
       runs.push({
         arm: "A4",
         run,
-        usage: noUsage,
+        usage: spent,
         success: verdict.success,
         paused,
+        ...(repairs.pinfold + repairs.model > 0 && { repairs }),
         ...(!result.ok && { error: result.error.split("\n")[0]! }),
       });
       log(
-        `A4 run ${run}: ${verdict.success ? "ok" : "failed"}${paused ? ", paused" : ""}`
+        `A4 run ${run}: ${verdict.success ? "ok" : "failed"}${paused ? ", paused" : ""}${repairs.model > 0 ? `, repaired by the Repair Model for $${spent.cost.toFixed(4)}` : ""}`
       );
     }
 
@@ -173,6 +186,17 @@ export async function runLifecycle(
   return result();
 }
 
+// What the Repair Model spent between two readings of the stats.
+function modelSpent(before: Stats, after: Stats): Usage {
+  return {
+    ...noUsage,
+    promptTokens: after.model.promptTokens - before.model.promptTokens,
+    completionTokens:
+      after.model.completionTokens - before.model.completionTokens,
+    cost: after.model.cost - before.model.cost,
+  };
+}
+
 /**
  * The lifecycle's totals, cumulative cost and A4's Break-even Point against
  * each agent Arm, as Markdown.
@@ -193,6 +217,8 @@ export function formatLifecycle(
   const totals = new Map(arms.map((arm) => [arm, cumulative(arm)]));
   const a4 = totals.get("A4")!;
   const tokens = (usage: Usage) => usage.promptTokens + usage.completionTokens;
+  const repaired = (by: "pinfold" | "model") =>
+    of("A4").reduce((sum, run) => sum + (run.repairs?.[by] ?? 0), 0);
   const checkpoints = [
     1,
     10,
@@ -227,7 +253,7 @@ export function formatLifecycle(
       ? []
       : [`- Stopped early: ${result.stopped}`]),
     "",
-    `A4's totals include its Exploration Run, one agent run: ${tokens(result.exploration)} tokens, $${result.exploration.cost.toFixed(4)}. Repairs are deterministic and cost no tokens; a run that paused waited for the developer's Approval of a changed Response Adapter or a new plan.`,
+    `A4's totals include its Exploration Run, one agent run: ${tokens(result.exploration)} tokens, $${result.exploration.cost.toFixed(4)}, and every Repair: ${repaired("pinfold")} by pinfold's deterministic search, which costs no tokens, and ${repaired("model")} by the Repair Model. A run that paused waited for the developer's Approval of a changed Response Adapter or a new plan.`,
     "",
     "| Arm | Runs | Failed | Approval pauses | Tokens | Cost (USD) |",
     "| :--- | ---: | ---: | ---: | ---: | ---: |",

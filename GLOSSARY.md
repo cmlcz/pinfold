@@ -124,6 +124,14 @@ _Avoid_: upgrade, rebase
 One experimental setup in the benchmark, compared against the others on identical tasks: plain MCP tool calling (`A1`), code mode without saving (`A2`), an agent reusing a saved skill (`A3`), or a pinfold Workflow Run (`A4`).
 _Avoid_: baseline (reserved for a Tool's pinned shape), condition, variant
 
+**Arm Surface**:
+What an agent Arm gives its agent: MCP servers over HTTP, plus, for `A3`, the saved program and the instruction line pointing to it. Every Driver drives the same Surface.
+_Avoid_: setup, environment
+
+**Driver**:
+What runs the agent of an agent Arm: the minimal OpenRouter agent loop, or Claude Code or Codex CLI run headless, each pinned to one model and provider.
+_Avoid_: client, runner
+
 **Break-even Point**:
 The number of runs required for a Workflow's upfront and maintenance costs (its Exploration Run, saving it, and any Repairs) to be paid back by the per-run savings over another Arm.
 _Avoid_: payback, ROI

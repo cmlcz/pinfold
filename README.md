@@ -309,6 +309,15 @@ node src/packages/cli/bin.ts stats --json  # for scripts
 
 It never estimates tokens saved. Runs from before pinfold measured them are counted apart, not as zero. Repairs are counted from the repair log, which began with this version.
 
+## Benchmark
+
+Measured on the Drift Kit with `deepseek/deepseek-v4.1-flash-1017`, pinned to one OpenRouter endpoint, through a minimal agent loop, Claude Code and Codex CLI. These are results on one model and six synthetic tasks, not a general claim:
+
+- A saved workflow ran each task in about 0.1 s with no tokens, 85 to 500 times faster than an agent writing a fresh program ([stage 2](docs/results/bench-2026-10-27/README.md)).
+- It succeeded on all 162 of its runs, against 76% to 100% for agents calling the tools directly, writing fresh code, or reusing a saved program ([stage 3](docs/results/bench-2026-10-28/README.md)).
+- Over 100 runs with three drifts, it paid back its first agent run by run 2 and kept working through every drift, pausing once for approval each time. An agent writing fresh code each run succeeded on 42 of them.
+- Deterministic repair alone fixed 46 of 53 mappable drift cases (86.8%), with no wrong repair ([H2](docs/results/h2-2026-10-27.md)).
+
 ## What pinfold guarantees, and what it does not
 
 These hold as long as only you, not your agent, run `pinfold approve`, `classify` and `resolve`, and edit `.pinfold/` and the classification in `pinfold.json` (see [Keep your agent away from approval](#keep-your-agent-away-from-approval)).
