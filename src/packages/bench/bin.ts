@@ -75,7 +75,10 @@ if (pinned !== undefined) {
       openRouterModel({ ...pinned, log: (line) => console.log(line) })
     );
   } else {
-    proxy = await servePinProxy({ provider: pinned.provider });
+    proxy = await servePinProxy({
+      provider: pinned.provider,
+      log: (line) => console.log(line),
+    });
     const make = values.driver === "codex" ? codexDriver : claudeCodeDriver;
     driver = await make({ ...pinned, proxy });
   }
