@@ -791,6 +791,57 @@ describe("Approval of changed Adapters without writes", () => {
         "the Response Adapter of sentry.listIssues changed since Workflow counts was saved",
     });
   });
+
+  it("asks for Approval of an Adapter of a Tool only a branch the save did not take calls", async () => {
+    const core = await openTriage();
+    const explored = await core.explore({
+      code: `export async function main(input: { project: string; deep: boolean }) {
+        let frequent = 0;
+        if (input.deep) {
+          const { issues } = await sdk.sentry.listIssues({ project: input.project });
+          frequent = issues.filter((issue) => issue.count >= 50).length;
+        }
+        const ticket = await sdk.linear.createIssue({ title: "frequent " + frequent, description: "" });
+        return ticket.identifier;
+      }`,
+      input: { ...input, deep: false },
+    });
+    if (!explored.ok) throw new Error(explored.error);
+    await core.saveWorkflow({
+      run: explored.exploration,
+      name: "branchy",
+      confirmed: true,
+    });
+    const shallow = { name: "branchy", input: { ...input, deep: false } };
+    const deep = { name: "branchy", input: { ...input, deep: true } };
+    const first = succeeded(await core.runWorkflow(shallow));
+    await openPlans(ws.dir).approve(first.plan.id);
+    succeeded(await core.runWorkflow(shallow));
+    expect(succeeded(await core.runWorkflow(deep)).status).toBe("applied");
+    const adapters = join(ws.dir, ".workflows", "adapters");
+    await mkdir(adapters, { recursive: true });
+    await writeFile(
+      join(adapters, "sentry.listIssues.json"),
+      JSON.stringify({
+        server: "sentry",
+        tool: "listIssues",
+        version: 1,
+        ops: [{ op: "default", path: "issues[].assignee", value: null }],
+      })
+    );
+
+    const paused = succeeded(await core.runWorkflow(deep));
+    const other = succeeded(await core.runWorkflow(shallow));
+
+    expect(paused).toMatchObject({
+      status: "pending",
+      approvalReason:
+        "the Response Adapter of sentry.listIssues changed since the last finished run of Workflow branchy",
+      plan: { adapters: { "sentry.listIssues": expect.any(String) } },
+    });
+    // The other branch does not go through the changed Adapter.
+    expect(other.status).toBe("applied");
+  });
 });
 
 describe("Repair through the repair model", () => {
