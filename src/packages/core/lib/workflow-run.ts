@@ -64,7 +64,7 @@ export async function runWorkflow(
  * Which save of the Workflow ran, its code and the Response Adapters its
  * Tools went through, for the run history.
  */
-type Ran = Pick<RunEntry, "saved" | "source" | "adapters">;
+type Ran = Pick<RunEntry, "saved" | "source" | "adapters" | "tools">;
 
 async function runOnce(
   project: Project,
@@ -125,12 +125,22 @@ async function runOnce(
     };
   }
   await settleDrift(project, observed);
-  const digests = adapters!.digests(workflow.tools);
+  // A branch the Exploration Run did not take may call other Tools, whose
+  // Adapters count as much as those of the save's.
+  const tools = [
+    ...new Set([
+      ...workflow.tools,
+      ...observed.map(({ tool }) => toolName(tool)),
+      ...writes.map(({ tool }) => tool),
+    ]),
+  ];
+  const digests = adapters!.digests(tools);
   ran.adapters = digests;
+  ran.tools = tools;
   const { plan, reason, changedAdapters } = approvalFor(
     workflow,
     await runHistory(project.root),
-    { source, adapters: digests },
+    { source, tools, adapters: digests },
     writes
   );
   const outcome = await planOutcome(project, plan, result.value, {
@@ -204,8 +214,11 @@ async function settleDrift(project: Project, observed: Observed[]) {
 function approvalFor(
   workflow: LoadedWorkflow,
   history: RunEntry[],
-  /** The code that ran, and the digests of the Adapters it went through. */
-  ran: { source: string; adapters: Record<string, string> },
+  /**
+   * The code that ran, the Tools it used, and the digests of the Adapters
+   * they went through.
+   */
+  ran: { source: string; tools: string[]; adapters: Record<string, string> },
   writes: PlannedWrite[]
 ): { plan: WritePlan; reason?: string; changedAdapters: string[] } {
   const { name } = workflow;
@@ -218,18 +231,24 @@ function approvalFor(
   const appliedWrites = ofThisSave.filter(
     (entry) => entry.status === "applied" && (entry.writes ?? 0) > 0
   );
-  // The developer last saw the Workflow's results through the Adapters of
-  // its last finished run, or else of the run it was saved from.
-  const lastFinished = ofThisSave.findLast(
+  const finished = ofThisSave.filter(
     (entry) => entry.status === "applied" || entry.status === "complete"
   );
-  const seen =
-    lastFinished === undefined
-      ? workflow.adapters
-      : (lastFinished.adapters ?? {});
+  const lastFinished = finished.at(-1);
+  // The developer last saw a Tool's results through its Adapter in the last
+  // finished run that used it, or else in the run the Workflow was saved
+  // from, which a Tool it did not call went through with none.
+  const seen = (tool: string) => {
+    const last = finished.findLast((entry) =>
+      (entry.tools ?? workflow.tools).includes(tool)
+    );
+    return (last === undefined ? workflow.adapters : (last.adapters ?? {}))[
+      tool
+    ];
+  };
   // An Adapter added, changed or removed since then.
-  const changedAdapters = workflow.tools.filter(
-    (tool) => seen[tool] !== ran.adapters[tool]
+  const changedAdapters = ran.tools.filter(
+    (tool) => seen(tool) !== ran.adapters[tool]
   );
   const plan = writePlan(writes, ran.adapters);
   const needs = (reason: string) => ({ plan, reason, changedAdapters });
