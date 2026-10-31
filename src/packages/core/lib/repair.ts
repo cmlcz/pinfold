@@ -96,6 +96,17 @@ export function searchRepair(drift: DriftedTool): RepairSearch {
   const adaptedWith = (trial: Op[]) =>
     responses.map(({ response }) => applyOps(trial, response));
   const history = historyOf(drift.fixtures, responses);
+  // A field's Fixture values: of the calls with this run's arguments, or of
+  // every call when those hold too few, as when the run stopped at its
+  // first call.
+  const recordedOf = (read: string) => {
+    const same = valuesIn(history, read);
+    if (same.length >= minEvidence) return same;
+    return valuesIn(
+      drift.fixtures.map(({ response }) => response),
+      read
+    );
+  };
 
   const targets = driftedWith(ops);
   const chosen: Op[] = [];
@@ -130,7 +141,7 @@ export function searchRepair(drift: DriftedTool): RepairSearch {
           reads
             .filter((read) => touches(target.path, read))
             .map((read) => {
-              const recorded = valuesIn(history, read);
+              const recorded = recordedOf(read);
               if (recorded.length < minEvidence) return 0;
               return agreement(recorded, valuesIn(adapted, read));
             })
@@ -148,8 +159,7 @@ export function searchRepair(drift: DriftedTool): RepairSearch {
     if (best.score < minScore) {
       const thin = reads.some(
         (read) =>
-          touches(target.path, read) &&
-          valuesIn(history, read).length < minEvidence
+          touches(target.path, read) && recordedOf(read).length < minEvidence
       );
       return {
         kind: "pending",

@@ -38,6 +38,7 @@ describe("H2's changelog set", () => {
       pick("milestone.title", "minimal-issue"),
       pick("labels[].name", "minimal-issue"),
       pick("tags[].commit.sha", "minimal-tag"),
+      pick("type.name", "minimal-issue"),
     ]);
 
     expect(results.map(({ outcome, detail }) => [outcome, detail])).toEqual([
@@ -47,6 +48,8 @@ describe("H2's changelog set", () => {
         "repaired",
         '+ {"op":"rename","from":"tags[].sha","to":"tags[].commit.sha"}',
       ],
+      // The run stopped at its first call, so every call's Fixtures count.
+      ["repaired", '+ {"op":"rename","from":"issue_type","to":"type.name"}'],
     ]);
   });
 });
