@@ -316,7 +316,7 @@ Measured on the Drift Kit with `deepseek/deepseek-v4.1-flash-1017`, pinned to on
 - A saved workflow ran each task in about 0.1 s with no tokens, 85 to 500 times faster than an agent writing a fresh program ([stage 2](docs/results/bench-2026-10-27/README.md)).
 - It succeeded on all 162 of its runs, against 76% to 100% for agents calling the tools directly, writing fresh code, or reusing a saved program ([stage 3](docs/results/bench-2026-10-28/README.md)).
 - Over 100 runs with three drifts, it paid back its first agent run by run 2 and kept working through every drift, pausing once for approval each time. An agent writing fresh code each run succeeded on 42 of them, and one reusing a saved program on 29, failing on most runs after the first drift.
-- Deterministic repair alone fixed 46 of 53 mappable drift cases from a generated grid (86.8%), with no wrong repair ([H2](docs/results/h2-2026-10-27.md)). On real changes from GitHub's MCP server it fixed 3 of 10 that a mapping could fix, again with none wrong; the rest stop with nothing sent and wait for your agent or the repair model ([changelog set](docs/results/h2-changelog-2026-10-28.md)).
+- Deterministic repair alone fixed 46 of 53 mappable drift cases from a generated grid (86.8%), with no wrong repair ([H2](docs/results/h2-2026-10-27.md)). On real changes from GitHub's MCP server it fixed 12 of 13 that a mapping could fix, again with none wrong; the rest stop with nothing sent and wait for your agent or the repair model ([changelog set](docs/results/h2-changelog-2026-10-31.md)).
 
 ## What pinfold guarantees, and what it does not
 
