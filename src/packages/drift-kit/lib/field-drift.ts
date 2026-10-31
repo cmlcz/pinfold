@@ -12,14 +12,14 @@
 // A path names fields from the response's root, with [] for each element
 // of an array.
 
-export const fieldDriftKinds = [
+const fieldDriftKinds = [
   "rename",
   "type-change",
   "enum-change",
   "removed-field",
 ] as const;
 
-export const responseDriftKinds = ["wrap", "pagination"] as const;
+const responseDriftKinds = ["wrap", "pagination"] as const;
 
 type FieldDrift = {
   kind: (typeof fieldDriftKinds)[number];

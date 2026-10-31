@@ -266,13 +266,13 @@ function busy(plan: WritePlan, record: PlanRecord): Failed {
 }
 
 /** An Apply stopped at a write that failed; the report says what was sent. */
-export class ApplyStopped extends Error {}
+class ApplyStopped extends Error {}
 
 /**
  * Sends the writes the journal has not recorded as sent and returns the
  * results of all writes. Stops at the first write that fails.
  */
-export async function sendWrites(
+async function sendWrites(
   writes: PlannedWrite[],
   journal: RunJournal,
   send: (write: PlannedWrite, args: unknown) => Promise<unknown>
@@ -323,10 +323,7 @@ export async function sendWrites(
 }
 
 /** A copy of a value with each Placeholder replaced by the real result. */
-export function resolvePlaceholders(
-  value: unknown,
-  results: unknown[]
-): unknown {
+function resolvePlaceholders(value: unknown, results: unknown[]): unknown {
   if (value instanceof Placeholder) {
     let resolved: unknown = results[value.write - 1];
     for (const step of value.path) {

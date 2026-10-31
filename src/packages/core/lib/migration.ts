@@ -298,7 +298,7 @@ async function recheck(
  * for a field only the new one has, `-` for one only the old one has, and
  * `~` for one whose kind changed. `root` names the whole value.
  */
-export function shapeChanges(
+function shapeChanges(
   before: JsonSchema,
   after: JsonSchema,
   root: string
