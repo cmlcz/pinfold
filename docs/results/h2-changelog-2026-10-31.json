@@ -1,7 +1,7 @@
 {
   "provenance": {
-    "Measured on": "2026-10-31T18:04:47.797Z",
-    "Commit": "68241b3",
+    "Measured on": "2026-10-31T18:30:54.330Z",
+    "Commit": "6695176",
     "pinfold": "0.0.0",
     "Node": "v26.12.0",
     "Source": "github/github-mcp-server's convertToMinimal* functions, pkg/github/minimal_types.go"
@@ -158,8 +158,8 @@
       "read": "type.name",
       "change": "type became issue_type, its name",
       "mappableBy": "rename",
-      "outcome": "unrepaired",
-      "detail": "{\"op\":\"rename\",\"from\":\"issue_type\",\"to\":\"type.name\"} fits type, but the Fixtures hold fewer than 3 values of it, too few to check its values against"
+      "outcome": "repaired",
+      "detail": "+ {\"op\":\"rename\",\"from\":\"issue_type\",\"to\":\"type.name\"}"
     },
     {
       "pr": 2022,
