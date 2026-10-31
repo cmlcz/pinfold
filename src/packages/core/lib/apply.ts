@@ -173,6 +173,16 @@ async function sendRest(
       `${(error as Error).message}\nNothing was sent. Once it is fixed, \`pinfold resume ${record.record}\` sends the writes not sent.`
     );
   });
+  // The developer approved the plan with the Adapters it names, so no
+  // result goes through another, as one a Repair wrote since then.
+  const changed = [...new Set(record.writes.map(({ tool }) => tool))].filter(
+    (tool) => adapters.get(tool)?.digest !== record.adapters[tool]
+  );
+  if (changed.length > 0) {
+    throw new Error(
+      `the Response Adapter of ${changed.join(", ")} changed since Write Plan ${record.id} was approved, so nothing was sent. \`pinfold decline ${record.id}\` drops the plan; a later run builds it through the Adapter as it is now and asks for Approval.`
+    );
+  }
   const run = project.journal.run(record.record);
   const before = run.sent().length;
   let results: unknown[];

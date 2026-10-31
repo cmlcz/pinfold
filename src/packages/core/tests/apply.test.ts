@@ -562,6 +562,31 @@ describe("Apply Journal and resume", () => {
     ]);
   });
 
+  it("sends nothing on resume through a Write Tool's Adapter that changed since Approval", async () => {
+    const core = await openTriage();
+    const id = planId(await core.explore(fourWrites));
+    await openPlans(ws.dir).approve(id);
+    await ws.control("linear").failWrite(3);
+    const run = stoppedRun(await core.explore(fourWrites));
+    await openPlans(ws.dir).resolve(run, 3, false);
+    const adapters = join(ws.dir, ".workflows", "adapters");
+    await mkdir(adapters, { recursive: true });
+    await writeFile(
+      join(adapters, "linear.createIssue.json"),
+      JSON.stringify({
+        server: "linear",
+        tool: "createIssue",
+        version: 1,
+        ops: [{ op: "rename", from: "url", to: "link" }],
+      })
+    );
+
+    await expect(core.resume(run)).rejects.toThrow(
+      `the Response Adapter of linear.createIssue changed since Write Plan ${id} was approved, so nothing was sent.`
+    );
+    expect(await sentTitles()).toEqual(["One", "Two"]);
+  });
+
   it("stops a resumed run again at its next failed write", async () => {
     const core = await openTriage();
     await openPlans(ws.dir).approve(planId(await core.explore(fourWrites)));
