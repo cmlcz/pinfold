@@ -109,12 +109,22 @@ function typeOf(schema: JsonSchema | boolean | undefined): string {
     case "integer":
       return "number";
     case "array":
-      return `${parenthesize(typeOf(schema.items))}[]`;
+      return arrayType(schema);
     case "object":
       return objectType(schema);
     default:
       return "properties" in schema ? objectType(schema) : "unknown";
   }
+}
+
+// A tuple's leading elements may be left out, as prefixItems requires none.
+function arrayType(schema: JsonSchema): string {
+  const rest = `${parenthesize(typeOf(schema.items))}[]`;
+  if (!Array.isArray(schema.prefixItems)) return rest;
+  const leading = schema.prefixItems.map(
+    (item) => `${parenthesize(typeOf(item))}?`
+  );
+  return `[${[...leading, ...(schema.items === false ? [] : [`...${rest}`])].join(", ")}]`;
 }
 
 function objectType(schema: JsonSchema): string {
