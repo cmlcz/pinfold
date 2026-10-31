@@ -55,14 +55,16 @@ export type PlanStore = Plans & {
   approvedFor(run: string): Promise<PlanRecord | undefined>;
   /**
    * Adds a record of a Write Plan, pending or approved without the developer
-   * for a run that needs no Approval. Returns it, or undefined if a run
-   * adding one at the same time, in this process or another, got there first.
+   * for a run that needs no Approval, after `seen`, the plan's newest record
+   * when the caller looked. Returns it, or undefined if a run adding one at
+   * the same time, in this process or another, got there first.
    */
   add(
     plan: WritePlan,
     run: string,
     clock: Clock,
-    status: "pending" | "approved"
+    status: "pending" | "approved",
+    seen: PlanRecord | undefined
   ): Promise<PlanRecord | undefined>;
   /**
    * Takes an approved record for one Apply. Only the first claim of a record
@@ -223,7 +225,7 @@ export function openPlanStore(root: string): PlanStore {
         journal.close();
       }
     },
-    async add(plan, run, clock, status) {
+    async add(plan, run, clock, status, seen) {
       // Records of a plan are numbered, so two runs adding the next record at
       // once pick the same name and only one of them creates it.
       const files = await planFiles();
@@ -231,6 +233,8 @@ export function openPlanStore(root: string): PlanStore {
         files.filter(
           (file) => file.startsWith(`${plan.id}-`) && file.endsWith(".json")
         ).length + 1;
+      // A run that added its record before this listing got there first too.
+      if ((await latest(plan.id))?.record !== seen?.record) return undefined;
       const record: PlanRecord = {
         ...plan,
         record: `${plan.id}-${ordinal}`,
