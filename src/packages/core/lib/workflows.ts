@@ -530,6 +530,11 @@ export type RunEntry = {
   status: string;
   /** The digest of each Response Adapter the run's Tools went through. */
   adapters?: Record<string, string>;
+  /**
+   * The Tools the run used: those of the save, and any other a branch of
+   * the code called. Runs recorded before this was kept used the save's.
+   */
+  tools?: string[];
   plan?: string;
   /** How many writes the run's Write Plan held. */
   writes?: number;
