@@ -399,6 +399,16 @@ describe("Declarations from unusual schemas", () => {
       properties: {
         never: { enum: [] },
         tags: { type: "array", items: { enum: ["a(", "b"] } },
+        pair: {
+          type: "array",
+          prefixItems: [{ type: "string" }, { type: "number" }],
+          items: false,
+        },
+        row: {
+          type: "array",
+          prefixItems: [{ type: "string" }],
+          items: { type: "boolean" },
+        },
         mixed: {
           allOf: [
             { anyOf: [{ type: "string" }, { type: "number" }] },
@@ -438,6 +448,8 @@ describe("Declarations from unusual schemas", () => {
 
     expect(signature).toContain("never?: never");
     expect(signature).toContain('tags?: ("a(" | "b")[]');
+    expect(signature).toContain("pair?: [string?, number?]");
+    expect(signature).toContain("row?: [string?, ...boolean[]]");
     expect(signature).toContain(
       "mixed?: (string | number) & Record<string, unknown>"
     );
