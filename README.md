@@ -155,7 +155,7 @@ node src/packages/cli/bin.ts resume <run-id>    # finish a plan that stopped par
 node src/packages/cli/bin.ts resolve <run-id> <write> sent|not-sent  # settle a write in doubt
 ```
 
-`approve`, `resolve` and `classify read` show what they change and ask you to type `yes`. They run only in an interactive terminal, so an agent cannot run them through its shell tool, which has none.
+`approve`, `resolve`, `classify read` and `baseline optional` show what they change and ask you to type `yes`. They run only in an interactive terminal, so an agent cannot run them through its shell tool, which has none.
 
 ### Keep your agent away from approval
 
@@ -168,7 +168,9 @@ Your agent's shell runs as you. A determined agent could fake a terminal, or edi
       "Bash(node src/packages/cli/bin.ts approve *)",
       "Bash(node src/packages/cli/bin.ts resolve *)",
       "Bash(node src/packages/cli/bin.ts classify read *)",
+      "Bash(node src/packages/cli/bin.ts baseline optional *)",
       "Edit(/.pinfold/**)",
+      "Edit(/.workflows/baselines/**)",
       "Edit(/pinfold.json)"
     ]
   }
@@ -181,7 +183,7 @@ A write whose real result no longer has a field a later write needs, because the
 
 A write that fails while it is being sent may still have reached its server: a server can make the change and then answer with an error. pinfold never sends such a write again by itself. The run stops with that write in doubt, and `resume` refuses to go on. Check the server, then tell pinfold what you found with `resolve`. A write you resolve as `not-sent` is sent by the next `resume`; one resolved as `sent` never is, and the writes after it follow.
 
-After you approve a plan in the terminal, the agent runs the same code again; after the dialog, pinfold does that itself. pinfold rebuilds the plan and sends the writes only if the plan has not changed. If it has changed, nothing is sent, and you need to approve the new plan. Inside a run, `Date` stands still and `Math.random` is seeded. The run after Approval gets the same time and seed, so a write that uses them rebuilds as you approved it.
+After you approve a plan in the terminal, the agent runs the same code again; after the dialog, pinfold does that itself. pinfold rebuilds the plan and sends the writes only if the plan has not changed. If it has changed, nothing is sent, and you need to approve the new plan. Inside a run, `Date` stands still and `Math.random` is seeded. The run after Approval gets the same time and seed, so a write that uses them rebuilds as you approved it. Local time in a run is UTC, with one exception: a date string with no time zone in a format other than ISO 8601, such as `Jan 1 2024 10:00`, is read in the time zone of the machine that runs pinfold.
 
 ## Save a workflow
 
@@ -320,7 +322,7 @@ Measured on the Drift Kit with `deepseek/deepseek-v4.1-flash-1017`, pinned to on
 
 ## What pinfold guarantees, and what it does not
 
-These hold as long as only you, not your agent, run `pinfold approve`, `classify` and `resolve`, and edit `.pinfold/` and the classification in `pinfold.json` (see [Keep your agent away from approval](#keep-your-agent-away-from-approval)).
+These hold as long as only you, not your agent, run `pinfold approve`, `classify`, `resolve` and `baseline optional`, and edit `.pinfold/`, `.workflows/baselines/` and the classification in `pinfold.json` (see [Keep your agent away from approval](#keep-your-agent-away-from-approval)).
 
 - **No write outside an approved or unattended plan.** A write reaches a server only as part of a write plan you approved, or one that met the conditions for running unattended. After approval, a write is sent only if the rebuilt plan is the one you approved.
 - **No placeholder used as data.** A write's result is known only after you approve it, so the type check refuses code that branches on it, compares it or takes its `typeof`.

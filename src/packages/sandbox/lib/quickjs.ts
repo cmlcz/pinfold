@@ -25,6 +25,11 @@ const stackBytes = 256 * 1024;
 // computes the same values on a host in any time zone, and `Math.random` is
 // a seeded generator (mulberry32). It reads `now` and `seed` from the
 // prelude below.
+//
+// One gap remains: QuickJS reads a date string with no time zone in a
+// format other than ISO 8601, such as "Jan 1 2024 10:00", in the host's
+// time zone. Adding a zone to such a string would override one it already
+// has, so the prelude cannot fix it.
 const clockSetup = `{
   const { apply, construct } = Reflect;
   const { imul } = Math;
