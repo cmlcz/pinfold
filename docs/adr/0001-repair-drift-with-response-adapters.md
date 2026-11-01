@@ -12,3 +12,4 @@ When a Downstream Server's response shape drifts, pinfold writes or updates a de
 - Repairs are small, reviewable mappings. For ambiguous field renames, Approval can display value evidence comparing candidate live values against the historical Fixture values of the missing field.
 - New fields added by a Downstream Server remain invisible to Workflows until an explicit Baseline Migration.
 - Drift that cannot be expressed as a single-response mapping (for example, a Tool that now requires an extra call to fetch the same data) is outside the scope of Repair and must be resolved manually.
+- The closed set stays small: growing what an op can reach is preferred to adding an op. `wrap` and `unwrap` may act on each element of an array (`at: "labels[]"`), since servers trim arrays of objects to one field of each, as github/github-mcp-server did (#50).

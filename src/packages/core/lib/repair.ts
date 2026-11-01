@@ -21,6 +21,7 @@ import {
 } from "./drift.ts";
 import {
   childPath,
+  deepestPaths,
   formatPath,
   isPrimitive,
   isRecord,
@@ -95,6 +96,17 @@ export function searchRepair(drift: DriftedTool): RepairSearch {
   const adaptedWith = (trial: Op[]) =>
     responses.map(({ response }) => applyOps(trial, response));
   const history = historyOf(drift.fixtures, responses);
+  // A field's Fixture values: of the calls with this run's arguments, or of
+  // every call when those hold too few, as when the run stopped at its
+  // first call.
+  const recordedOf = (read: string) => {
+    const same = valuesIn(history, read);
+    if (same.length >= minEvidence) return same;
+    return valuesIn(
+      drift.fixtures.map(({ response }) => response),
+      read
+    );
+  };
 
   const targets = driftedWith(ops);
   const chosen: Op[] = [];
@@ -114,7 +126,7 @@ export function searchRepair(drift: DriftedTool): RepairSearch {
           mismatch.path !== target.path &&
           before.some((other) => sameMismatch(other, mismatch))
       );
-    const scored = candidates(baseline, target, live, history, ops)
+    const scored = candidates(baseline, target, live, history, ops, reads)
       .flatMap(({ op, name }) => {
         // A wrap or unwrap changes the shape the Adapter's earlier ops were
         // written for, so they find nothing to map. If the op alone does not
@@ -129,7 +141,7 @@ export function searchRepair(drift: DriftedTool): RepairSearch {
           reads
             .filter((read) => touches(target.path, read))
             .map((read) => {
-              const recorded = valuesIn(history, read);
+              const recorded = recordedOf(read);
               if (recorded.length < minEvidence) return 0;
               return agreement(recorded, valuesIn(adapted, read));
             })
@@ -147,8 +159,7 @@ export function searchRepair(drift: DriftedTool): RepairSearch {
     if (best.score < minScore) {
       const thin = reads.some(
         (read) =>
-          touches(target.path, read) &&
-          valuesIn(history, read).length < minEvidence
+          touches(target.path, read) && recordedOf(read).length < minEvidence
       );
       return {
         kind: "pending",
@@ -250,9 +261,11 @@ export function madeUpDefaults(
 }
 
 // Every field path read of the Tool, by a saved Workflow or the run that
-// drifted.
+// drifted, keeping only the deepest as a Contract does. A drifted run that
+// asked for milestone.title of a milestone that is now text read only
+// milestone, which must not make every field of the object count.
 function readsOf(drift: Pick<DriftedTool, "contracts">): string[] {
-  return [...new Set(drift.contracts.flat())];
+  return deepestPaths(drift.contracts.flat());
 }
 
 // The mismatches of the live responses through some ops that touch a field
@@ -387,23 +400,47 @@ function candidates(
   live: unknown[],
   history: unknown[],
   /** The Adapter's ops, which an unwrap may need run again after it. */
-  replay: Op[]
+  replay: Op[],
+  reads: string[]
 ): { op: Op; name: number }[] {
   const steps = parsePath(target.path) ?? [];
   const last = steps.at(-1);
-  // Ops name fields, so a drifted array element or whole response has none.
-  if (last === undefined || "each" in last) return [];
+  if (last === undefined) return [];
+  const inside = fieldsRead(target.path, reads);
+  const shapes = schemasAt(baseline, steps);
+  // An object, or each element of an array, became one of its fields: a
+  // wrap puts it back under a field read there. The field is a guess among
+  // those read, so its values must agree with the Fixtures to stand out.
+  if (
+    !isMissing(target) &&
+    shapes.some((schema) => schema.properties !== undefined)
+  ) {
+    return inside.map((field) => ({
+      op: { op: "wrap", at: target.path, field },
+      name: 0.5,
+    }));
+  }
+  // The other ops name fields, so a drifted array element has none.
+  if ("each" in last) return [];
   if (isMissing(target)) {
     const parentSteps = steps.slice(0, -1);
     const parent = formatPath(parentSteps);
     const fields = newFields(baseline, parentSteps, live);
-    const found: { op: Op; name: number }[] = fields.map((field) => ({
-      op: { op: "rename", from: childPath(parent, field), to: target.path },
-      name: similarity(field, last.key),
-    }));
-    // wrap and unwrap work on a field or the whole response, not an element.
-    const parentLast = parentSteps.at(-1);
-    if (parentLast !== undefined && "each" in parentLast) return found;
+    const found: { op: Op; name: number }[] = fields.flatMap((field) => [
+      {
+        op: { op: "rename", from: childPath(parent, field), to: target.path },
+        name: similarity(field, last.key),
+      },
+      // A field lifted out of the missing object moves back into it.
+      ...inside.map((key) => ({
+        op: {
+          op: "rename" as const,
+          from: childPath(parent, field),
+          to: childPath(target.path, key),
+        },
+        name: Math.max(similarity(field, key), similarity(field, last.key)),
+      })),
+    ]);
     const at = parent === "" ? {} : { at: parent };
     for (const field of fields) {
       const values = valuesIn(live, childPath(parent, field));
@@ -416,15 +453,14 @@ function candidates(
       }
     }
     // The value now stands where the Baseline has it under its only field.
-    const shapes = schemasAt(baseline, parentSteps);
+    const parentShapes = schemasAt(baseline, parentSteps);
     const only = (schema: JsonSchema) =>
       Object.keys(schema.properties ?? {}).join() === last.key;
-    if (shapes.length > 0 && shapes.every(only)) {
+    if (parentShapes.length > 0 && parentShapes.every(only)) {
       found.push({ op: { op: "wrap", ...at, field: last.key }, name: 1 });
     }
     return found;
   }
-  const shapes = schemasAt(baseline, steps);
   if (shapes.some((schema) => Array.isArray(schema.enum))) {
     const values = mapByRank(
       valuesIn(live, target.path),
@@ -463,6 +499,21 @@ function newFields(
     .filter(isRecord)
     .flatMap((value) => Object.keys(value));
   return [...new Set(keys)].filter((key) => !known.has(key));
+}
+
+// The fields a Workflow reads of the object at a path.
+function fieldsRead(path: string, reads: string[]): string[] {
+  const depth = (parsePath(path) ?? []).length;
+  const keys = reads.flatMap((read) => {
+    const steps = parsePath(read) ?? [];
+    const next = steps[depth];
+    return next !== undefined &&
+      "key" in next &&
+      formatPath(steps.slice(0, depth)) === path
+      ? [next.key]
+      : [];
+  });
+  return [...new Set(keys)];
 }
 
 // A new field beside a missing one that looks like a cursor to more pages.

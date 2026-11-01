@@ -155,7 +155,7 @@ node src/packages/cli/bin.ts resume <run-id>    # finish a plan that stopped par
 node src/packages/cli/bin.ts resolve <run-id> <write> sent|not-sent  # settle a write in doubt
 ```
 
-`approve`, `resolve` and `classify read` show what they change and ask you to type `yes`. They run only in an interactive terminal, so an agent cannot run them through its shell tool, which has none.
+`approve`, `resolve`, `classify read` and `baseline optional` show what they change and ask you to type `yes`. They run only in an interactive terminal, so an agent cannot run them through its shell tool, which has none.
 
 ### Keep your agent away from approval
 
@@ -168,7 +168,9 @@ Your agent's shell runs as you. A determined agent could fake a terminal, or edi
       "Bash(node src/packages/cli/bin.ts approve *)",
       "Bash(node src/packages/cli/bin.ts resolve *)",
       "Bash(node src/packages/cli/bin.ts classify read *)",
+      "Bash(node src/packages/cli/bin.ts baseline optional *)",
       "Edit(/.pinfold/**)",
+      "Edit(/.workflows/baselines/**)",
       "Edit(/pinfold.json)"
     ]
   }
@@ -181,7 +183,7 @@ A write whose real result no longer has a field a later write needs, because the
 
 A write that fails while it is being sent may still have reached its server: a server can make the change and then answer with an error. pinfold never sends such a write again by itself. The run stops with that write in doubt, and `resume` refuses to go on. Check the server, then tell pinfold what you found with `resolve`. A write you resolve as `not-sent` is sent by the next `resume`; one resolved as `sent` never is, and the writes after it follow.
 
-After you approve a plan in the terminal, the agent runs the same code again; after the dialog, pinfold does that itself. pinfold rebuilds the plan and sends the writes only if the plan has not changed. If it has changed, nothing is sent, and you need to approve the new plan. Inside a run, `Date` stands still and `Math.random` is seeded. The run after Approval gets the same time and seed, so a write that uses them rebuilds as you approved it.
+After you approve a plan in the terminal, the agent runs the same code again; after the dialog, pinfold does that itself. pinfold rebuilds the plan and sends the writes only if the plan has not changed. If it has changed, nothing is sent, and you need to approve the new plan. Inside a run, `Date` stands still and `Math.random` is seeded. The run after Approval gets the same time and seed, so a write that uses them rebuilds as you approved it. Local time in a run is UTC, with one exception: a date string with no time zone in a format other than ISO 8601, such as `Jan 1 2024 10:00`, is read in the time zone of the machine that runs pinfold.
 
 ## Save a workflow
 
@@ -231,7 +233,7 @@ node src/packages/cli/bin.ts baseline optional sentry.getIssue assignee
 
 A field marked optional may be missing or null, and workflows that read it must handle that to type-check. When a server later answers differently, say it renames `count` to `eventCount`, a run that reads `count` stops before it sends anything. Each run is checked against the fields it read itself, so an edit to the workflow, or an input that takes another branch, is checked as it runs. The run reports the tool, the fields that drifted and every workflow the drift affects. A run that does not read the drifted fields goes on as before.
 
-pinfold then tries to repair the drift itself, with no model. It looks for a mapping from the live responses back to the baseline, such as a renamed field, a response now wrapped in another object, a number sent as text, or renamed enum values. It scores each candidate by how alike the field names are and by how well its values agree with those in the saved fixtures. Values count only where the fixtures hold at least three of them; with fewer, only a candidate whose field name matches outright, such as a wrapped response, can pass. A response that moves under another object after the tool's adapter already maps some of its fields gets the unwrap and, after it, those mappings again, since they no longer find their fields where the adapter's earlier ops look. When one candidate stands out and the mapped responses fit every workflow that uses the tool, pinfold writes it as a new version of the tool's response adapter and runs the workflow again. That run pauses for approval and shows the adapter diff, the value evidence and the write plan:
+pinfold then tries to repair the drift itself, with no model. It looks for a mapping from the live responses back to the baseline, such as a renamed field, a response now wrapped in another object, an object that became one of its fields (`milestone` now holds only the title), a field moved up out of its object, a number sent as text, or renamed enum values. It scores each candidate by how alike the field names are and by how well its values agree with those in the saved fixtures. Values count only where the fixtures hold at least three of them, from calls with the same arguments as the drifted run or, when those hold fewer, from every call; with fewer still, only a candidate whose field name matches outright, such as a wrapped response, can pass. A response that moves under another object after the tool's adapter already maps some of its fields gets the unwrap and, after it, those mappings again, since they no longer find their fields where the adapter's earlier ops look. When one candidate stands out and the mapped responses fit every workflow that uses the tool, pinfold writes it as a new version of the tool's response adapter and runs the workflow again. That run pauses for approval and shows the adapter diff, the value evidence and the write plan:
 
 ```text
 pinfold repaired the Response Adapter of sentry.listIssues, now version 1:
@@ -260,7 +262,7 @@ A response adapter lives in `.workflows/adapters/`, one file per tool. It maps t
 The ops run in order. A path such as `issues[].count` names the `count` of every element of `issues`.
 
 - **`rename`** moves the field at `from` to `to`, within the same array elements.
-- **`wrap`** puts the value at `at` under `field`, and **`unwrap`** replaces the value at `at` with its `field`. Without `at`, they act on the whole response.
+- **`wrap`** puts the value at `at` under `field`, and **`unwrap`** replaces the value at `at` with its `field`. Without `at`, they act on the whole response; an `at` that ends in `[]`, such as `labels[]`, acts on each element.
 - **`convert`** turns the value at `path` into a `number` or a `string`, or an ISO date into `epoch-ms` and back with `iso-date`.
 - **`map`** replaces enum values at `path` by the `values` they map to.
 - **`default`** gives a missing field at `path` the `value`.
@@ -316,11 +318,11 @@ Measured on the Drift Kit with `deepseek/deepseek-v4.1-flash-1017`, pinned to on
 - A saved workflow ran each task in about 0.1 s with no tokens, 85 to 500 times faster than an agent writing a fresh program ([stage 2](docs/results/bench-2026-10-27/README.md)).
 - It succeeded on all 162 of its runs, against 76% to 100% for agents calling the tools directly, writing fresh code, or reusing a saved program ([stage 3](docs/results/bench-2026-10-28/README.md)).
 - Over 100 runs with three drifts, it paid back its first agent run by run 2 and kept working through every drift, pausing once for approval each time. An agent writing fresh code each run succeeded on 42 of them, and one reusing a saved program on 29, failing on most runs after the first drift.
-- Deterministic repair alone fixed 46 of 53 mappable drift cases from a generated grid (86.8%), with no wrong repair ([H2](docs/results/h2-2026-10-27.md)). On real changes from GitHub's MCP server it fixed 3 of 10 that a mapping could fix, again with none wrong; the rest stop with nothing sent and wait for your agent or the repair model ([changelog set](docs/results/h2-changelog-2026-10-28.md)).
+- Deterministic repair alone fixed 47 of 53 mappable drift cases from a generated grid (88.7%), with no wrong repair ([H2](docs/results/h2-2026-10-31.md)). On real changes from GitHub's MCP server it fixed all 13 that a mapping could fix, again with none wrong; the rest, fields the server dropped, stop with nothing sent and wait for your agent or the repair model ([changelog set](docs/results/h2-changelog-2026-10-31.md)).
 
 ## What pinfold guarantees, and what it does not
 
-These hold as long as only you, not your agent, run `pinfold approve`, `classify` and `resolve`, and edit `.pinfold/` and the classification in `pinfold.json` (see [Keep your agent away from approval](#keep-your-agent-away-from-approval)).
+These hold as long as only you, not your agent, run `pinfold approve`, `classify`, `resolve` and `baseline optional`, and edit `.pinfold/`, `.workflows/baselines/` and the classification in `pinfold.json` (see [Keep your agent away from approval](#keep-your-agent-away-from-approval)).
 
 - **No write outside an approved or unattended plan.** A write reaches a server only as part of a write plan you approved, or one that met the conditions for running unattended. After approval, a write is sent only if the rebuilt plan is the one you approved.
 - **No placeholder used as data.** A write's result is known only after you approve it, so the type check refuses code that branches on it, compares it or takes its `typeof`.

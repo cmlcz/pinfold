@@ -201,6 +201,8 @@ async function main(): Promise<number> {
       if (change !== "optional" || tool === undefined || path === undefined)
         return fail();
       if (rest.length > 3 || flagged) return fail();
+      const question = `Make ${path} of ${tool} optional in its Baseline? Workflows that read it then run, and may send writes, when it is missing or null.`;
+      if (!(await confirm("baseline optional", question))) return 1;
       await makeFieldOptional(root, tool, path);
       console.log(
         `Made ${path} of ${tool} optional in its Baseline: it may now be missing or null. A gateway that is running uses it once restarted.`
@@ -247,9 +249,9 @@ async function main(): Promise<number> {
   }
 }
 
-// Throws on arguments that make no sense. Only `run` and `baseline` take
-// options other than --config: the Workflow's input, one flag per field,
-// or one value, and --yes, which takes no value.
+// Throws on arguments that make no sense. Only `run`, `baseline` and
+// `stats` take options other than --config: the Workflow's input, one flag
+// per field, or one value, and --yes and --json, which take no value.
 function parseCommandLine(args: string[]): {
   positionals: string[];
   config: string;
@@ -271,7 +273,15 @@ function parseCommandLine(args: string[]): {
     const [name, inline] = splitOnce(arg.slice(2), "=");
     let value: string | true = inline ?? true;
     const next = args[index + 1];
-    if (inline === undefined && next !== undefined && !next.startsWith("--")) {
+    // Outside `run`, only --config takes a value: --yes and --json never
+    // take the next argument, which may be a Tool's name.
+    const takesValue = positionals[0] === "run" || name === "config";
+    if (
+      takesValue &&
+      inline === undefined &&
+      next !== undefined &&
+      !next.startsWith("--")
+    ) {
       value = next;
       index++;
     }
@@ -297,10 +307,11 @@ function parseCommandLine(args: string[]): {
   return { positionals, config, input };
 }
 
-// Approving a plan, settling a write in doubt and marking a Tool as read
-// decide what reaches a Downstream Server, so they ask the person at an
-// interactive terminal. An agent's shell has none, so an agent cannot run
-// them unasked; client permission rules that deny them close the rest.
+// Approving a plan, settling a write in doubt, marking a Tool as read and
+// making a Baseline field optional decide what reaches a Downstream Server,
+// so they ask the person at an interactive terminal. An agent's shell has
+// none, so an agent cannot run them unasked; client permission rules that
+// deny them close the rest.
 async function confirm(command: string, question: string): Promise<boolean> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error(

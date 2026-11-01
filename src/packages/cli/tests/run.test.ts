@@ -197,17 +197,26 @@ describe("pinfold baseline migrate", () => {
       await core.close();
     }
 
-    const { code, stdout } = await pinfold(
+    const after = await pinfold(
       "baseline",
       "migrate",
       "linear.searchIssues",
       "--yes"
     );
-
-    expect(code).toBe(0);
-    expect(stdout).toBe(
-      "The Baseline of linear.searchIssues is the shape its server gives it now already; nothing to migrate.\n"
+    // --yes takes no value, so the Tool's name may follow it.
+    const before = await pinfold(
+      "baseline",
+      "migrate",
+      "--yes",
+      "linear.searchIssues"
     );
+
+    for (const { code, stdout } of [after, before]) {
+      expect(code).toBe(0);
+      expect(stdout).toBe(
+        "The Baseline of linear.searchIssues is the shape its server gives it now already; nothing to migrate.\n"
+      );
+    }
   });
 
   it("fails with the reason when the Tool has no Baseline", async () => {
