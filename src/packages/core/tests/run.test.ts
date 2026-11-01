@@ -148,6 +148,34 @@ describe("run_workflow", () => {
     expect(await ws.control("linear").receivedWrites()).toEqual(sent);
   });
 
+  it("asks again for a declined plan, even once the Workflow runs unattended", async () => {
+    const core = await openTriage();
+    await saveTriage(core);
+    const plans = openPlans(ws.dir);
+    const fewer = {
+      name: "triage_sentry",
+      input: { ...input, minEvents: 100 },
+    };
+    const declined = succeeded(
+      await core.runWorkflow({ name: "triage_sentry", input })
+    );
+    await plans.decline(declined.plan.id);
+    await plans.approve(succeeded(await core.runWorkflow(fewer)).plan.id);
+    expect(succeeded(await core.runWorkflow(fewer)).status).toBe("applied");
+    const sent = await ws.control("linear").receivedWrites();
+
+    const again = succeeded(
+      await core.runWorkflow({ name: "triage_sentry", input })
+    );
+
+    expect(again).toMatchObject({
+      status: "pending",
+      declined: true,
+      plan: { id: declined.plan.id },
+    });
+    expect(await ws.control("linear").receivedWrites()).toEqual(sent);
+  });
+
   it("asks for Approval again for a new Workflow saved under an old name", async () => {
     const core = await openTriage();
     await saveTriage(core);

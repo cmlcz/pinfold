@@ -17,6 +17,11 @@ import { listJson, readJson } from "./files.ts";
 import { canonicalize, shortHash } from "./plan.ts";
 import { isPrimitive, isRecord, parsePath, type Step } from "./paths.ts";
 
+// A field path, which may end in [] for each element of an array.
+const valuePath = z.string().refine((path) => parsePath(path) !== undefined, {
+  error: "must be a field path, such as issues[].assignee or labels[]",
+});
+
 // A field path that ends in a field, which an op can replace or remove.
 const fieldPath = z.string().refine(
   (path) => {
@@ -36,13 +41,13 @@ const opSchema = z.discriminatedUnion("op", [
   /** Puts the value at `at` under the field `field`. */
   z.strictObject({
     op: z.literal("wrap"),
-    at: fieldPath.optional(),
+    at: valuePath.optional(),
     field: z.string().min(1),
   }),
   /** Replaces the value at `at` with its field `field`. */
   z.strictObject({
     op: z.literal("unwrap"),
-    at: fieldPath.optional(),
+    at: valuePath.optional(),
     field: z.string().min(1),
   }),
   /** Converts a value: text to a number and back, an ISO date to epoch ms and back. */
@@ -76,7 +81,7 @@ export type Op = z.infer<typeof opSchema>;
 
 /** The closed set of ops, as an agent or the Repair Model is told of it. */
 export const opsGuide = [
-  "Paths are field paths such as issues[].count; leaving out `at` means the whole response. The ops, applied in order:",
+  "Paths are field paths such as issues[].count; leaving out `at` means the whole response, and an `at` that ends in [] such as labels[] means each element. The ops, applied in order:",
   '  {"op":"rename","from":path,"to":path} moves a field, within the same array elements',
   '  {"op":"wrap","at"?:path,"field":name} puts the value under a field',
   '  {"op":"unwrap","at"?:path,"field":name} replaces the value with that field of it',
@@ -252,7 +257,14 @@ function replace(
   by: (inner: unknown) => unknown
 ): unknown {
   if (path === undefined) return by(value);
-  return eachField(value, steps(path), (parent, key) => {
+  const all = steps(path);
+  if ("each" in all.at(-1)!) {
+    return eachValue(value, all.slice(0, -1), (array) => {
+      if (!Array.isArray(array)) return;
+      for (const [index, item] of array.entries()) array[index] = by(item);
+    });
+  }
+  return eachField(value, all, (parent, key) => {
     if (Object.hasOwn(parent, key)) parent[key] = by(parent[key]);
   });
 }
