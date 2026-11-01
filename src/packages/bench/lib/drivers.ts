@@ -125,27 +125,43 @@ export function loopDriver(model: ChatModel): Driver {
 }
 
 type CliOptions = {
-  /** The OpenRouter model, such as deepseek/deepseek-v4.1-flash-1017. */
-  model: string;
-  /** The proxy that pins the provider. */
-  proxy: PinProxy;
-  provider: string;
-  apiKey: string;
+  /**
+   * The OpenRouter model the CLI is pinned to, through the proxy that pins
+   * the provider. Absent, the CLI runs on the developer's own login, such
+   * as a subscription, with its default model; its cost is then unknown.
+   */
+  pin?: {
+    /** Such as deepseek/deepseek-v4.1-flash-1017. */
+    model: string;
+    proxy: PinProxy;
+    provider: string;
+    apiKey: string;
+  };
   /** A run that takes longer is stopped; 30 minutes by default. */
   timeoutMs?: number;
 };
 
+// The driver's ID: the CLI, its version, and the model it is pinned to or
+// the login it runs on.
+const cliId = (
+  name: string,
+  version: string | undefined,
+  options: CliOptions
+) =>
+  `${name} ${version} ${options.pin ? `${options.pin.model}@${options.pin.provider}` : "own login"}`;
+
 /**
- * Claude Code, run headless with JSON events, routed through OpenRouter,
- * with a fresh configuration directory so that no login, setting, plugin
- * or hook of the developer's applies. Its only tools are the Surface's MCP
- * servers and Read, all allowed without asking. The instruction line goes
- * to CLAUDE.md.
+ * Claude Code, run headless with JSON events. Pinned, it is routed through
+ * OpenRouter with a fresh configuration directory, so that no login,
+ * setting, plugin or hook of the developer's applies. On the developer's
+ * login, it loads no user settings, and so none of their plugins or hooks.
+ * Its only tools are the Surface's MCP servers and Read, all allowed
+ * without asking. The instruction line goes to CLAUDE.md.
  */
 export async function claudeCodeDriver(options: CliOptions): Promise<Driver> {
   const version = (await output("claude", ["--version"])).split(" ")[0];
   return {
-    id: `claude-code ${version} ${options.model}@${options.provider}`,
+    id: cliId("claude-code", version, options),
     async run({ system, prompt, surface, workdir }) {
       if (surface.instructions !== undefined) {
         await writeFile(
@@ -154,6 +170,7 @@ export async function claudeCodeDriver(options: CliOptions): Promise<Driver> {
         );
       }
       const servers = Object.entries(surface.servers);
+      const { pin } = options;
       const config = await mkdtemp(join(tmpdir(), "pinfold-claude-"));
       try {
         const run = await runCli(
@@ -164,8 +181,9 @@ export async function claudeCodeDriver(options: CliOptions): Promise<Driver> {
             "--output-format",
             "stream-json",
             "--verbose",
-            "--model",
-            options.model,
+            ...(pin
+              ? ["--model", pin.model]
+              : ["--setting-sources", "project"]),
             "--append-system-prompt",
             system,
             "--mcp-config",
@@ -186,23 +204,25 @@ export async function claudeCodeDriver(options: CliOptions): Promise<Driver> {
           {
             cwd: workdir,
             env: {
-              CLAUDE_CONFIG_DIR: config,
-              ANTHROPIC_BASE_URL: `${options.proxy.url}/api`,
-              ANTHROPIC_AUTH_TOKEN: options.apiKey,
-              ANTHROPIC_API_KEY: "",
-              // Background calls go to the same model, not to Anthropic's.
-              ANTHROPIC_DEFAULT_HAIKU_MODEL: options.model,
-              ANTHROPIC_DEFAULT_SONNET_MODEL: options.model,
-              ANTHROPIC_DEFAULT_OPUS_MODEL: options.model,
-              CLAUDE_CODE_SUBAGENT_MODEL: options.model,
               CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+              ...(pin && {
+                CLAUDE_CONFIG_DIR: config,
+                ANTHROPIC_BASE_URL: `${pin.proxy.url}/api`,
+                ANTHROPIC_AUTH_TOKEN: pin.apiKey,
+                ANTHROPIC_API_KEY: "",
+                // Background calls go to the same model, not to Anthropic's.
+                ANTHROPIC_DEFAULT_HAIKU_MODEL: pin.model,
+                ANTHROPIC_DEFAULT_SONNET_MODEL: pin.model,
+                ANTHROPIC_DEFAULT_OPUS_MODEL: pin.model,
+                CLAUDE_CODE_SUBAGENT_MODEL: pin.model,
+              }),
             },
             timeoutMs: options.timeoutMs,
           }
         );
         return settle(
           run,
-          options.proxy.takeCalls(),
+          pin?.proxy.takeCalls(),
           claudeCodeOutcome(run.events)
         );
       } finally {
@@ -213,9 +233,10 @@ export async function claudeCodeDriver(options: CliOptions): Promise<Driver> {
 }
 
 /**
- * Codex CLI, run headless with JSON events, routed through OpenRouter as a
- * custom model provider, with a fresh CODEX_HOME so that no login or
- * setting of the developer's applies. It runs in a read-only sandbox, with
+ * Codex CLI, run headless with JSON events. Pinned, it is routed through
+ * OpenRouter as a custom model provider, with a fresh CODEX_HOME so that no
+ * login or setting of the developer's applies. On the developer's login,
+ * it ignores their config.toml. It runs in a read-only sandbox, with
  * the Surface's MCP tools allowed without asking. The
  * instruction line goes to AGENTS.md; Codex has no option for a system
  * prompt, so the harness's opens the prompt.
@@ -223,7 +244,7 @@ export async function claudeCodeDriver(options: CliOptions): Promise<Driver> {
 export async function codexDriver(options: CliOptions): Promise<Driver> {
   const version = (await output("codex", ["--version"])).split(" ").at(-1);
   return {
-    id: `codex ${version} ${options.model}@${options.provider}`,
+    id: cliId("codex", version, options),
     async run({ system, prompt, surface, workdir }) {
       if (surface.instructions !== undefined) {
         await writeFile(
@@ -231,6 +252,7 @@ export async function codexDriver(options: CliOptions): Promise<Driver> {
           `${surface.instructions}\n`
         );
       }
+      const { pin } = options;
       const home = await mkdtemp(join(tmpdir(), "pinfold-codex-"));
       try {
         const run = await runCli(
@@ -244,12 +266,16 @@ export async function codexDriver(options: CliOptions): Promise<Driver> {
             workdir,
             "--sandbox",
             "read-only",
-            "--model",
-            options.model,
-            "-c",
-            'model_provider="openrouter"',
-            "-c",
-            `model_providers.openrouter={ name = "OpenRouter", base_url = "${options.proxy.url}/api/v1", env_key = "OPENROUTER_API_KEY", wire_api = "responses" }`,
+            ...(pin
+              ? [
+                  "--model",
+                  pin.model,
+                  "-c",
+                  'model_provider="openrouter"',
+                  "-c",
+                  `model_providers.openrouter={ name = "OpenRouter", base_url = "${pin.proxy.url}/api/v1", env_key = "OPENROUTER_API_KEY", wire_api = "responses" }`,
+                ]
+              : ["--ignore-user-config"]),
             "-c",
             'approval_policy="never"',
             // Every MCP tool is allowed without asking, as for Claude Code:
@@ -264,13 +290,75 @@ export async function codexDriver(options: CliOptions): Promise<Driver> {
           ],
           {
             cwd: workdir,
-            env: { CODEX_HOME: home, OPENROUTER_API_KEY: options.apiKey },
+            env: pin
+              ? { CODEX_HOME: home, OPENROUTER_API_KEY: pin.apiKey }
+              : {},
             timeoutMs: options.timeoutMs,
           }
         );
-        return settle(run, options.proxy.takeCalls(), codexOutcome(run.events));
+        return settle(run, pin?.proxy.takeCalls(), codexOutcome(run.events));
       } finally {
         await rm(home, { recursive: true, force: true });
+      }
+    },
+  };
+}
+
+/**
+ * Antigravity CLI (agy), run headless with JSON events on the developer's
+ * own login and default model. agy reads MCP servers only from its global
+ * configuration, so each run adds the Surface's servers there and removes
+ * them after: its runs must go one at a time. Every tool is allowed without
+ * asking, with its terminal sandboxed. The instruction line goes to
+ * AGENTS.md; agy has no option for a system prompt, so the harness's opens
+ * the prompt.
+ */
+export async function antigravityDriver(
+  options: { timeoutMs?: number } = {}
+): Promise<Driver> {
+  const version = await output("agy", ["--version"]);
+  return {
+    id: `antigravity ${version} own login`,
+    async run({ system, prompt, surface, workdir }) {
+      if (surface.instructions !== undefined) {
+        await writeFile(
+          join(workdir, "AGENTS.md"),
+          `${surface.instructions}\n`
+        );
+      }
+      const servers = Object.entries(surface.servers);
+      // A server of the developer's with the same name is never replaced.
+      const listed = (await output("agy", ["mcp", "list"])).split("\n");
+      const taken = servers.filter(([name]) =>
+        listed.some((line) => line.split(/\s+/)[0] === name)
+      );
+      if (taken.length > 0) {
+        throw new Error(
+          `agy already has an MCP server named ${taken.map(([name]) => name).join(", ")}`
+        );
+      }
+      try {
+        for (const [name, url] of servers) {
+          await output("agy", ["mcp", "add", name, url]);
+        }
+        const run = await runCli(
+          "agy",
+          [
+            "--print",
+            `${system}\n\n${prompt}`,
+            "--output-format",
+            "stream-json",
+            "--dangerously-skip-permissions",
+            "--sandbox",
+            "--disable-slash-commands",
+          ],
+          { cwd: workdir, env: {}, timeoutMs: options.timeoutMs }
+        );
+        return settle(run, undefined, antigravityOutcome(run.events));
+      } finally {
+        for (const [name] of servers) {
+          await output("agy", ["mcp", "remove", name]);
+        }
       }
     },
   };
@@ -286,17 +374,19 @@ type CliOutcome = {
 };
 
 // The cost and who served each call come from OpenRouter's answers, read
-// by the proxy; the tokens come from the CLI's events.
+// by the proxy; the tokens come from the CLI's events. A CLI on its own
+// login has no proxy: its cost and calls are not measured, and count 0.
 function settle(
   run: CliRun,
-  calls: ProxiedCall[],
+  proxied: ProxiedCall[] | undefined,
   outcome: CliOutcome
 ): DriverRun {
   const error = outcome.error ?? run.error;
   // No call got through: the model, not the agent, failed.
-  if (calls.length === 0 && error !== undefined) {
+  if (proxied?.length === 0 && error !== undefined) {
     throw new ModelUnavailable(`${error}: ${run.stderr.slice(-300)}`);
   }
+  const calls = proxied ?? [];
   const unpriced = calls.filter((call) => call.cost === undefined).length;
   return {
     answer: outcome.answer,
@@ -392,6 +482,48 @@ export function codexOutcome(events: readonly unknown[]): CliOutcome {
   }
   return { answer, usage, ...(error !== undefined && { error }) };
 }
+
+/**
+ * Antigravity's answer and tokens, from its final `result` event. Its
+ * input tokens are taken to include the cached ones, as Gemini counts them.
+ */
+export function antigravityOutcome(events: readonly unknown[]): CliOutcome {
+  const result = (events as { event?: string; result?: AgyResult }[]).find(
+    (event) => event.event === "result"
+  )?.result;
+  if (result === undefined) {
+    return {
+      answer: undefined,
+      usage: noUsage,
+      error: "Antigravity gave no result",
+    };
+  }
+  const usage = result.usage ?? {};
+  const failed = result.status !== "SUCCESS";
+  return {
+    answer: failed ? undefined : result.response,
+    usage: {
+      promptTokens: usage.input_tokens ?? 0,
+      cachedTokens: usage.cache_read_tokens ?? 0,
+      cacheWriteTokens: 0,
+      completionTokens: usage.output_tokens ?? 0,
+      reasoningTokens: usage.thinking_tokens ?? 0,
+      cost: 0,
+    },
+    ...(failed && { error: `Antigravity: ${result.status}` }),
+  };
+}
+
+type AgyResult = {
+  status: string;
+  response?: string;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    thinking_tokens?: number;
+    cache_read_tokens?: number;
+  };
+};
 
 type CodexEvent =
   | {

@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  antigravityOutcome,
   claudeCodeOutcome,
   codexOutcome,
   loopDriver,
@@ -182,6 +183,40 @@ describe("the CLI drivers", () => {
         reasoningTokens: 4,
         cost: 0,
       },
+    });
+  });
+
+  it("take Antigravity's answer and tokens from its result event", () => {
+    const usage = {
+      input_tokens: 7683,
+      output_tokens: 26,
+      thinking_tokens: 21,
+      cache_read_tokens: 0,
+    };
+    const result = (status: string) => ({
+      event: "result",
+      result: { status, response: '{"ok": true}\n', usage },
+    });
+    const tokens = {
+      promptTokens: 7683,
+      cachedTokens: 0,
+      cacheWriteTokens: 0,
+      completionTokens: 26,
+      reasoningTokens: 21,
+      cost: 0,
+    };
+
+    expect(antigravityOutcome([{ event: "init" }, result("SUCCESS")])).toEqual({
+      answer: '{"ok": true}\n',
+      usage: tokens,
+    });
+    expect(antigravityOutcome([result("ERROR")])).toEqual({
+      answer: undefined,
+      usage: tokens,
+      error: "Antigravity: ERROR",
+    });
+    expect(antigravityOutcome([])).toMatchObject({
+      error: "Antigravity gave no result",
     });
   });
 

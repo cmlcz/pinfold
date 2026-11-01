@@ -42,6 +42,8 @@ export {
 } from "./lib/arms.ts";
 export { openSurface, type AgentArm, type Surface } from "./lib/surface.ts";
 export {
+  antigravityDriver,
+  antigravityOutcome,
   claudeCodeDriver,
   claudeCodeOutcome,
   codexDriver,
