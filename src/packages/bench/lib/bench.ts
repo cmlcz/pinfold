@@ -13,7 +13,7 @@ import {
 import type { Outcome } from "./state.ts";
 import { benchClassification } from "./tasks.ts";
 
-export const serverNames = ["sentry", "linear", "github"] as const;
+const serverNames = ["sentry", "linear", "github"] as const;
 
 /** A Drift Kit server the benchmark starts. */
 export type BenchServer = (typeof serverNames)[number];

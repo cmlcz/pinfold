@@ -242,7 +242,8 @@ describe("Deterministic Repair", () => {
       await core.runWorkflow({ name: "triage_sentry", input })
     );
 
-    expect(next).toMatchObject({ status: "pending", repairs: [renameRepair] });
+    // The run shows the approved plan beside the new one.
+    expect(next).toMatchObject({ status: "changed", repairs: [renameRepair] });
     expect(next.plan.writes).toEqual(first.plan.writes);
     expect(next.plan.id).not.toBe(first.plan.id);
     expect(formatWorkflowRun(next)).toContain(
@@ -482,7 +483,7 @@ describe("Repair through the agent", () => {
     );
     const review = await reviewPlan(ws.dir, next.plan);
 
-    expect(next.status).toBe("pending");
+    expect(next.status).toBe("changed");
     expect(await ws.control("linear").receivedWrites()).toEqual([]);
     expect(review).toContain(
       "An agent, through propose_repair, repaired the Response Adapter of sentry.listIssues, now version 1:"

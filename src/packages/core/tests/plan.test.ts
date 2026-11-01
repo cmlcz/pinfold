@@ -364,15 +364,34 @@ describe("Write Plan identity", () => {
     return result.plan.id;
   };
 
-  it("derives the same plan ID from the same writes, whatever the key order", async () => {
+  it("derives the same plan ID from the same code, input and writes, whatever the key order", async () => {
+    const core = await openTriage();
+    const fromInput = async (input: object) => {
+      const result = await core.explore({
+        code: `export async function main(input: { title: string; description: string }) {
+          await sdk.linear.createIssue(input);
+        }`,
+        input,
+      });
+      if (!result.ok) throw new Error(result.error);
+      return result.plan.id;
+    };
+
+    const a = await fromInput({ title: "T", description: "D" });
+    const b = await fromInput({ description: "D", title: "T" });
+    const c = await fromInput({ title: "T", description: "other" });
+
+    expect(a).toBe(b);
+    expect(c).not.toBe(a);
+  });
+
+  it("derives another plan ID for the same writes from other code (#54)", async () => {
     const core = await openTriage();
 
     const a = await plan(core, '{ title: "T", description: "D" }');
     const b = await plan(core, '{ description: "D", title: "T" }');
-    const c = await plan(core, '{ title: "T", description: "other" }');
 
-    expect(a).toBe(b);
-    expect(c).not.toBe(a);
+    expect(a).not.toBe(b);
   });
 
   it("tells a Placeholder apart from data that looks like one", async () => {
