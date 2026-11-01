@@ -26,6 +26,8 @@ pinfold is a local MCP server for coding agents. It sits between your agent and 
 - Node.js 22.18 or newer
 - npm
 
+To work on pinfold itself, use Node.js 22.22.1 or newer: the commit hooks need it.
+
 ## Install
 
 pinfold is published on npm as `@cmlcz/pinfold`:
@@ -137,6 +139,18 @@ The agent gets six tools, plus one for each workflow you opt in (see [Save a wor
 - **`run_workflow`** runs a saved workflow with an input.
 - **`list_workflows`** lists the saved workflows.
 - **`propose_repair`** shows drift that pinfold could not repair by itself and takes the agent's proposed response adapter. The adapter still waits for your approval.
+
+### Tested clients
+
+Each CLI ran the six benchmark tasks once through the gateway, on a subscription login with its default model ([results](docs/results/compat-2026-11-01/README.md)):
+
+| Client          | Version | Model                     | Tasks passed |
+| :-------------- | :------ | :------------------------ | -----------: |
+| Claude Code     | 2.1.316 | `claude-opus-5-5`         |          6/6 |
+| Codex CLI       | 0.153.4 | its default               |          6/6 |
+| Antigravity CLI | 1.4.12  | Gemini 3.8 Flash (Medium) |          5/6 |
+
+Antigravity failed one task because it sent two test writes, which a developer reading the plan would decline. The approval dialog was not part of these runs, since they ran headless.
 
 ## Mark read tools
 
