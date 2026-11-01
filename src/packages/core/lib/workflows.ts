@@ -43,8 +43,6 @@ export type Exploration = {
   /** Every Tool the run called, as `server.tool`, Read and Write alike. */
   tools: string[];
   reads: FieldReads;
-  /** The digest of the Response Adapter of each of its Tools that has one. */
-  adapters: Record<string, string>;
 };
 
 /** The checks save_workflow makes, in order. */
@@ -61,8 +59,6 @@ const recordSchema = z.object({
   tools: z.array(z.string()),
   /** The Baseline field paths the code read, by Tool. */
   contract: z.record(z.string(), z.array(z.string())),
-  /** The Response Adapters the confirmed run went through, by digest. */
-  adapters: z.record(z.string(), z.string()).default({}),
   savedFrom: z.string(),
   savedAt: z.string(),
 });
@@ -150,7 +146,6 @@ export async function saveWorkflow(
     input: mainInput.schema,
     tools: exploration.tools,
     contract: contractOf(exploration.reads),
-    adapters: exploration.adapters,
     savedFrom: exploration.run,
     savedAt: new Date().toISOString(),
   };
@@ -322,8 +317,6 @@ export type LoadedWorkflow = {
   tools: string[];
   /** The Baseline field paths the code reads, by Tool. */
   contract: Record<string, string[]>;
-  /** The Response Adapters the run it was saved from went through. */
-  adapters: Record<string, string>;
   /** What its MCP tool says it does, if the developer wrote it. */
   description?: string;
 };
@@ -395,7 +388,6 @@ export async function loadWorkflow(
       saved: `${record.savedFrom}@${record.savedAt}`,
       tools: record.tools,
       contract: record.contract,
-      adapters: record.adapters,
       ...(parsedSettings.data.description !== undefined && {
         description: parsedSettings.data.description,
       }),

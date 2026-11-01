@@ -793,6 +793,66 @@ describe("Approval of changed Adapters without writes", () => {
     });
   });
 
+  it("never takes the Adapters a Workflow's record names as approved", async () => {
+    const core = await openTriage();
+    const explored = await core.explore({
+      code: `export async function main(input: { project: string; deep: boolean }) {
+        let frequent = 0;
+        if (input.deep) {
+          const { issues } = await sdk.sentry.listIssues({ project: input.project });
+          frequent = issues.filter((issue) => issue.count >= 50).length;
+        }
+        const ticket = await sdk.linear.createIssue({ title: "frequent " + frequent, description: "" });
+        return ticket.identifier;
+      }`,
+      input: { ...input, deep: false },
+    });
+    if (!explored.ok) throw new Error(explored.error);
+    await core.saveWorkflow({
+      run: explored.exploration,
+      name: "branchy",
+      confirmed: true,
+    });
+    const shallow = { name: "branchy", input: { ...input, deep: false } };
+    const first = succeeded(await core.runWorkflow(shallow));
+    await openPlans(ws.dir).approve(first.plan.id);
+    succeeded(await core.runWorkflow(shallow));
+    // An agent writes an Adapter for the Tool only the other branch calls,
+    // and names its digest in the Workflow's record.
+    const adapters = join(ws.dir, ".workflows", "adapters");
+    await mkdir(adapters, { recursive: true });
+    await writeFile(
+      join(adapters, "sentry.listIssues.json"),
+      JSON.stringify({
+        server: "sentry",
+        tool: "listIssues",
+        version: 1,
+        ops: [{ op: "default", path: "issues[].assignee", value: null }],
+      })
+    );
+    const read = await core.explore({
+      code: `export async function main() {
+        return (await sdk.sentry.listIssues({ project: "web" })).issues.length;
+      }`,
+    });
+    if (!read.ok) throw new Error(read.error);
+    const recordFile = join(ws.dir, ".workflows", "branchy.json");
+    const record = JSON.parse(await readFile(recordFile, "utf8"));
+    record.adapters = read.plan.adapters;
+    await writeFile(recordFile, JSON.stringify(record));
+    const sent = (await ws.control("linear").receivedWrites()).length;
+
+    const deep = succeeded(
+      await core.runWorkflow({
+        name: "branchy",
+        input: { ...input, deep: true },
+      })
+    );
+
+    expect(deep.status).toBe("pending");
+    expect(await ws.control("linear").receivedWrites()).toHaveLength(sent);
+  });
+
   it("asks for Approval of an Adapter of a Tool only a branch the save did not take calls", async () => {
     const core = await openTriage();
     const explored = await core.explore({
