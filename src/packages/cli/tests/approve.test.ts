@@ -215,7 +215,7 @@ describe("pinfold resume", () => {
 });
 
 describe("pinfold baseline optional", () => {
-  it("names a Tool that has no Baseline", async () => {
+  it("asks for confirmation in an interactive terminal only", async () => {
     const { code, stderr } = await pinfold(
       "baseline",
       "optional",
@@ -224,7 +224,25 @@ describe("pinfold baseline optional", () => {
     );
 
     expect(code).toBe(1);
-    expect(stderr).toBe("linear.createIssue has no Baseline\n");
+    expect(stderr).toMatch(
+      /^pinfold baseline optional asks for confirmation in an interactive terminal/
+    );
+  });
+
+  it("names a Tool that has no Baseline", async () => {
+    const { code, output } = await pinfoldInTerminal([
+      "baseline",
+      "optional",
+      "linear.createIssue",
+      "url",
+      "--config",
+      config,
+    ]);
+
+    expect(code).toBe(1);
+    expect(output).toContain(
+      "Make url of linear.createIssue optional in its Baseline? Workflows that read it then run, and may send writes, when it is missing or null. Type yes to confirm: yes\nlinear.createIssue has no Baseline\n"
+    );
   });
 });
 
