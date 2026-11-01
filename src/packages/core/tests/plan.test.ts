@@ -222,6 +222,10 @@ describe("Placeholder rules", () => {
     ["a comparison", 'return ticket.identifier === "ENG-1";'],
     ["a typeof", "return typeof ticket.id;"],
     ["a switch", "switch (ticket.id) { default: return 1; }"],
+    [
+      "a case",
+      'switch ("ENG-1") { case ticket.identifier: return 1; } return 2;',
+    ],
   ])(
     "refuses code where a Placeholder decides %s, before it runs",
     async (_, use) => {
