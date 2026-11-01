@@ -1,6 +1,6 @@
 {
-  "name": "pinfold",
-  "version": "0.0.0",
+  "name": "@cmlcz/pinfold",
+  "version": "0.1.0",
   "description": "A local MCP Gateway that turns an agent's one-off code into a Workflow you own and can re-run without an LLM.",
   "license": "MIT",
   "type": "module",
@@ -44,5 +44,16 @@
     "prettier": "^3.9.10",
     "typescript-eslint": "^8.71.2",
     "vitest": "^5.0.5"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cmlcz/pinfold.git"
+  },
+  "homepage": "https://github.com/cmlcz/pinfold#readme",
+  "bugs": {
+    "url": "https://github.com/cmlcz/pinfold/issues"
   }
 }
