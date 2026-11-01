@@ -485,7 +485,7 @@ export function codexOutcome(events: readonly unknown[]): CliOutcome {
 
 /**
  * Antigravity's answer and tokens, from its final `result` event. Its
- * input tokens are taken to include the cached ones, as Gemini counts them.
+ * input tokens leave out the cached ones, which are counted here.
  */
 export function antigravityOutcome(events: readonly unknown[]): CliOutcome {
   const result = (events as { event?: string; result?: AgyResult }[]).find(
@@ -499,12 +499,13 @@ export function antigravityOutcome(events: readonly unknown[]): CliOutcome {
     };
   }
   const usage = result.usage ?? {};
+  const cached = usage.cache_read_tokens ?? 0;
   const failed = result.status !== "SUCCESS";
   return {
     answer: failed ? undefined : result.response,
     usage: {
-      promptTokens: usage.input_tokens ?? 0,
-      cachedTokens: usage.cache_read_tokens ?? 0,
+      promptTokens: (usage.input_tokens ?? 0) + cached,
+      cachedTokens: cached,
       cacheWriteTokens: 0,
       completionTokens: usage.output_tokens ?? 0,
       reasoningTokens: usage.thinking_tokens ?? 0,

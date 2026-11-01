@@ -186,20 +186,20 @@ describe("the CLI drivers", () => {
     });
   });
 
-  it("take Antigravity's answer and tokens from its result event", () => {
+  it("take Antigravity's answer and tokens from its result event, its cached input counted in", () => {
     const usage = {
       input_tokens: 7683,
       output_tokens: 26,
       thinking_tokens: 21,
-      cache_read_tokens: 0,
+      cache_read_tokens: 1000,
     };
     const result = (status: string) => ({
       event: "result",
       result: { status, response: '{"ok": true}\n', usage },
     });
     const tokens = {
-      promptTokens: 7683,
-      cachedTokens: 0,
+      promptTokens: 8683,
+      cachedTokens: 1000,
       cacheWriteTokens: 0,
       completionTokens: 26,
       reasoningTokens: 21,
