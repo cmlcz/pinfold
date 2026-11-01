@@ -1,0 +1,503 @@
+{
+  "provenance": {
+    "Measured on": "2026-10-31T18:30:54.330Z",
+    "Commit": "6695176",
+    "pinfold": "0.0.0",
+    "Node": "v26.12.0",
+    "Source": "github/github-mcp-server's convertToMinimal* functions, pkg/github/minimal_types.go"
+  },
+  "results": [
+    {
+      "pr": 2022,
+      "scenario": "minimal-issue",
+      "call": {
+        "tool": "issue_read",
+        "args": [
+          {
+            "number": 1
+          },
+          {
+            "number": 2
+          },
+          {
+            "number": 3
+          },
+          {
+            "number": 4
+          }
+        ]
+      },
+      "read": "user.login",
+      "change": "kept",
+      "outcome": "unaffected",
+      "detail": ""
+    },
+    {
+      "pr": 2022,
+      "scenario": "minimal-issue",
+      "call": {
+        "tool": "issue_read",
+        "args": [
+          {
+            "number": 1
+          },
+          {
+            "number": 2
+          },
+          {
+            "number": 3
+          },
+          {
+            "number": 4
+          }
+        ]
+      },
+      "read": "comments",
+      "change": "kept",
+      "outcome": "unaffected",
+      "detail": ""
+    },
+    {
+      "pr": 2022,
+      "scenario": "minimal-issue",
+      "call": {
+        "tool": "issue_read",
+        "args": [
+          {
+            "number": 1
+          },
+          {
+            "number": 2
+          },
+          {
+            "number": 3
+          },
+          {
+            "number": 4
+          }
+        ]
+      },
+      "read": "user.html_url",
+      "change": "renamed user.profile_url",
+      "mappableBy": "rename",
+      "outcome": "repaired",
+      "detail": "+ {\"op\":\"rename\",\"from\":\"user.profile_url\",\"to\":\"user.html_url\"}"
+    },
+    {
+      "pr": 2022,
+      "scenario": "minimal-issue",
+      "call": {
+        "tool": "issue_read",
+        "args": [
+          {
+            "number": 1
+          },
+          {
+            "number": 2
+          },
+          {
+            "number": 3
+          },
+          {
+            "number": 4
+          }
+        ]
+      },
+      "read": "milestone.title",
+      "change": "milestone became its title",
+      "mappableBy": "wrap",
+      "outcome": "repaired",
+      "detail": "+ {\"op\":\"wrap\",\"at\":\"milestone\",\"field\":\"title\"}"
+    },
+    {
+      "pr": 2022,
+      "scenario": "minimal-issue",
+      "call": {
+        "tool": "issue_read",
+        "args": [
+          {
+            "number": 1
+          },
+          {
+            "number": 2
+          },
+          {
+            "number": 3
+          },
+          {
+            "number": 4
+          }
+        ]
+      },
+      "read": "closed_by.login",
+      "change": "closed_by became its login",
+      "mappableBy": "wrap",
+      "outcome": "repaired",
+      "detail": "+ {\"op\":\"wrap\",\"at\":\"closed_by\",\"field\":\"login\"}"
+    },
+    {
+      "pr": 2022,
+      "scenario": "minimal-issue",
+      "call": {
+        "tool": "issue_read",
+        "args": [
+          {
+            "number": 1
+          },
+          {
+            "number": 2
+          },
+          {
+            "number": 3
+          },
+          {
+            "number": 4
+          }
+        ]
+      },
+      "read": "type.name",
+      "change": "type became issue_type, its name",
+      "mappableBy": "rename",
+      "outcome": "repaired",
+      "detail": "+ {\"op\":\"rename\",\"from\":\"issue_type\",\"to\":\"type.name\"}"
+    },
+    {
+      "pr": 2022,
+      "scenario": "minimal-issue",
+      "call": {
+        "tool": "issue_read",
+        "args": [
+          {
+            "number": 1
+          },
+          {
+            "number": 2
+          },
+          {
+            "number": 3
+          },
+          {
+            "number": 4
+          }
+        ]
+      },
+      "read": "labels[].name",
+      "change": "each label became its name",
+      "mappableBy": "wrap",
+      "outcome": "repaired",
+      "detail": "+ {\"op\":\"wrap\",\"at\":\"labels[]\",\"field\":\"name\"}"
+    },
+    {
+      "pr": 2022,
+      "scenario": "minimal-issue",
+      "call": {
+        "tool": "issue_read",
+        "args": [
+          {
+            "number": 1
+          },
+          {
+            "number": 2
+          },
+          {
+            "number": 3
+          },
+          {
+            "number": 4
+          }
+        ]
+      },
+      "read": "assignees[].login",
+      "change": "each assignee became its login",
+      "mappableBy": "wrap",
+      "outcome": "repaired",
+      "detail": "+ {\"op\":\"wrap\",\"at\":\"assignees[]\",\"field\":\"login\"}"
+    },
+    {
+      "pr": 2022,
+      "scenario": "minimal-issue",
+      "call": {
+        "tool": "issue_read",
+        "args": [
+          {
+            "number": 1
+          },
+          {
+            "number": 2
+          },
+          {
+            "number": 3
+          },
+          {
+            "number": 4
+          }
+        ]
+      },
+      "read": "id",
+      "change": "dropped",
+      "outcome": "unrepaired",
+      "detail": "no op of the closed set maps the live responses back to id"
+    },
+    {
+      "pr": 2017,
+      "scenario": "minimal-pull-request",
+      "call": {
+        "tool": "pull_request_read",
+        "args": [
+          {
+            "number": 10
+          },
+          {
+            "number": 11
+          },
+          {
+            "number": 12
+          },
+          {
+            "number": 13
+          }
+        ]
+      },
+      "read": "head.repo.full_name",
+      "change": "kept",
+      "outcome": "unaffected",
+      "detail": ""
+    },
+    {
+      "pr": 2017,
+      "scenario": "minimal-pull-request",
+      "call": {
+        "tool": "pull_request_read",
+        "args": [
+          {
+            "number": 10
+          },
+          {
+            "number": 11
+          },
+          {
+            "number": 12
+          },
+          {
+            "number": 13
+          }
+        ]
+      },
+      "read": "user.html_url",
+      "change": "renamed user.profile_url",
+      "mappableBy": "rename",
+      "outcome": "repaired",
+      "detail": "+ {\"op\":\"rename\",\"from\":\"user.profile_url\",\"to\":\"user.html_url\"}"
+    },
+    {
+      "pr": 2017,
+      "scenario": "minimal-pull-request",
+      "call": {
+        "tool": "pull_request_read",
+        "args": [
+          {
+            "number": 10
+          },
+          {
+            "number": 11
+          },
+          {
+            "number": 12
+          },
+          {
+            "number": 13
+          }
+        ]
+      },
+      "read": "merged_by.login",
+      "change": "merged_by became its login",
+      "mappableBy": "wrap",
+      "outcome": "repaired",
+      "detail": "+ {\"op\":\"wrap\",\"at\":\"merged_by\",\"field\":\"login\"}"
+    },
+    {
+      "pr": 2017,
+      "scenario": "minimal-pull-request",
+      "call": {
+        "tool": "pull_request_read",
+        "args": [
+          {
+            "number": 10
+          },
+          {
+            "number": 11
+          },
+          {
+            "number": 12
+          },
+          {
+            "number": 13
+          }
+        ]
+      },
+      "read": "milestone.title",
+      "change": "milestone became its title",
+      "mappableBy": "wrap",
+      "outcome": "repaired",
+      "detail": "+ {\"op\":\"wrap\",\"at\":\"milestone\",\"field\":\"title\"}"
+    },
+    {
+      "pr": 2017,
+      "scenario": "minimal-pull-request",
+      "call": {
+        "tool": "pull_request_read",
+        "args": [
+          {
+            "number": 10
+          },
+          {
+            "number": 11
+          },
+          {
+            "number": 12
+          },
+          {
+            "number": 13
+          }
+        ]
+      },
+      "read": "requested_reviewers[].login",
+      "change": "each reviewer became its login",
+      "mappableBy": "wrap",
+      "outcome": "repaired",
+      "detail": "+ {\"op\":\"wrap\",\"at\":\"requested_reviewers[]\",\"field\":\"login\"}"
+    },
+    {
+      "pr": 2017,
+      "scenario": "minimal-pull-request",
+      "call": {
+        "tool": "pull_request_read",
+        "args": [
+          {
+            "number": 10
+          },
+          {
+            "number": 11
+          },
+          {
+            "number": 12
+          },
+          {
+            "number": 13
+          }
+        ]
+      },
+      "read": "head.label",
+      "change": "dropped",
+      "outcome": "unrepaired",
+      "detail": "no op of the closed set maps the live responses back to head.label"
+    },
+    {
+      "pr": 2091,
+      "scenario": "minimal-release",
+      "call": {
+        "tool": "list_releases",
+        "args": [{}]
+      },
+      "read": "releases[].tag_name",
+      "change": "kept",
+      "outcome": "unaffected",
+      "detail": ""
+    },
+    {
+      "pr": 2091,
+      "scenario": "minimal-release",
+      "call": {
+        "tool": "list_releases",
+        "args": [{}]
+      },
+      "read": "releases[].author.html_url",
+      "change": "renamed author.profile_url",
+      "mappableBy": "rename",
+      "outcome": "repaired",
+      "detail": "+ {\"op\":\"rename\",\"from\":\"releases[].author.profile_url\",\"to\":\"releases[].author.html_url\"}"
+    },
+    {
+      "pr": 2091,
+      "scenario": "minimal-release",
+      "call": {
+        "tool": "list_releases",
+        "args": [{}]
+      },
+      "read": "releases[].created_at",
+      "change": "dropped",
+      "outcome": "unrepaired",
+      "detail": "no op of the closed set maps the live responses back to releases[].created_at"
+    },
+    {
+      "pr": 2091,
+      "scenario": "minimal-release",
+      "call": {
+        "tool": "list_releases",
+        "args": [{}]
+      },
+      "read": "releases[].assets[].download_count",
+      "change": "dropped with assets",
+      "outcome": "unrepaired",
+      "detail": "no op of the closed set maps the live responses back to releases[].assets"
+    },
+    {
+      "pr": 2088,
+      "scenario": "minimal-tag",
+      "call": {
+        "tool": "list_tags",
+        "args": [{}]
+      },
+      "read": "tags[].commit.sha",
+      "change": "moved up to sha",
+      "mappableBy": "rename",
+      "outcome": "repaired",
+      "detail": "+ {\"op\":\"rename\",\"from\":\"tags[].sha\",\"to\":\"tags[].commit.sha\"}"
+    },
+    {
+      "pr": 2088,
+      "scenario": "minimal-tag",
+      "call": {
+        "tool": "list_tags",
+        "args": [{}]
+      },
+      "read": "tags[].zipball_url",
+      "change": "dropped",
+      "outcome": "unrepaired",
+      "detail": "{\"op\":\"rename\",\"from\":\"tags[].sha\",\"to\":\"tags[].zipball_url\"} fits tags[].zipball_url, but its values agree too little with the Fixtures"
+    },
+    {
+      "pr": 2476,
+      "scenario": "minimal-code-search",
+      "call": {
+        "tool": "search_code",
+        "args": [
+          {
+            "query": "fetch"
+          }
+        ]
+      },
+      "read": "items[].repository.full_name",
+      "change": "repository became its full_name",
+      "mappableBy": "wrap",
+      "outcome": "repaired",
+      "detail": "+ {\"op\":\"wrap\",\"at\":\"items[].repository\",\"field\":\"full_name\"}"
+    },
+    {
+      "pr": 2476,
+      "scenario": "minimal-code-search",
+      "call": {
+        "tool": "search_code",
+        "args": [
+          {
+            "query": "fetch"
+          }
+        ]
+      },
+      "read": "items[].score",
+      "change": "dropped",
+      "outcome": "unrepaired",
+      "detail": "no op of the closed set maps the live responses back to items[].score"
+    }
+  ]
+}

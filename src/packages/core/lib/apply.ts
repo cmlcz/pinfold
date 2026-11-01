@@ -59,9 +59,14 @@ export async function planOutcome(
       break;
     default: {
       // New, or applied or declined before: the developer approves this run
-      // afresh. A decline answered one request, not every run to come.
-      const status = run.needsApproval ? "pending" : "approved";
-      const added = await plans.add(plan, run.key, run.clock, status);
+      // afresh. A decline answered one request, not every run to come, but
+      // a plan declined last waits for the developer again, even in a run
+      // that needs no Approval otherwise.
+      const status =
+        run.needsApproval || record?.status === "declined"
+          ? "pending"
+          : "approved";
+      const added = await plans.add(plan, run.key, run.clock, status, record);
       if (status === "approved") {
         if (added === undefined) {
           return {
