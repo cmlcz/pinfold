@@ -1,6 +1,7 @@
 // What drives an agent Arm: the minimal agent loop, or a real CLI run
 // headless. Each drives the same Surface and reports the same Usage.
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -171,6 +172,7 @@ export async function claudeCodeDriver(options: CliOptions): Promise<Driver> {
       }
       const servers = Object.entries(surface.servers);
       const { pin } = options;
+      const proxyRun = randomUUID();
       const args = [
         "-p",
         prompt,
@@ -203,7 +205,7 @@ export async function claudeCodeDriver(options: CliOptions): Promise<Driver> {
         });
         return settle(
           run,
-          pin?.proxy.takeCalls(),
+          pin?.proxy.takeCalls(proxyRun),
           claudeCodeOutcome(run.events)
         );
       };
@@ -211,7 +213,7 @@ export async function claudeCodeDriver(options: CliOptions): Promise<Driver> {
       return withTempDir("pinfold-claude-", (config) =>
         start({
           CLAUDE_CONFIG_DIR: config,
-          ANTHROPIC_BASE_URL: `${pin.proxy.url}/api`,
+          ANTHROPIC_BASE_URL: `${pin.proxy.url(proxyRun)}/api`,
           ANTHROPIC_AUTH_TOKEN: pin.apiKey,
           ANTHROPIC_API_KEY: "",
           // Background calls go to the same model, not to Anthropic's.
@@ -246,6 +248,7 @@ export async function codexDriver(options: CliOptions): Promise<Driver> {
         );
       }
       const { pin } = options;
+      const proxyRun = randomUUID();
       const args = [
         "exec",
         "--json",
@@ -262,7 +265,7 @@ export async function codexDriver(options: CliOptions): Promise<Driver> {
               "-c",
               'model_provider="openrouter"',
               "-c",
-              `model_providers.openrouter={ name = "OpenRouter", base_url = "${pin.proxy.url}/api/v1", env_key = "OPENROUTER_API_KEY", wire_api = "responses" }`,
+              `model_providers.openrouter={ name = "OpenRouter", base_url = "${pin.proxy.url(proxyRun)}/api/v1", env_key = "OPENROUTER_API_KEY", wire_api = "responses" }`,
             ]
           : ["--ignore-user-config"]),
         "-c",
@@ -283,7 +286,11 @@ export async function codexDriver(options: CliOptions): Promise<Driver> {
           env,
           timeoutMs: options.timeoutMs,
         });
-        return settle(run, pin?.proxy.takeCalls(), codexOutcome(run.events));
+        return settle(
+          run,
+          pin?.proxy.takeCalls(proxyRun),
+          codexOutcome(run.events)
+        );
       };
       if (pin === undefined) return start({});
       return withTempDir("pinfold-codex-", (home) =>

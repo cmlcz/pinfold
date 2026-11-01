@@ -7,10 +7,14 @@ import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 
 export type PinProxy = {
-  /** Stands in for https://openrouter.ai: append /api or /api/v1. */
-  url: string;
-  /** The model calls answered since the last take. */
-  takeCalls(): ProxiedCall[];
+  /**
+   * Stands in for https://openrouter.ai for one run: append /api or
+   * /api/v1. Each run has its own, so that runs at the same time do not
+   * take each other's calls.
+   */
+  url(run: string): string;
+  /** The run's model calls answered since its last take. */
+  takeCalls(run: string): ProxiedCall[];
   close(): Promise<void>;
 };
 
@@ -32,9 +36,11 @@ export async function servePinProxy({
   /** Gets a line per model call answered, to show a run is alive. */
   log?: (line: string) => void;
 }): Promise<PinProxy> {
-  let calls: ProxiedCall[] = [];
+  // The calls of each run, by the first segment of the path.
+  const calls = new Map<string, ProxiedCall[]>();
   const http = createServer(async (req, res) => {
     try {
+      const [, run = "", ...path] = (req.url ?? "/").split("/");
       let body = await readBody(req);
       const started = Date.now();
       if (req.method === "POST" && isJson(req)) {
@@ -58,7 +64,7 @@ export async function servePinProxy({
         }
         for (const item of [value ?? []].flat()) headers.append(key, item);
       }
-      const response = await fetch(new URL(req.url ?? "/", upstream), {
+      const response = await fetch(new URL(`/${path.join("/")}`, upstream), {
         method: req.method ?? "GET",
         headers,
         ...(body.length > 0 && { body }),
@@ -83,9 +89,11 @@ export async function servePinProxy({
       // first asks for deferred tool loading, then falls back.
       if (response.ok && response.headers.has("x-generation-id")) {
         const call = readCall(text);
-        calls.push(call);
+        const ofRun = calls.get(run) ?? [];
+        ofRun.push(call);
+        calls.set(run, ofRun);
         log(
-          `  model call ${calls.length}: ${Date.now() - started} ms, $${(call.cost ?? 0).toFixed(5)}`
+          `  model call ${ofRun.length}: ${Date.now() - started} ms, $${(call.cost ?? 0).toFixed(5)}`
         );
       }
     } catch (error) {
@@ -97,10 +105,10 @@ export async function servePinProxy({
   await once(http, "listening");
   const { port } = http.address() as AddressInfo;
   return {
-    url: `http://127.0.0.1:${port}`,
-    takeCalls() {
-      const taken = calls;
-      calls = [];
+    url: (run) => `http://127.0.0.1:${port}/${run}`,
+    takeCalls(run) {
+      const taken = calls.get(run) ?? [];
+      calls.delete(run);
       return taken;
     },
     async close() {
