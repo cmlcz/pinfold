@@ -28,6 +28,16 @@ pinfold is a local MCP server for coding agents. It sits between your agent and 
 
 ## Install
 
+pinfold is published on npm as `@cmlcz/pinfold`:
+
+```sh
+npm install -g @cmlcz/pinfold   # puts pinfold and pinfold-gateway on your PATH
+```
+
+To run one command without installing, use `npx -p @cmlcz/pinfold pinfold <command>`.
+
+To work on pinfold itself, install it from source:
+
 ```sh
 git clone https://github.com/cmlcz/pinfold.git
 cd pinfold
@@ -35,7 +45,7 @@ npm ci     # also builds dist/
 npm link   # optional: puts pinfold and pinfold-gateway on your PATH
 ```
 
-With `npm link`, `pinfold <command>` stands for `node src/packages/cli/bin.ts <command>` below, and `pinfold-gateway` for `node src/packages/gateway/bin.ts`. pinfold is not on npm yet. The package builds to JavaScript in `dist/`, since Node does not run TypeScript from `node_modules`, and CI runs it through `npx` from the packed tarball (`npm pack`) on a fresh runner. `examples/smoke/` holds a small project with a saved workflow, which CI runs that way and from a fresh clone.
+The commands below run the source, as `node src/packages/cli/bin.ts <command>`. With the package installed, write `pinfold <command>` instead, and `pinfold-gateway` for `node src/packages/gateway/bin.ts`. The package runs JavaScript built into `dist/`, since Node does not run TypeScript from `node_modules`. CI packs the package (`npm pack`) and runs it through `npx` on a fresh runner. `examples/smoke/` holds a small project with a saved workflow, which CI runs that way and from a fresh clone.
 
 ## A short demo: drift, repair, approve
 
@@ -116,6 +126,8 @@ Start pinfold as an MCP server over stdio. Add this command to your agent's MCP 
 ```sh
 node src/packages/gateway/bin.ts --config pinfold.json
 ```
+
+With the package installed, the command is `pinfold-gateway --config pinfold.json`.
 
 The agent gets six tools, plus one for each workflow you opt in (see [Save a workflow](#save-a-workflow)):
 
