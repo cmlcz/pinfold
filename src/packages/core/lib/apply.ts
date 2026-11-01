@@ -173,6 +173,16 @@ async function sendRest(
       `${(error as Error).message}\nNothing was sent. Once it is fixed, \`pinfold resume ${record.record}\` sends the writes not sent.`
     );
   });
+  // The developer approved the plan with the Adapters it names, so no
+  // result goes through another, as one a Repair wrote since then.
+  const changed = [...new Set(record.writes.map(({ tool }) => tool))].filter(
+    (tool) => adapters.get(tool)?.digest !== record.adapters[tool]
+  );
+  if (changed.length > 0) {
+    throw new Error(
+      `the Response Adapter of ${changed.join(", ")} changed since Write Plan ${record.id} was approved, so nothing was sent. \`pinfold decline ${record.id}\` drops the plan; a later run builds it through the Adapter as it is now and asks for Approval.`
+    );
+  }
   const run = project.journal.run(record.record);
   const before = run.sent().length;
   let results: unknown[];
@@ -256,13 +266,13 @@ function busy(plan: WritePlan, record: PlanRecord): Failed {
 }
 
 /** An Apply stopped at a write that failed; the report says what was sent. */
-export class ApplyStopped extends Error {}
+class ApplyStopped extends Error {}
 
 /**
  * Sends the writes the journal has not recorded as sent and returns the
  * results of all writes. Stops at the first write that fails.
  */
-export async function sendWrites(
+async function sendWrites(
   writes: PlannedWrite[],
   journal: RunJournal,
   send: (write: PlannedWrite, args: unknown) => Promise<unknown>
@@ -313,10 +323,7 @@ export async function sendWrites(
 }
 
 /** A copy of a value with each Placeholder replaced by the real result. */
-export function resolvePlaceholders(
-  value: unknown,
-  results: unknown[]
-): unknown {
+function resolvePlaceholders(value: unknown, results: unknown[]): unknown {
   if (value instanceof Placeholder) {
     let resolved: unknown = results[value.write - 1];
     for (const step of value.path) {

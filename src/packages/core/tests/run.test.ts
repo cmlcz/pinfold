@@ -109,13 +109,43 @@ describe("run_workflow", () => {
     );
     await openPlans(ws.dir).approve(first.plan.id);
     succeeded(await core.runWorkflow({ name: "triage_sentry", input }));
+    // Only the Exploration Run's plan, which is its own.
+    const pending = await openPlans(ws.dir).pending();
 
     const again = succeeded(
       await core.runWorkflow({ name: "triage_sentry", input })
     );
 
     expect(again.status).toBe("applied");
-    expect(await openPlans(ws.dir).pending()).toEqual([]);
+    expect(await openPlans(ws.dir).pending()).toEqual(pending);
+  });
+
+  it("asks again for a declined plan, even once the Workflow runs unattended", async () => {
+    const core = await openTriage();
+    await saveTriage(core);
+    const plans = openPlans(ws.dir);
+    const fewer = {
+      name: "triage_sentry",
+      input: { ...input, minEvents: 100 },
+    };
+    const declined = succeeded(
+      await core.runWorkflow({ name: "triage_sentry", input })
+    );
+    await plans.decline(declined.plan.id);
+    await plans.approve(succeeded(await core.runWorkflow(fewer)).plan.id);
+    expect(succeeded(await core.runWorkflow(fewer)).status).toBe("applied");
+    const sent = await ws.control("linear").receivedWrites();
+
+    const again = succeeded(
+      await core.runWorkflow({ name: "triage_sentry", input })
+    );
+
+    expect(again).toMatchObject({
+      status: "pending",
+      declined: true,
+      plan: { id: declined.plan.id },
+    });
+    expect(await ws.control("linear").receivedWrites()).toEqual(sent);
   });
 
   it("asks again for a declined plan, even once the Workflow runs unattended", async () => {

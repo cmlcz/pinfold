@@ -140,7 +140,7 @@ async function runOnce(
   const { plan, reason, changedAdapters } = approvalFor(
     workflow,
     await runHistory(project.root),
-    { source, tools, adapters: digests },
+    { key, source, tools, adapters: digests },
     writes
   );
   const outcome = await planOutcome(project, plan, result.value, {
@@ -215,10 +215,15 @@ function approvalFor(
   workflow: LoadedWorkflow,
   history: RunEntry[],
   /**
-   * The code that ran, the Tools it used, and the digests of the Adapters
-   * they went through.
+   * The run's key, the code that ran, the Tools it used, and the digests
+   * of the Adapters they went through.
    */
-  ran: { source: string; tools: string[]; adapters: Record<string, string> },
+  ran: {
+    key: string;
+    source: string;
+    tools: string[];
+    adapters: Record<string, string>;
+  },
   writes: PlannedWrite[]
 ): { plan: WritePlan; reason?: string; changedAdapters: string[] } {
   const { name } = workflow;
@@ -250,7 +255,7 @@ function approvalFor(
   const changedAdapters = ran.tools.filter(
     (tool) => seen(tool) !== ran.adapters[tool]
   );
-  const plan = writePlan(writes, ran.adapters);
+  const plan = writePlan(ran.key, writes, ran.adapters);
   const needs = (reason: string) => ({ plan, reason, changedAdapters });
   if (plan.writes.length > 0 && appliedWrites.length === 0) {
     return needs(`Workflow ${name} has never been applied`);

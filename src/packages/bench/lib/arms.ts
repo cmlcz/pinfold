@@ -39,7 +39,7 @@ export type RunRecord = {
   error?: string;
 };
 
-export const agentSystemPrompt =
+const agentSystemPrompt =
   "You are a coding agent. Do the developer's task with the tools you have; do not ask the developer anything. When you are done, reply with the task's result as JSON and nothing else.";
 
 /**
