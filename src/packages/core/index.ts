@@ -225,7 +225,6 @@ export async function openCore(
       calls,
       tools,
       reads: result.reads,
-      adapters: plan.adapters,
     });
     return { ...outcome, exploration: run };
   }

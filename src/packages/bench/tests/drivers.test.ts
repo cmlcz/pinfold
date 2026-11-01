@@ -317,7 +317,7 @@ describe("the CLI drivers", () => {
     });
     const path = process.env.PATH;
     process.env.PATH = `${dir}:${path}`;
-    const proxy = { url: "http://proxy", takeCalls: () => [] };
+    const proxy = { url: () => "http://proxy", takeCalls: () => [] };
     const pin = {
       model: "m",
       provider: "p",
@@ -355,10 +355,12 @@ describe("the CLI drivers", () => {
     }
   });
 
-  it("pin the provider through the proxy and read what each call cost", async () => {
+  it("pin the provider through the proxy and read what each call of each run cost", async () => {
     let received: Record<string, unknown> = {};
+    const paths: string[] = [];
     let calls = 0;
     const upstream = createServer(async (req, res) => {
+      paths.push(req.url ?? "");
       const chunks: Buffer[] = [];
       for await (const chunk of req) chunks.push(chunk as Buffer);
       received = JSON.parse(Buffer.concat(chunks).toString()) as Record<
@@ -388,8 +390,9 @@ describe("the CLI drivers", () => {
       upstream: `http://127.0.0.1:${port}`,
     });
     try {
-      const call = () =>
-        fetch(`${proxy.url}/api/v1/messages`, {
+      // Two runs at the same time, each through its own URL.
+      const call = (run: string) =>
+        fetch(`${proxy.url(run)}/api/v1/messages`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -397,8 +400,8 @@ describe("the CLI drivers", () => {
             parallel_tool_calls: false,
           }),
         });
-      expect((await call()).status).toBe(400);
-      const streamed = await (await call()).text();
+      expect((await call("a")).status).toBe(400);
+      const streamed = await (await call("b")).text();
 
       expect(streamed).toContain('"cost":0.0042');
       expect(received).toEqual({
@@ -409,10 +412,12 @@ describe("the CLI drivers", () => {
           require_parameters: true,
         },
       });
-      expect(proxy.takeCalls()).toEqual([
+      expect(paths).toEqual(["/api/v1/messages", "/api/v1/messages"]);
+      expect(proxy.takeCalls("a")).toEqual([]);
+      expect(proxy.takeCalls("b")).toEqual([
         { cost: 0.0042, served: "vendor/model@Some" },
       ]);
-      expect(proxy.takeCalls()).toEqual([]);
+      expect(proxy.takeCalls("b")).toEqual([]);
     } finally {
       await proxy.close();
       upstream.close();

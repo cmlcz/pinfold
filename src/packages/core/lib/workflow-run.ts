@@ -241,16 +241,12 @@ function approvalFor(
   );
   const lastFinished = finished.at(-1);
   // The developer last saw a Tool's results through its Adapter in the last
-  // finished run that used it, or else in the run the Workflow was saved
-  // from, which a Tool it did not call went through with none.
-  const seen = (tool: string) => {
-    const last = finished.findLast((entry) =>
-      (entry.tools ?? workflow.tools).includes(tool)
-    );
-    return (last === undefined ? workflow.adapters : (last.adapters ?? {}))[
-      tool
-    ];
-  };
+  // finished run that used it, and before any through none. The run it was
+  // saved from does not count: only files in .workflows/, which an agent can
+  // write, could say what that run went through.
+  const seen = (tool: string) =>
+    finished.findLast((entry) => (entry.tools ?? workflow.tools).includes(tool))
+      ?.adapters?.[tool];
   // An Adapter added, changed or removed since then.
   const changedAdapters = ran.tools.filter(
     (tool) => seen(tool) !== ran.adapters[tool]

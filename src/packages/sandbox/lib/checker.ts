@@ -2,6 +2,7 @@
 // checker busy holds up neither the host nor its other requests, and is cut
 // off at a time limit. (A heap limit on the worker is no help: when the
 // checker reaches it, V8 aborts the whole process.)
+import { createHash } from "node:crypto";
 import { extname } from "node:path";
 import { Worker } from "node:worker_threads";
 import type { JsonSchema } from "./signature.ts";
@@ -14,6 +15,11 @@ type Outcome = { ok: true; result: unknown } | { ok: false; error: string };
 
 let worker: Worker | undefined;
 let queue: Promise<unknown> = Promise.resolve();
+// The outcomes of recent checks. A check depends only on its kind, source
+// and declarations, and a Workflow Run checks its code when it loads and
+// again when it runs.
+const outcomes = new Map<string, Promise<Outcome>>();
+const keptOutcomes = 100;
 
 /** Error messages with positions in program.ts; empty when the program checks. */
 export async function typecheck(
@@ -41,10 +47,26 @@ function check(
   source: string,
   declarations: string
 ): Promise<Outcome> {
+  const key = createHash("sha256")
+    .update(`${kind}\0${source}\0${declarations}`)
+    .digest("hex");
+  // Each caller gets a copy, as from the worker, so no caller can change
+  // what the next one gets.
+  const known = outcomes.get(key);
+  if (known !== undefined) return known.then(structuredClone);
   const next = queue.then(() => inWorker(kind, source, declarations));
   // A check that failed to start must not hold up the ones after it.
   queue = next.catch(() => {});
-  return next;
+  outcomes.set(key, next);
+  if (outcomes.size > keptOutcomes) {
+    outcomes.delete(outcomes.keys().next().value!);
+  }
+  // A check that timed out or failed is tried again next time.
+  next.then(
+    (outcome) => outcome.ok || outcomes.delete(key),
+    () => outcomes.delete(key)
+  );
+  return next.then(structuredClone);
 }
 
 function inWorker(

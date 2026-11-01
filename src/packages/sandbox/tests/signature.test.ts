@@ -8,6 +8,17 @@ function schemaOf(source: string) {
 }
 
 describe("mainInputSchema", () => {
+  it("gives each check its own schema, which no caller can change for the next", async () => {
+    const source = "export function main(input: { name: string }) {}";
+    const first = await schemaOf(source);
+    if (!first.ok) throw new Error(first.error);
+    first.schema.properties = {};
+
+    expect(await schemaOf(source)).toMatchObject({
+      schema: { properties: { name: { type: "string" } } },
+    });
+  });
+
   it("stops where a recursive type refers back to itself", async () => {
     const result = await schemaOf(`type T = { a: T; b: T; c: T; name: string };
       export function main(input: T) {}`);
