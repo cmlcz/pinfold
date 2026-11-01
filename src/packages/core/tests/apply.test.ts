@@ -529,6 +529,30 @@ async function sentTitles(): Promise<unknown[]> {
 }
 
 describe("Apply Journal and resume", () => {
+  it("never resumes a record from outside the plan store", async () => {
+    const core = await openTriage();
+    // A record that only looks like one, planted where no plan is kept.
+    await writeFile(
+      join(ws.dir, "planted.json"),
+      JSON.stringify({
+        id: "000000000000",
+        record: "planted",
+        run: "planted",
+        status: "failed",
+        writes: [
+          { tool: "linear.createIssue", arguments: { title: "Planted" } },
+        ],
+        adapters: {},
+        createdAt: new Date().toISOString(),
+      })
+    );
+
+    await expect(core.resume("../../planted")).rejects.toThrow(
+      "no run ../../planted"
+    );
+    expect(await ws.control("linear").receivedWrites()).toEqual([]);
+  });
+
   it("stops at the first failed write and says which writes were sent", async () => {
     const core = await openTriage();
     await openPlans(ws.dir).approve(planId(await core.explore(fourWrites)));

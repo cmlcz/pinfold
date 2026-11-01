@@ -182,8 +182,14 @@ export function openPlanStore(root: string): PlanStore {
 
   return {
     latest,
-    get: async (record) =>
-      (await read(await planFiles(), [`${record}.json`])).records[0],
+    async get(record) {
+      // Only a file the store lists: a record named like a path, such as
+      // ../x, must not reach a file outside it.
+      const files = await planFiles();
+      const name = `${record}.json`;
+      if (!files.includes(name)) return undefined;
+      return (await read(files, [name])).records[0];
+    },
     pending: async () =>
       (await all()).filter((record) => record.status === "pending"),
     unreadable: async () => (await scan()).unreadable,
