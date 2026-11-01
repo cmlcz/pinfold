@@ -50,8 +50,10 @@ function check(
   const key = createHash("sha256")
     .update(`${kind}\0${source}\0${declarations}`)
     .digest("hex");
+  // Each caller gets a copy, as from the worker, so no caller can change
+  // what the next one gets.
   const known = outcomes.get(key);
-  if (known !== undefined) return known;
+  if (known !== undefined) return known.then(structuredClone);
   const next = queue.then(() => inWorker(kind, source, declarations));
   // A check that failed to start must not hold up the ones after it.
   queue = next.catch(() => {});
@@ -64,7 +66,7 @@ function check(
     (outcome) => outcome.ok || outcomes.delete(key),
     () => outcomes.delete(key)
   );
-  return next;
+  return next.then(structuredClone);
 }
 
 function inWorker(
