@@ -47,9 +47,9 @@ jobs:
       - run: npm link
       - working-directory: examples/smoke
         run: pinfold run count_unresolved --project web
-      - run: npm unlink -g pinfold && npm pack
+      - run: npm unlink -g @cmlcz/pinfold && npm pack
       - working-directory: examples/smoke
-        run: npx --yes --package "$GITHUB_WORKSPACE/pinfold-0.0.0.tgz" pinfold run count_unresolved --project web
+        run: npx --yes --package "$(ls "$GITHUB_WORKSPACE"/cmlcz-pinfold-*.tgz)" pinfold run count_unresolved --project web
 
   property:
     if: github.event_name == 'workflow_dispatch'

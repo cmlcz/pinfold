@@ -46,9 +46,9 @@ const usage = `usage:
   pinfold run <workflow> [<value> | --<field> <value>...] [--config <path>]
   pinfold stats [--json] [--config <path>]
   pinfold bench --model <id> --provider <slug> --budget <usd> [--pilot]
-    [--driver loop|claude-code|codex] [--tasks <a,b>] [--inputs <0,1,2>]
-    [--arms A1,A2,A3,A4] [--repeats <k>] [--parallel <n>] [--lifecycle]
-    [--runs <n>] [--out <dir>]
+    [--driver loop|claude-code|codex|antigravity] [--subscription]
+    [--tasks <a,b>] [--inputs <0,1,2>] [--arms A1,A2,A3,A4] [--repeats <k>]
+    [--parallel <n>] [--lifecycle] [--runs <n>] [--out <dir>]
 
 pinfold run takes one value for a Workflow whose input is not an object, or
 else a flag per input field; a value starting with -- is given as
@@ -70,7 +70,9 @@ pinfold bench runs the benchmark tasks against the Drift Kit, the agent
 Arms through OPENROUTER_API_KEY with the minimal agent loop, Claude Code or
 Codex, and stops before spending past --budget. --parallel runs that many
 at a time, each on Drift Kit servers of its own; the summary then leaves
-wall times out, which only runs made one at a time measure.`;
+wall times out, which only runs made one at a time measure. With
+--subscription, Claude Code, Codex or Antigravity runs on your own login
+and default model instead, and its cost is not measured.`;
 
 // A Workflow Run that pauses for Approval exits with this code, so that cron
 // or CI can tell it from a failure.

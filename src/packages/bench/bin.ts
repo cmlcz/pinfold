@@ -11,12 +11,18 @@
 // runs the lifecycle experiment on one task, triage-assign by default,
 // with up to --parallel agent runs at a time. With more than one run at a
 // time, the summary leaves wall times out.
+//   node bin.ts --subscription --driver claude-code|codex|antigravity
+//     [--arms A2] [--tasks ...] [--inputs 0] [--repeats 1]
+// runs the agent Arms through the CLI on the developer's own login, such
+// as a subscription, with its default model: the compatibility check. Its
+// cost is not measured. Antigravity runs only this way, one run at a time.
 import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { mkdir, writeFile } from "node:fs/promises";
 import {
+  antigravityDriver,
   claudeCodeDriver,
   codexDriver,
   formatLifecycle,
@@ -50,6 +56,7 @@ const { values } = parseArgs({
     lifecycle: { type: "boolean", default: false },
     runs: { type: "string", default: "100" },
     parallel: { type: "string", default: "1" },
+    subscription: { type: "boolean", default: false },
   },
 });
 
@@ -58,22 +65,41 @@ if (!arms.every((arm) => ["A1", "A2", "A3", "A4"].includes(arm))) {
   fail("--arms takes A1, A2, A3 and A4");
 }
 const agentArms = arms.filter((arm): arm is AgentArm => arm !== "A4");
-if (!["loop", "claude-code", "codex"].includes(values.driver)) {
-  fail("--driver takes loop, claude-code or codex");
+if (!["loop", "claude-code", "codex", "antigravity"].includes(values.driver)) {
+  fail("--driver takes loop, claude-code, codex or antigravity");
 }
-const budgetUsd = Number(values.budget);
+const ownLogin = values.subscription;
+if (ownLogin && values.driver === "loop") {
+  fail("--subscription takes the driver claude-code, codex or antigravity");
+}
+if (values.driver === "antigravity" && !ownLogin) {
+  fail("antigravity runs only with --subscription");
+}
+if (values.driver === "antigravity" && values.parallel !== "1") {
+  fail("antigravity runs one at a time");
+}
+// A run on the developer's own login costs nothing the harness can see.
+const budgetUsd = ownLogin ? 0 : Number(values.budget);
 if (!(budgetUsd >= 0)) fail("--budget <usd> is required");
 const apiKey = process.env.OPENROUTER_API_KEY;
 const pinned =
   values.model && values.provider && apiKey
     ? { model: values.model, provider: values.provider, apiKey }
     : undefined;
-if ((agentArms.length > 0 || values.lifecycle) && pinned === undefined) {
+if (
+  (agentArms.length > 0 || values.lifecycle) &&
+  pinned === undefined &&
+  !ownLogin
+) {
   fail("the agent Arms need --model, --provider and OPENROUTER_API_KEY");
 }
 let proxy: PinProxy | undefined;
 let driver: Driver | undefined;
-if (pinned !== undefined) {
+if (ownLogin) {
+  if (values.driver === "antigravity") driver = await antigravityDriver();
+  else if (values.driver === "codex") driver = await codexDriver({});
+  else driver = await claudeCodeDriver({});
+} else if (pinned !== undefined) {
   if (values.driver === "loop") {
     driver = loopDriver(
       openRouterModel({ ...pinned, log: (line) => console.log(line) })
@@ -84,7 +110,7 @@ if (pinned !== undefined) {
       log: (line) => console.log(line),
     });
     const make = values.driver === "codex" ? codexDriver : claudeCodeDriver;
-    driver = await make({ ...pinned, proxy });
+    driver = await make({ pin: { ...pinned, proxy } });
   }
 }
 const names = values.tasks?.split(",");

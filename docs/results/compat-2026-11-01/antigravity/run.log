@@ -1,0 +1,7 @@
+A2 error-digest#0 run 1: ok, $0.0000, 62071 ms, $0.0000 spent
+A2 issue-owners#0 run 1: ok, $0.0000, 35902 ms, $0.0000 spent
+A2 file-issues#0 run 1: ok, $0.0000, 69242 ms, $0.0000 spent
+A2 commit-counts#0 run 1: ok, $0.0000, 51023 ms, $0.0000 spent
+A2 triage-once#0 run 1: ok, $0.0000, 102639 ms, $0.0000 spent
+A2 triage-assign#0 run 1: failed, $0.0000, 359971 ms, $0.0000 spent
+6 runs, $0.0000 spent. Results in docs/results/compat-2026-11-01/antigravity

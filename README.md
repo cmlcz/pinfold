@@ -26,7 +26,19 @@ pinfold is a local MCP server for coding agents. It sits between your agent and 
 - Node.js 22.18 or newer
 - npm
 
+To work on pinfold itself, use Node.js 22.22.1 or newer: the commit hooks need it.
+
 ## Install
+
+pinfold is published on npm as `@cmlcz/pinfold`:
+
+```sh
+npm install -g @cmlcz/pinfold   # puts pinfold and pinfold-gateway on your PATH
+```
+
+To run one command without installing, use `npx -p @cmlcz/pinfold pinfold <command>`.
+
+To work on pinfold itself, install it from source:
 
 ```sh
 git clone https://github.com/cmlcz/pinfold.git
@@ -35,7 +47,7 @@ npm ci     # also builds dist/
 npm link   # optional: puts pinfold and pinfold-gateway on your PATH
 ```
 
-With `npm link`, `pinfold <command>` stands for `node src/packages/cli/bin.ts <command>` below, and `pinfold-gateway` for `node src/packages/gateway/bin.ts`. pinfold is not on npm yet. The package builds to JavaScript in `dist/`, since Node does not run TypeScript from `node_modules`, and CI runs it through `npx` from the packed tarball (`npm pack`) on a fresh runner. `examples/smoke/` holds a small project with a saved workflow, which CI runs that way and from a fresh clone.
+The commands below run the source, as `node src/packages/cli/bin.ts <command>`. With the package installed, write `pinfold <command>` instead, and `pinfold-gateway` for `node src/packages/gateway/bin.ts`. The package runs JavaScript built into `dist/`, since Node does not run TypeScript from `node_modules`. CI packs the package (`npm pack`) and runs it through `npx` on a fresh runner. `examples/smoke/` holds a small project with a saved workflow, which CI runs that way and from a fresh clone.
 
 ## A short demo: drift, repair, approve
 
@@ -117,6 +129,8 @@ Start pinfold as an MCP server over stdio. Add this command to your agent's MCP 
 node src/packages/gateway/bin.ts --config pinfold.json
 ```
 
+With the package installed, the command is `pinfold-gateway --config pinfold.json`.
+
 The agent gets six tools, plus one for each workflow you opt in (see [Save a workflow](#save-a-workflow)):
 
 - **`search_sdk`** finds the TypeScript signatures of the tools that match a keyword query.
@@ -125,6 +139,18 @@ The agent gets six tools, plus one for each workflow you opt in (see [Save a wor
 - **`run_workflow`** runs a saved workflow with an input.
 - **`list_workflows`** lists the saved workflows.
 - **`propose_repair`** shows drift that pinfold could not repair by itself and takes the agent's proposed response adapter. The adapter still waits for your approval.
+
+### Tested clients
+
+Each CLI ran the six benchmark tasks once through the gateway, on a subscription login with its default model ([results](docs/results/compat-2026-11-01/README.md)):
+
+| Client          | Version | Model                     | Tasks passed |
+| :-------------- | :------ | :------------------------ | -----------: |
+| Claude Code     | 2.1.316 | `claude-opus-5-5`         |          6/6 |
+| Codex CLI       | 0.153.4 | its default               |          6/6 |
+| Antigravity CLI | 1.4.12  | Gemini 3.8 Flash (Medium) |          5/6 |
+
+Antigravity failed one task because it sent two test writes, which a developer reading the plan would decline. The approval dialog was not part of these runs, since they ran headless.
 
 ## Mark read tools
 

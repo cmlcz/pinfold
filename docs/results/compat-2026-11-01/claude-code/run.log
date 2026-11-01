@@ -1,0 +1,7 @@
+A2 error-digest#0 run 1: ok, $0.0000, 8194 ms, $0.0000 spent
+A2 issue-owners#0 run 1: ok, $0.0000, 7009 ms, $0.0000 spent
+A2 file-issues#0 run 1: ok, $0.0000, 13513 ms, $0.0000 spent
+A2 commit-counts#0 run 1: ok, $0.0000, 6987 ms, $0.0000 spent
+A2 triage-once#0 run 1: ok, $0.0000, 15016 ms, $0.0000 spent
+A2 triage-assign#0 run 1: ok, $0.0000, 9081 ms, $0.0000 spent
+6 runs, $0.0000 spent. Results in docs/results/compat-2026-11-01/claude-code
