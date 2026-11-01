@@ -86,36 +86,48 @@ export function openPlanStore(root: string): PlanStore {
   // asks for Approval again.
   const planFiles = () => listFiles(dir);
 
-  async function scan(): Promise<{
-    records: PlanRecord[];
-    unreadable: string[];
-  }> {
-    const files = await planFiles();
+  // Reads the named records, oldest first. A run reads only the records it
+  // needs, which their file names tell: `<plan id>-<n>.json`, and the
+  // marker `<record>.<run>.run` that add leaves for each record of a run.
+  async function read(
+    files: string[],
+    names: string[]
+  ): Promise<{ records: PlanRecord[]; unreadable: string[] }> {
     const declined = new Set(
       files.filter((file) => file.endsWith(".declined"))
     );
     const records: PlanRecord[] = [];
     const unreadable: string[] = [];
-    for (const name of files.filter((file) => file.endsWith(".json"))) {
-      try {
-        const record = decodeValue(
-          await readFile(join(dir, name), "utf8")
-        ) as PlanRecord;
-        // Records from before plans named their Adapters went through none.
-        record.adapters ??= {};
-        // A decline is final: its marker outranks whatever an Apply that was
-        // running wrote to the record afterwards.
-        if (declined.has(`${record.record}.declined`)) {
-          record.status = "declined";
+    await Promise.all(
+      names.map(async (name) => {
+        try {
+          const record = decodeValue(
+            await readFile(join(dir, name), "utf8")
+          ) as PlanRecord;
+          // Records from before plans named their Adapters went through none.
+          record.adapters ??= {};
+          // A decline is final: its marker outranks whatever an Apply that
+          // was running wrote to the record afterwards.
+          if (declined.has(`${record.record}.declined`)) {
+            record.status = "declined";
+          }
+          records.push(record);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+          unreadable.push(join(dir, name));
         }
-        records.push(record);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
-        unreadable.push(join(dir, name));
-      }
-    }
+      })
+    );
     records.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-    return { records, unreadable };
+    return { records, unreadable: unreadable.sort() };
+  }
+
+  async function scan() {
+    const files = await planFiles();
+    return read(
+      files,
+      files.filter((file) => file.endsWith(".json"))
+    );
   }
 
   const all = async () => (await scan()).records;
@@ -154,7 +166,12 @@ export function openPlanStore(root: string): PlanStore {
   }
 
   async function latest(id: string) {
-    return (await all()).filter((record) => record.id === id).at(-1);
+    const files = await planFiles();
+    const names = files.filter(
+      (file) => file.startsWith(`${id}-`) && file.endsWith(".json")
+    );
+    const { records } = await read(files, names);
+    return records.filter((record) => record.id === id).at(-1);
   }
 
   async function find(id: string): Promise<PlanRecord> {
@@ -166,14 +183,21 @@ export function openPlanStore(root: string): PlanStore {
   return {
     latest,
     get: async (record) =>
-      (await all()).find((candidate) => candidate.record === record),
+      (await read(await planFiles(), [`${record}.json`])).records[0],
     pending: async () =>
       (await all()).filter((record) => record.status === "pending"),
     unreadable: async () => (await scan()).unreadable,
     async approvedFor(run) {
       // Only the newest decided record counts: an approved plan that a later
       // plan replaced, applied or not, says nothing about the next run.
-      const newest = (await all())
+      // Records from before add left run markers are not found: an approved
+      // plan among them asks for Approval again.
+      const files = await planFiles();
+      const marker = `.${run}.run`;
+      const names = files
+        .filter((file) => file.endsWith(marker))
+        .map((file) => `${file.slice(0, -marker.length)}.json`);
+      const newest = (await read(files, names)).records
         .filter((record) => record.run === run && record.status !== "pending")
         .at(-1);
       return newest?.status === "approved" ? newest : undefined;
@@ -243,6 +267,11 @@ export function openPlanStore(root: string): PlanStore {
         clock,
         createdAt: new Date().toISOString(),
       };
+      // Left before the record, so approvedFor finds every record there is.
+      // A run that adds the same record at once has the same run, since the
+      // plan ID covers it.
+      await prepareState(root, "plans");
+      await writeFile(join(dir, `${record.record}.${run}.run`), "");
       try {
         await save(record, { new: true });
       } catch (error) {
