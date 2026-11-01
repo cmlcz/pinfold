@@ -109,13 +109,15 @@ describe("run_workflow", () => {
     );
     await openPlans(ws.dir).approve(first.plan.id);
     succeeded(await core.runWorkflow({ name: "triage_sentry", input }));
+    // Only the Exploration Run's plan, which is its own.
+    const pending = await openPlans(ws.dir).pending();
 
     const again = succeeded(
       await core.runWorkflow({ name: "triage_sentry", input })
     );
 
     expect(again.status).toBe("applied");
-    expect(await openPlans(ws.dir).pending()).toEqual([]);
+    expect(await openPlans(ws.dir).pending()).toEqual(pending);
   });
 
   it("asks again for a declined plan, even once the Workflow runs unattended", async () => {

@@ -93,6 +93,7 @@ describe("Drift detection", () => {
     await save(core, "list_titles", titles);
     const linear = ws.control("linear");
     const sent = (await linear.receivedWrites()).length;
+    const pending = await openPlans(ws.dir).pending();
     await ws.control("sentry").startDrift("removed-field");
 
     const result = await core.runWorkflow({ name: "triage_sentry", input });
@@ -109,7 +110,7 @@ describe("Drift detection", () => {
       ].join("\n"),
     });
     expect(await linear.receivedWrites()).toHaveLength(sent);
-    expect(await openPlans(ws.dir).pending()).toEqual([]);
+    expect(await openPlans(ws.dir).pending()).toEqual(pending);
   });
 
   it("stops a run that reads a drifted field the saved run never read", async () => {
@@ -339,6 +340,59 @@ describe("Response Adapters", () => {
     expect(
       succeeded(await core.runWorkflow({ name: "triage_sentry", input }))
     ).toMatchObject({ status: "pending" });
+  });
+
+  it("never lets one Workflow take the Adapter Approval of another (#54)", async () => {
+    const core = await openTriage();
+    await save(core, "list_titles", titles);
+    // Files an issue only when asked to.
+    const fileIf = `export async function main(input: { project: string; write: boolean }) {
+      const { issues } = await sdk.sentry.listIssues({ project: input.project });
+      if (input.write) return sdk.linear.createIssue({ title: issues[0]!.title, description: "" });
+      return issues.length;
+    }`;
+    const writing = { ...input, write: true };
+    const explored = await core.explore({ code: fileIf, input: writing });
+    if (!explored.ok) throw new Error(explored.error);
+    await core.saveWorkflow({
+      run: explored.exploration,
+      name: "file_if",
+      confirmed: true,
+    });
+    const first = succeeded(
+      await core.runWorkflow({ name: "file_if", input: writing })
+    );
+    await openPlans(ws.dir).approve(first.plan.id);
+    expect(
+      succeeded(await core.runWorkflow({ name: "file_if", input: writing }))
+        .status
+    ).toBe("applied");
+    await ws.control("sentry").startDrift("rename");
+    await writeAdapter([
+      { op: "rename", from: "issues[].eventCount", to: "issues[].count" },
+    ]);
+    const titlesPaused = succeeded(
+      await core.runWorkflow({ name: "list_titles", input })
+    );
+    expect(titlesPaused).toMatchObject({ status: "pending" });
+    await openPlans(ws.dir).approve(titlesPaused.plan.id);
+    const sent = (await ws.control("linear").receivedWrites()).length;
+
+    // A plan with no writes through the same Adapter, in another Workflow.
+    const reading = succeeded(
+      await core.runWorkflow({
+        name: "file_if",
+        input: { ...input, write: false },
+      })
+    );
+    const filing = succeeded(
+      await core.runWorkflow({ name: "file_if", input: writing })
+    );
+
+    expect(reading.status).toBe("pending");
+    expect(reading.plan.id).not.toBe(titlesPaused.plan.id);
+    expect(filing.status).toBe("pending");
+    expect(await ws.control("linear").receivedWrites()).toHaveLength(sent);
   });
 
   it("maps the responses an Exploration Run reads", async () => {

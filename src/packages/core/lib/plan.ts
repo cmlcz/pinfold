@@ -11,9 +11,11 @@ export type PlannedWrite = {
 
 export type WritePlan = {
   /**
-   * Derived from the writes and the Adapters alone, so equal Write Plans
-   * share an ID, and approving a plan approves the Adapters it was built
-   * through too.
+   * Derived from the run's code and input, its writes and its Adapters. A
+   * run of the same code and input that rebuilds the plan gets the same ID,
+   * and approving a plan approves the Adapters it was built through too.
+   * A run of other code or input never gets the ID, so it never takes
+   * another run's Approval (#54).
    */
   id: string;
   writes: PlannedWrite[];
@@ -26,11 +28,13 @@ export type WritePlan = {
 };
 
 export function writePlan(
+  /** The run key: its code and input, as a hash. */
+  run: string,
   writes: PlannedWrite[],
   adapters: Record<string, string>
 ): WritePlan {
   const id = shortHash(
-    encodeValue({ writes, adapters: canonicalize(adapters) })
+    encodeValue({ run, writes, adapters: canonicalize(adapters) })
   );
   return { id, writes, adapters };
 }

@@ -209,7 +209,7 @@ export async function openCore(
       await planRun(project, code, input);
     if (!result.ok) return { ok: false, error: result.error };
     const tools = [...new Set([...calls, ...writes].map((call) => call.tool))];
-    const plan = writePlan(writes, adapters!.digests(tools));
+    const plan = writePlan(key, writes, adapters!.digests(tools));
     const outcome = await planOutcome(project, plan, result.value, {
       key,
       clock,
