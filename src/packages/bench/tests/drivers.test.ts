@@ -1,5 +1,12 @@
 import { once } from "node:events";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -8,7 +15,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   antigravityDriver,
   antigravityOutcome,
+  claudeCodeDriver,
   claudeCodeOutcome,
+  codexDriver,
   codexOutcome,
   loopDriver,
   runAgentArm,
@@ -18,6 +27,7 @@ import {
   type Bench,
   type ChatMessage,
   type ChatModel,
+  type PinProxy,
   type Surface,
   type ToolSpec,
 } from "../index.ts";
@@ -271,6 +281,74 @@ describe("the CLI drivers", () => {
         "mcp add broken http://b",
         "mcp remove fine",
       ]);
+    } finally {
+      process.env.PATH = path;
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("give Claude Code and Codex a settings folder of their own only when pinned, and remove it after", async () => {
+    // Fake CLIs that log the folder they were given, whether it exists, and
+    // how many such temporary folders exist while they run.
+    const dir = await mkdtemp(join(tmpdir(), "pinfold-cli-"));
+    const log = join(dir, "calls");
+    const fake = (name: string, folder: string, event: object) =>
+      writeFile(
+        join(dir, name),
+        [
+          "#!/bin/sh",
+          'if [ "$1" = --version ]; then echo "1.0.0"; exit 0; fi',
+          `if [ -d "$${folder}" ]; then state=exists; else state=none; fi`,
+          `count=$(ls -d "${tmpdir()}"/pinfold-${name}-* 2>/dev/null | wc -l | tr -d " ")`,
+          `echo "${name} $${folder} $state $count" >> ${log}`,
+          `echo '${JSON.stringify(event)}'`,
+        ].join("\n"),
+        { mode: 0o755 }
+      );
+    await fake("claude", "CLAUDE_CONFIG_DIR", {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      result: "[]",
+    });
+    await fake("codex", "CODEX_HOME", {
+      type: "item.completed",
+      item: { type: "agent_message", text: "[]" },
+    });
+    const path = process.env.PATH;
+    process.env.PATH = `${dir}:${path}`;
+    const proxy = { url: "http://proxy", takeCalls: () => [] };
+    const pin = {
+      model: "m",
+      provider: "p",
+      apiKey: "k",
+      proxy: proxy as unknown as PinProxy,
+    };
+    const surface = { servers: {}, files: {} } as unknown as Surface;
+    try {
+      for (const make of [claudeCodeDriver, codexDriver]) {
+        for (const options of [{}, { pin }]) {
+          const driver = await make(options);
+          const run = await driver.run({
+            system: "",
+            prompt: "",
+            surface,
+            workdir: dir,
+          });
+          expect(run.answer).toBe("[]");
+        }
+      }
+      const calls = (await readFile(log, "utf8")).trim().split("\n");
+      expect(calls.map((call) => call.split(" "))).toEqual([
+        ["claude", "", "none", "0"],
+        ["claude", expect.stringContaining("pinfold-claude-"), "exists", "1"],
+        ["codex", "", "none", "0"],
+        ["codex", expect.stringContaining("pinfold-codex-"), "exists", "1"],
+      ]);
+      const folders = calls.map((call) => call.split(" ")[1]!).filter(Boolean);
+      for (const folder of folders) {
+        await expect(readdir(folder)).rejects.toThrow(/ENOENT/);
+      }
     } finally {
       process.env.PATH = path;
       await rm(dir, { recursive: true, force: true });

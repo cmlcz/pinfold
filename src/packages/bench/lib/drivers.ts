@@ -171,63 +171,56 @@ export async function claudeCodeDriver(options: CliOptions): Promise<Driver> {
       }
       const servers = Object.entries(surface.servers);
       const { pin } = options;
-      const config = await mkdtemp(join(tmpdir(), "pinfold-claude-"));
-      try {
-        const run = await runCli(
-          "claude",
-          [
-            "-p",
-            prompt,
-            "--output-format",
-            "stream-json",
-            "--verbose",
-            ...(pin
-              ? ["--model", pin.model]
-              : ["--setting-sources", "project"]),
-            "--append-system-prompt",
-            system,
-            "--mcp-config",
-            JSON.stringify({
-              mcpServers: Object.fromEntries(
-                servers.map(([name, url]) => [name, { type: "http", url }])
-              ),
-            }),
-            "--strict-mcp-config",
-            "--tools",
-            "Read",
-            "--allowedTools",
-            "Read",
-            ...servers.map(([name]) => `mcp__${name}`),
-            "--disable-slash-commands",
-            "--no-session-persistence",
-          ],
-          {
-            cwd: workdir,
-            env: {
-              CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
-              ...(pin && {
-                CLAUDE_CONFIG_DIR: config,
-                ANTHROPIC_BASE_URL: `${pin.proxy.url}/api`,
-                ANTHROPIC_AUTH_TOKEN: pin.apiKey,
-                ANTHROPIC_API_KEY: "",
-                // Background calls go to the same model, not to Anthropic's.
-                ANTHROPIC_DEFAULT_HAIKU_MODEL: pin.model,
-                ANTHROPIC_DEFAULT_SONNET_MODEL: pin.model,
-                ANTHROPIC_DEFAULT_OPUS_MODEL: pin.model,
-                CLAUDE_CODE_SUBAGENT_MODEL: pin.model,
-              }),
-            },
-            timeoutMs: options.timeoutMs,
-          }
-        );
+      const args = [
+        "-p",
+        prompt,
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        ...(pin ? ["--model", pin.model] : ["--setting-sources", "project"]),
+        "--append-system-prompt",
+        system,
+        "--mcp-config",
+        JSON.stringify({
+          mcpServers: Object.fromEntries(
+            servers.map(([name, url]) => [name, { type: "http", url }])
+          ),
+        }),
+        "--strict-mcp-config",
+        "--tools",
+        "Read",
+        "--allowedTools",
+        "Read",
+        ...servers.map(([name]) => `mcp__${name}`),
+        "--disable-slash-commands",
+        "--no-session-persistence",
+      ];
+      const start = async (env: Record<string, string>) => {
+        const run = await runCli("claude", args, {
+          cwd: workdir,
+          env: { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1", ...env },
+          timeoutMs: options.timeoutMs,
+        });
         return settle(
           run,
           pin?.proxy.takeCalls(),
           claudeCodeOutcome(run.events)
         );
-      } finally {
-        await rm(config, { recursive: true, force: true });
-      }
+      };
+      if (pin === undefined) return start({});
+      return withTempDir("pinfold-claude-", (config) =>
+        start({
+          CLAUDE_CONFIG_DIR: config,
+          ANTHROPIC_BASE_URL: `${pin.proxy.url}/api`,
+          ANTHROPIC_AUTH_TOKEN: pin.apiKey,
+          ANTHROPIC_API_KEY: "",
+          // Background calls go to the same model, not to Anthropic's.
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: pin.model,
+          ANTHROPIC_DEFAULT_SONNET_MODEL: pin.model,
+          ANTHROPIC_DEFAULT_OPUS_MODEL: pin.model,
+          CLAUDE_CODE_SUBAGENT_MODEL: pin.model,
+        })
+      );
     },
   };
 }
@@ -253,53 +246,49 @@ export async function codexDriver(options: CliOptions): Promise<Driver> {
         );
       }
       const { pin } = options;
-      const home = await mkdtemp(join(tmpdir(), "pinfold-codex-"));
-      try {
-        const run = await runCli(
-          "codex",
-          [
-            "exec",
-            "--json",
-            "--skip-git-repo-check",
-            "--ephemeral",
-            "--cd",
-            workdir,
-            "--sandbox",
-            "read-only",
-            ...(pin
-              ? [
-                  "--model",
-                  pin.model,
-                  "-c",
-                  'model_provider="openrouter"',
-                  "-c",
-                  `model_providers.openrouter={ name = "OpenRouter", base_url = "${pin.proxy.url}/api/v1", env_key = "OPENROUTER_API_KEY", wire_api = "responses" }`,
-                ]
-              : ["--ignore-user-config"]),
-            "-c",
-            'approval_policy="never"',
-            // Every MCP tool is allowed without asking, as for Claude Code:
-            // under approval_policy "never", Codex refuses any it would ask.
-            ...Object.entries(surface.servers).flatMap(([name, url]) => [
+      const args = [
+        "exec",
+        "--json",
+        "--skip-git-repo-check",
+        "--ephemeral",
+        "--cd",
+        workdir,
+        "--sandbox",
+        "read-only",
+        ...(pin
+          ? [
+              "--model",
+              pin.model,
               "-c",
-              `mcp_servers.${name}.url="${url}"`,
+              'model_provider="openrouter"',
               "-c",
-              `mcp_servers.${name}.default_tools_approval_mode="approve"`,
-            ]),
-            `${system}\n\n${prompt}`,
-          ],
-          {
-            cwd: workdir,
-            env: pin
-              ? { CODEX_HOME: home, OPENROUTER_API_KEY: pin.apiKey }
-              : {},
-            timeoutMs: options.timeoutMs,
-          }
-        );
+              `model_providers.openrouter={ name = "OpenRouter", base_url = "${pin.proxy.url}/api/v1", env_key = "OPENROUTER_API_KEY", wire_api = "responses" }`,
+            ]
+          : ["--ignore-user-config"]),
+        "-c",
+        'approval_policy="never"',
+        // Every MCP tool is allowed without asking, as for Claude Code:
+        // under approval_policy "never", Codex refuses any it would ask.
+        ...Object.entries(surface.servers).flatMap(([name, url]) => [
+          "-c",
+          `mcp_servers.${name}.url="${url}"`,
+          "-c",
+          `mcp_servers.${name}.default_tools_approval_mode="approve"`,
+        ]),
+        `${system}\n\n${prompt}`,
+      ];
+      const start = async (env: Record<string, string>) => {
+        const run = await runCli("codex", args, {
+          cwd: workdir,
+          env,
+          timeoutMs: options.timeoutMs,
+        });
         return settle(run, pin?.proxy.takeCalls(), codexOutcome(run.events));
-      } finally {
-        await rm(home, { recursive: true, force: true });
-      }
+      };
+      if (pin === undefined) return start({});
+      return withTempDir("pinfold-codex-", (home) =>
+        start({ CODEX_HOME: home, OPENROUTER_API_KEY: pin.apiKey })
+      );
     },
   };
 }
@@ -364,6 +353,19 @@ export async function antigravityDriver(): Promise<Driver> {
       }
     },
   };
+}
+
+// Runs `use` with a fresh temporary directory, removed after.
+async function withTempDir<T>(
+  prefix: string,
+  use: (dir: string) => Promise<T>
+): Promise<T> {
+  const dir = await mkdtemp(join(tmpdir(), prefix));
+  try {
+    return await use(dir);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 }
 
 type CliRun = { events: unknown[]; stderr: string; error?: string };
