@@ -197,6 +197,8 @@ Your agent's shell runs as you. A determined agent could fake a terminal, or edi
       "Bash(node src/packages/cli/bin.ts baseline optional *)",
       "Edit(/.pinfold/**)",
       "Edit(/.workflows/baselines/**)",
+      "Edit(/.workflows/adapters/**)",
+      "Edit(/.workflows/*.json)",
       "Edit(/pinfold.json)"
     ]
   }
@@ -348,7 +350,7 @@ Measured on the Drift Kit with `deepseek/deepseek-v4.1-flash-1017`, pinned to on
 
 ## What pinfold guarantees, and what it does not
 
-These hold as long as only you, not your agent, run `pinfold approve`, `classify`, `resolve` and `baseline optional`, and edit `.pinfold/`, `.workflows/baselines/` and the classification in `pinfold.json` (see [Keep your agent away from approval](#keep-your-agent-away-from-approval)).
+These hold as long as only you, not your agent, run `pinfold approve`, `classify`, `resolve` and `baseline optional`, and edit `.pinfold/`, the baselines, adapters and records in `.workflows/`, and the classification in `pinfold.json` (see [Keep your agent away from approval](#keep-your-agent-away-from-approval)).
 
 - **No write outside an approved or unattended plan.** A write reaches a server only as part of a write plan you approved, or one that met the conditions for running unattended. After approval, a write is sent only if the rebuilt plan is the one you approved.
 - **No placeholder used as data.** A write's result is known only after you approve it, so the type check refuses code that branches on it, compares it or takes its `typeof`.
