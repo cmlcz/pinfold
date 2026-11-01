@@ -76,6 +76,9 @@ function placeholderConditions(
       ts.isSwitchStatement(node)
     ) {
       check(node.expression);
+    } else if (ts.isCaseClause(node)) {
+      // A case compares its value with the switch's, as === does.
+      check(node.expression);
     } else if (ts.isForStatement(node)) {
       check(node.condition);
     } else if (ts.isConditionalExpression(node)) {
