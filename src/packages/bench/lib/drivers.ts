@@ -313,9 +313,7 @@ export async function codexDriver(options: CliOptions): Promise<Driver> {
  * AGENTS.md; agy has no option for a system prompt, so the harness's opens
  * the prompt.
  */
-export async function antigravityDriver(
-  options: { timeoutMs?: number } = {}
-): Promise<Driver> {
+export async function antigravityDriver(): Promise<Driver> {
   const version = await output("agy", ["--version"]);
   return {
     id: `antigravity ${version} own login`,
@@ -333,13 +331,16 @@ export async function antigravityDriver(
         listed.some((line) => line.split(/\s+/)[0] === name)
       );
       if (taken.length > 0) {
+        const names = taken.map(([name]) => name).join(" ");
         throw new Error(
-          `agy already has an MCP server named ${taken.map(([name]) => name).join(", ")}`
+          `agy already has an MCP server named ${names}. If a stopped run left it, remove it with \`agy mcp remove ${names}\`.`
         );
       }
+      const added: string[] = [];
       try {
         for (const [name, url] of servers) {
           await output("agy", ["mcp", "add", name, url]);
+          added.push(name);
         }
         const run = await runCli(
           "agy",
@@ -352,13 +353,14 @@ export async function antigravityDriver(
             "--sandbox",
             "--disable-slash-commands",
           ],
-          { cwd: workdir, env: {}, timeoutMs: options.timeoutMs }
+          { cwd: workdir, env: {} }
         );
         return settle(run, undefined, antigravityOutcome(run.events));
       } finally {
-        for (const [name] of servers) {
-          await output("agy", ["mcp", "remove", name]);
-        }
+        // Each one is tried, and a failure does not hide the run's result.
+        await Promise.allSettled(
+          added.map((name) => output("agy", ["mcp", "remove", name]))
+        );
       }
     },
   };
@@ -596,13 +598,25 @@ function runCli(
   });
 }
 
+// A command's output; it fails if the command does.
 function output(command: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "ignore"] });
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
     let text = "";
+    let errors = "";
     child.stdout.on("data", (chunk: Buffer) => (text += chunk.toString()));
+    child.stderr.on("data", (chunk: Buffer) => (errors += chunk.toString()));
     child.on("error", reject);
-    child.on("close", () => resolve(text.trim()));
+    child.on("close", (code) => {
+      if (code === 0) resolve(text.trim());
+      else {
+        reject(
+          new Error(
+            `${command} ${args.join(" ")} exited with ${code}: ${errors.trim().slice(-300)}`
+          )
+        );
+      }
+    });
   });
 }
 

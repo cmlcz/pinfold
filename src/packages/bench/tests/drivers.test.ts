@@ -1,8 +1,12 @@
 import { once } from "node:events";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  antigravityDriver,
   antigravityOutcome,
   claudeCodeOutcome,
   codexOutcome,
@@ -14,6 +18,7 @@ import {
   type Bench,
   type ChatMessage,
   type ChatModel,
+  type Surface,
   type ToolSpec,
 } from "../index.ts";
 
@@ -218,6 +223,58 @@ describe("the CLI drivers", () => {
     expect(antigravityOutcome([])).toMatchObject({
       error: "Antigravity gave no result",
     });
+  });
+
+  it("stop an Antigravity run whose MCP server cannot be added, and remove only the servers added", async () => {
+    // A fake agy that logs its calls, has `taken` configured already, and
+    // fails to add `broken`.
+    const dir = await mkdtemp(join(tmpdir(), "pinfold-agy-"));
+    const log = join(dir, "calls");
+    await writeFile(
+      join(dir, "agy"),
+      [
+        "#!/bin/sh",
+        `echo "$*" >> ${log}`,
+        'case "$*" in',
+        '  "mcp list") echo "NAME TYPE STATUS URL"; echo "taken http enabled http://x" ;;',
+        '  "mcp add broken"*) echo "cannot add" >&2; exit 1 ;;',
+        "esac",
+      ].join("\n")
+    );
+    await chmod(join(dir, "agy"), 0o755);
+    const path = process.env.PATH;
+    process.env.PATH = `${dir}:${path}`;
+    const surface = (servers: Record<string, string>) =>
+      ({ servers, files: {}, instructions: undefined }) as unknown as Surface;
+    try {
+      const driver = await antigravityDriver();
+      const run = (servers: Record<string, string>) =>
+        driver.run({
+          system: "",
+          prompt: "",
+          surface: surface(servers),
+          workdir: dir,
+        });
+
+      await expect(run({ taken: "http://a" })).rejects.toThrow(
+        "If a stopped run left it, remove it with `agy mcp remove taken`."
+      );
+      await expect(
+        run({ fine: "http://a", broken: "http://b" })
+      ).rejects.toThrow(
+        /agy mcp add broken http:\/\/b exited with 1: cannot add/
+      );
+      const calls = (await readFile(log, "utf8")).trim().split("\n");
+      expect(calls.filter((call) => !call.startsWith("mcp list"))).toEqual([
+        "--version",
+        "mcp add fine http://a",
+        "mcp add broken http://b",
+        "mcp remove fine",
+      ]);
+    } finally {
+      process.env.PATH = path;
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("pin the provider through the proxy and read what each call cost", async () => {

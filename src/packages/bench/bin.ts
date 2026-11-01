@@ -12,7 +12,7 @@
 // with up to --parallel agent runs at a time. With more than one run at a
 // time, the summary leaves wall times out.
 //   node bin.ts --subscription --driver claude-code|codex|antigravity
-//     --budget 0 [--arms A2] [--tasks ...] [--inputs 0] [--repeats 1]
+//     [--arms A2] [--tasks ...] [--inputs 0] [--repeats 1]
 // runs the agent Arms through the CLI on the developer's own login, such
 // as a subscription, with its default model: the compatibility check. Its
 // cost is not measured. Antigravity runs only this way, one run at a time.
@@ -78,7 +78,8 @@ if (values.driver === "antigravity" && !ownLogin) {
 if (values.driver === "antigravity" && values.parallel !== "1") {
   fail("antigravity runs one at a time");
 }
-const budgetUsd = Number(values.budget);
+// A run on the developer's own login costs nothing the harness can see.
+const budgetUsd = ownLogin ? 0 : Number(values.budget);
 if (!(budgetUsd >= 0)) fail("--budget <usd> is required");
 const apiKey = process.env.OPENROUTER_API_KEY;
 const pinned =
