@@ -1,6 +1,6 @@
 # pinfold: plan-first workflows that survive API drift
 
-_Design document for pinfold v1. Status: the Gateway, Plan and Apply, Repair, Baseline Migration, Approval in the client and `pinfold stats` are built. The benchmark is not built yet (§10.2). Last reviewed 2026-10-27._
+_Design document for pinfold v1. Status: the Gateway, Plan and Apply, Repair, Baseline Migration, Approval in the client, `pinfold stats` and the benchmark are built. npm publication is pending. Last reviewed 2026-11-02._
 
 pinfold is a local MCP (Model Context Protocol) **Gateway** for coding agents such as Claude Code, Codex CLI and Antigravity CLI. An agent solves a multi-tool task once by writing a short TypeScript program during an **Exploration Run**. pinfold saves that program as a **Workflow** the developer owns, and runs it again without an LLM. Two ideas distinguish pinfold from existing tools:
 
@@ -34,25 +34,25 @@ How large these costs are is what the benchmark measures (§10). This document m
 
 ### 2.2 Scope of v1
 
-| Item                                                                                                                                                                                                                           | Status                                                     |
-| :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------- |
-| Gateway with six fixed tools (`search_sdk`, `run_sandbox`, `save_workflow`, `list_workflows`, `run_workflow`, `propose_repair`) and opt-in Exposed Workflows; stdio and Streamable HTTP Downstream Servers with static headers | Built                                                      |
-| Per-Tool Read/Write classification, TypeScript SDK generation from Baselines, SDK signature search                                                                                                                             | Built                                                      |
-| QuickJS/Wasm sandbox with time, memory and Tool-call limits                                                                                                                                                                    | Built                                                      |
-| Exploration Runs and the `save_workflow` checks                                                                                                                                                                                | Built                                                      |
-| Plan and Apply with Placeholders, Approval in the terminal and in an **Approval Dialog**, the Apply Journal, `pinfold resume` and `pinfold resolve`                                                                            | Built                                                      |
-| Baselines, Contracts, Response Adapters; deterministic Repair, Repair through the agent, and an optional Repair Model                                                                                                          | Built                                                      |
-| Developer-initiated **Baseline Migration** and marking a Baseline field optional ([ADR 0008](docs/adr/0008-baseline-migration-from-live-responses.md))                                                                         | Built                                                      |
-| Redacted, git-ignored Fixtures                                                                                                                                                                                                 | Built                                                      |
-| `pinfold stats`                                                                                                                                                                                                                | Built                                                      |
-| Property-based tests of H3 over the Drift Kit                                                                                                                                                                                  | Built                                                      |
-| **Drift Kit** with Sentry-, Linear- and GitHub-shaped servers and six **Drift Scenarios**                                                                                                                                      | Built                                                      |
-| The six benchmark tasks and their checkers (`src/packages/bench/`)                                                                                                                                                             | Built                                                      |
-| `pinfold bench` with the four Arms and the minimal loop, Claude Code and Codex CLI drivers ([ADR 0011](docs/adr/0011-pin-the-cli-drivers-through-a-local-proxy.md))                                                            | Built                                                      |
-| The lifecycle experiment with published results                                                                                                                                                                                | Planned: [#22](https://github.com/cmlcz/pinfold/issues/22) |
-| A `pinfold` command from a clone (`npm link`)                                                                                                                                                                                  | Built                                                      |
-| A build to JavaScript in `dist/`, run by CI through `npx` from the packed tarball                                                                                                                                              | Built                                                      |
-| npm publication                                                                                                                                                                                                                | Planned: [#23](https://github.com/cmlcz/pinfold/issues/23) |
+| Item                                                                                                                                                                                                                           | Status                                                          |
+| :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------- |
+| Gateway with six fixed tools (`search_sdk`, `run_sandbox`, `save_workflow`, `list_workflows`, `run_workflow`, `propose_repair`) and opt-in Exposed Workflows; stdio and Streamable HTTP Downstream Servers with static headers | Built                                                           |
+| Per-Tool Read/Write classification, TypeScript SDK generation from Baselines, SDK signature search                                                                                                                             | Built                                                           |
+| QuickJS/Wasm sandbox with time, memory and Tool-call limits                                                                                                                                                                    | Built                                                           |
+| Exploration Runs and the `save_workflow` checks                                                                                                                                                                                | Built                                                           |
+| Plan and Apply with Placeholders, Approval in the terminal and in an **Approval Dialog**, the Apply Journal, `pinfold resume` and `pinfold resolve`                                                                            | Built                                                           |
+| Baselines, Contracts, Response Adapters; deterministic Repair, Repair through the agent, and an optional Repair Model                                                                                                          | Built                                                           |
+| Developer-initiated **Baseline Migration** and marking a Baseline field optional ([ADR 0008](docs/adr/0008-baseline-migration-from-live-responses.md))                                                                         | Built                                                           |
+| Redacted, git-ignored Fixtures                                                                                                                                                                                                 | Built                                                           |
+| `pinfold stats`                                                                                                                                                                                                                | Built                                                           |
+| Property-based tests of H3 over the Drift Kit                                                                                                                                                                                  | Built                                                           |
+| **Drift Kit** with Sentry-, Linear- and GitHub-shaped servers and six **Drift Scenarios**                                                                                                                                      | Built                                                           |
+| The six benchmark tasks and their checkers (`src/packages/bench/`)                                                                                                                                                             | Built                                                           |
+| `pinfold bench` with the four Arms and the minimal loop, Claude Code and Codex CLI drivers ([ADR 0011](docs/adr/0011-pin-the-cli-drivers-through-a-local-proxy.md))                                                            | Built                                                           |
+| The lifecycle experiment with published results                                                                                                                                                                                | Built: [#22](https://github.com/cmlcz/pinfold/issues/22)        |
+| A `pinfold` command from a clone (`npm link`)                                                                                                                                                                                  | Built                                                           |
+| A build to JavaScript in `dist/`, run by CI through `npx` from the packed tarball                                                                                                                                              | Built                                                           |
+| npm publication                                                                                                                                                                                                                | Pending: `@cmlcz/pinfold` 0.1.0 is packed in CI, not yet on npm |
 
 ### 2.3 Non-goals
 
@@ -215,7 +215,7 @@ Two months later, Sentry's MCP server renames `count` to `eventCount`.
 
 ```text
  Agent client (Claude Code / Codex CLI / Antigravity CLI)      pinfold CLI (run, list, classify, plans, approve, decline,
-                 │ MCP (stdio)                                   resume, resolve, baseline, stats; bench planned)
+                 │ MCP (stdio)                                   resume, resolve, baseline, stats, bench)
                  ▼                                                               │
  ┌──────────────────────────────────── pinfold ──────────────────────────────────┴─────┐
  │  Gateway: search_sdk, run_sandbox, save_workflow, list_workflows, run_workflow,     │
@@ -245,7 +245,7 @@ Two months later, Sentry's MCP server renames `count` to `eventCount`.
 | Apply and Apply Journal         | Sends an approved or unattended plan, stops at the first failed write, and holds a write that may have been sent in doubt                                             | `pinfold resume` skips writes the journal records as sent; `pinfold resolve` settles a write in doubt                                                                                                       |
 | Model client                    | Optional OpenRouter client for the Repair Model and, once built, the benchmark                                                                                        | Off unless a Repair Model is named and `OPENROUTER_API_KEY` is set                                                                                                                                          |
 
-**On-disk layout.** Workflows, Baselines, Contracts and Response Adapters live in `.workflows/` and are committed to version control. Fixtures live in `.workflows/fixtures/` and are git-ignored. Run history, approvals, the Apply Journal (SQLite through `node:sqlite`) and the logs that `stats` reads live in `.pinfold/`, also git-ignored. pinfold needs Node 22.18 or newer. It runs from a clone today; npm publication under the MIT license is planned (§2.2).
+**On-disk layout.** Workflows, Baselines, Contracts and Response Adapters live in `.workflows/` and are committed to version control. Fixtures live in `.workflows/fixtures/` and are git-ignored. Run history, approvals, the Apply Journal (SQLite through `node:sqlite`) and the logs that `stats` reads live in `.pinfold/`, also git-ignored. pinfold needs Node 22.18 or newer. It runs from a clone today; publication to npm as `@cmlcz/pinfold`, under the MIT license, is pending (§2.2).
 
 ---
 
@@ -341,12 +341,12 @@ It never estimates tokens saved, because pinfold cannot observe the host agent's
 
 ### 10.2 Benchmark (`pinfold bench`)
 
-_Partly built._ The work is split across four issues:
+_Built._ The work is split across four issues:
 
 - [#19](https://github.com/cmlcz/pinfold/issues/19): the GitHub-shaped server and the six tasks (built);
 - [#20](https://github.com/cmlcz/pinfold/issues/20): the harness and the minimal agent loop, for all four Arms (built: `pinfold bench`);
 - [#21](https://github.com/cmlcz/pinfold/issues/21): the Claude Code and Codex CLI drivers (built: `--driver claude-code|codex`, [ADR 0011](docs/adr/0011-pin-the-cli-drivers-through-a-local-proxy.md));
-- [#22](https://github.com/cmlcz/pinfold/issues/22): the lifecycle experiment.
+- [#22](https://github.com/cmlcz/pinfold/issues/22): the lifecycle experiment (built: results in [docs/results/bench-2026-10-28](docs/results/bench-2026-10-28/README.md)).
 
 It is built in three stages, each ending with results that stand on their own:
 
