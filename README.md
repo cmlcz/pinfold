@@ -2,19 +2,19 @@
 
 pinfold is a local MCP server for coding agents. It sits between your agent and the MCP servers you use, such as Sentry, GitHub, or Linear. It runs the code your agent writes in an isolated sandbox, and it does not send any write to those servers until you approve it.
 
-> **Early version (0.0.0).** Only the features below work today.
+> **Early version (0.1.0).** Only the features below work today.
 
 ## What works today
 
 - **Sandboxed runs.** The agent writes a short TypeScript program. pinfold runs it in a sandbox with no filesystem, network, or imports. The program reaches the outside only through your MCP servers, and it returns only its result.
 - **Read tools run live.** Tools you mark as read run against the real server.
-- **Writes wait for approval.** Tools that change something are recorded into a plan. Nothing is sent until you approve that exact plan, together with the response adapters it was built through.
-- **Resume.** If an approved plan stops partway through, `resume` sends the writes that were not sent yet. A write that may have reached the server is never sent again until you check the server and say it did not.
+- **Writes wait for approval.** Calls to tools that change something are recorded in a plan instead of being sent. Nothing is sent until you approve that exact plan and the response adapters it was built through.
+- **Resume.** If an approved plan stops partway through, `resume` sends the writes that were not sent yet. A write that may have reached the server is never sent again until you check the server and confirm it did not.
 - **Save workflows.** A successful run can be saved as a workflow: an ordinary TypeScript file in `.workflows/` that you own, with the response fields it reads and its recorded tool calls.
 - **Run workflows.** A saved workflow runs again from the terminal, cron or CI with no LLM.
-- **Drift detection and response adapters.** A run stops before any write when a tool's responses no longer fit the fields the workflow reads. A response adapter maps the responses back, and every workflow that uses the tool works again without any edit.
+- **Drift detection and response adapters.** A run stops before any write when a tool's responses no longer fit the fields the workflow reads. A response adapter maps the responses back, and every workflow that uses the tool works again without edits.
 - **Deterministic repair.** pinfold searches for that adapter itself, with no model, and proposes it only when one mapping stands out. You approve it after seeing its diff, how its values compare with the recorded ones, and the write plan.
-- **Repair through your agent.** When pinfold finds no mapping, your agent can propose one through `propose_repair`, with no API key. pinfold checks it the same way and you approve it the same way.
+- **Repair through your agent.** When pinfold finds no mapping, your agent can propose one through `propose_repair`, with no API key. pinfold checks it, and you approve it, the same way as its own repairs.
 - **Baseline migration.** When you want a tool's new shape, for example to read a field its server added, `baseline migrate` shows how the live shape differs from the baseline and which workflows it breaks, then re-pins it.
 - **Approval in your agent's client.** Where the client supports MCP elicitation, a run that waits for approval asks you in a dialog that shows the plan, instead of sending you to the terminal.
 - **Workflows as their own tools.** A workflow you opt in appears to your agent as its own MCP tool.
@@ -47,7 +47,7 @@ npm ci     # also builds dist/
 npm link   # optional: puts pinfold and pinfold-gateway on your PATH
 ```
 
-The commands below run the source, as `node src/packages/cli/bin.ts <command>`. With the package installed, write `pinfold <command>` instead, and `pinfold-gateway` for `node src/packages/gateway/bin.ts`. The package runs JavaScript built into `dist/`, since Node does not run TypeScript from `node_modules`. CI packs the package (`npm pack`) and runs it through `npx` on a fresh runner. `examples/smoke/` holds a small project with a saved workflow, which CI runs that way and from a fresh clone.
+The commands below run the source, as `node src/packages/cli/bin.ts <command>`. With the package installed, write `pinfold <command>` instead, and `pinfold-gateway` for `node src/packages/gateway/bin.ts`. The package runs JavaScript built into `dist/`, since Node does not run TypeScript from `node_modules`. CI packs the package (`npm pack`) and runs it through `npx` on a fresh runner. `examples/smoke/` holds a small project with a saved workflow; CI runs it both from the packed package and from a fresh clone.
 
 ## A short demo: drift, repair, approve
 
@@ -59,7 +59,7 @@ $ pinfold run count_unresolved --project web
 2
 ```
 
-Now the server renames `status` to `issueStatus`. Add `"--drift", "rename:listIssues:issues[].status"` to the server's `args` in `pinfold.json` and run again. pinfold sees that the response no longer fits the fields the workflow reads, finds the rename itself, with no model, and holds the result back:
+Now the server renames `status` to `issueStatus`. Add `"--drift", "rename:listIssues:issues[].status"` to the server's `args` in `pinfold.json` and run again. pinfold detects that the response no longer fits the fields the workflow reads, finds the rename without a model, and holds back the result:
 
 ```console
 $ pinfold run count_unresolved --project web
@@ -75,7 +75,7 @@ The result is held back until the developer approves the changed Response Adapte
 Then run Workflow count_unresolved again with the same input to apply it.
 ```
 
-It exits with 3, so cron or CI can tell a pause from a failure. You approve in your own terminal, and the workflow works again without an edit:
+The command exits with code 3, so cron or CI can tell a pause from a failure. Approve in your own terminal, and the workflow works again without edits:
 
 ```console
 $ pinfold approve 98b322c37834
@@ -115,11 +115,11 @@ Create a `pinfold.json` file in your project:
 }
 ```
 
-- **`servers`** lists the MCP servers pinfold connects to. Each server's tools appear in the sandbox as `sdk.<server>.<tool>`. Server names must be valid JavaScript identifiers. A server is either a `command` that pinfold starts and talks to over stdio, or a Streamable HTTP `url`. A stdio server inherits only a few safe environment variables, such as `PATH` and `HOME`. Give it others in `env`, and a working directory relative to the project in `cwd`. An HTTP server's `headers` are sent with every request. In `env` and `headers`, write a secret as a reference to an environment variable, `${NAME}`, so it never sits in the file. pinfold refuses to start if a referenced variable is not set, and it keeps those values out of its errors.
+- **`servers`** lists the MCP servers pinfold connects to. Each server's tools appear in the sandbox as `sdk.<server>.<tool>`. Server names must be valid JavaScript identifiers. A server is either a `command` that pinfold starts and talks to over stdio, or a Streamable HTTP `url`. A stdio server inherits only a few safe environment variables, such as `PATH` and `HOME`. Give it others in `env`, and a working directory relative to the project in `cwd`. An HTTP server's `headers` are sent with every request. In `env` and `headers`, write a secret as a reference to an environment variable, `${NAME}`, so the secret never appears in the file. pinfold refuses to start if a referenced variable is not set, and keeps those values out of its error messages.
 - **`classification`** marks tools as `"read"`. Any tool you leave out is a write tool.
 - **`redact`** is optional. It lists, by server and tool, the fields that are replaced with `[redacted]` before a saved workflow's recorded calls are written to disk. A path starts with `arguments` or `response`, and `[]` stands for every element of an array, as in `"response.issues[].assignee.email"`.
 - **`limits`** is optional. The values above are the defaults: 30 seconds, 64 MiB of memory, and 100 tool calls per run.
-- **`repairModel`** is optional. It names an OpenRouter model, such as `"openai/gpt-4o-mini"`, that proposes a repair when pinfold finds none itself. The environment variable `PINFOLD_REPAIR_MODEL`, if set, picks the model instead. pinfold reads its key from `OPENROUTER_API_KEY`; copy `.env.example` to `.env`, fill it in, and run pinfold with `node --env-file=.env`. With no model named, or without the key, pinfold never calls a model; a run stopped by drift then says the model was not asked.
+- **`repairModel`** is optional. It names an OpenRouter model, such as `"openai/gpt-4o-mini"`, that proposes a repair when pinfold finds none itself. The environment variable `PINFOLD_REPAIR_MODEL`, if set, picks the model instead. pinfold reads its key from `OPENROUTER_API_KEY`: copy `.env.example` to `.env`, fill in the key, and run pinfold with `node --env-file=.env`. If no model is named, or the key is missing, pinfold never calls a model, and a run stopped by drift reports that the model was not asked.
 
 ## Connect your agent
 
@@ -150,7 +150,7 @@ Each CLI ran the six benchmark tasks once through the gateway, on a subscription
 | Codex CLI       | 0.153.4 | its default               |          6/6 |
 | Antigravity CLI | 1.4.12  | Gemini 3.8 Flash (Medium) |          5/6 |
 
-Antigravity failed one task because it sent two test writes, which a developer reading the plan would decline. The approval dialog was not part of these runs, since they ran headless.
+Antigravity failed one task because it sent two test writes that a developer reviewing the plan would have declined. The runs were headless, so they did not exercise the approval dialog.
 
 ## Mark read tools
 
@@ -166,12 +166,12 @@ The `classify` command reads the tool list from your servers, so they must be re
 
 ## Approve writes
 
-When a run includes writes, nothing is sent until you approve its plan. If your client supports MCP elicitation forms, the run asks you in a dialog that shows the plan and the repair behind each response adapter it was built through. Approve, and pinfold runs the same code again and sends the writes if it rebuilds the same plan; if it builds a different one, it asks again. Decline, and no run sends that plan. Close the dialog, and the plan waits for you in the terminal. A dialog left open for more than an hour ends the call with an error, and the plan waits in the terminal too.
+When a run includes writes, nothing is sent until you approve its plan. If your client supports MCP elicitation forms, the run asks you in a dialog that shows the plan and the repair behind each response adapter it was built through. If you approve, pinfold runs the same code again and sends the writes if it rebuilds the same plan; if the plan differs, it asks again. If you decline, no run sends that plan. If you close the dialog, the plan waits for you in the terminal. A dialog left open for more than an hour ends the call with an error, and the plan again waits in the terminal.
 
 > [!WARNING]
 > The dialog is the safeguard. A client hook or setting that answers elicitations for you, without showing them, approves every plan unread. Do not auto-answer pinfold's elicitations.
 
-Otherwise, `run_sandbox` returns the plan and reports that nothing was sent. Review the plan in your terminal:
+If your client does not support elicitation, `run_sandbox` returns the plan and reports that nothing was sent. Review the plan in your terminal:
 
 ```sh
 node src/packages/cli/bin.ts plans              # list pending plans
@@ -181,11 +181,11 @@ node src/packages/cli/bin.ts resume <run-id>    # finish a plan that stopped par
 node src/packages/cli/bin.ts resolve <run-id> <write> sent|not-sent  # settle a write in doubt
 ```
 
-`approve`, `resolve`, `classify read` and `baseline optional` show what they change and ask you to type `yes`. They run only in an interactive terminal, so an agent cannot run them through its shell tool, which has none.
+`approve`, `resolve`, `classify read` and `baseline optional` show what they change and ask you to type `yes`. They run only in an interactive terminal. An agent's shell tool has none, so the agent cannot run them.
 
 ### Keep your agent away from approval
 
-Your agent's shell runs as you. A determined agent could fake a terminal, or edit the files where pinfold keeps approvals. Deny it the commands and files that approve writes. In Claude Code, add to `.claude/settings.json`:
+Your agent's shell runs as you. A determined agent could fake a terminal, or edit the files where pinfold keeps approvals. Deny it the commands and files that approve writes. In Claude Code, add this to `.claude/settings.json`:
 
 ```json
 {
@@ -203,13 +203,13 @@ Your agent's shell runs as you. A determined agent could fake a terminal, or edi
 }
 ```
 
-These rules catch the commands as an agent usually writes them, chained ones included, and shell redirects into those files. They do not catch a command wrapped in `sh -c`, or a script that writes the files itself. For a hard boundary, run the agent in Claude Code's sandbox. Codex CLI has its own rules files for forbidden commands.
+These rules catch the commands in the form an agent usually writes them, including chained commands, and shell redirects into those files. They do not catch a command wrapped in `sh -c`, or a script that writes the files itself. For a hard boundary, run the agent in Claude Code's sandbox. Codex CLI has its own rules files for forbidden commands.
 
-A write whose real result no longer has a field a later write needs, because the write tool's response drifted, stops the Apply with the earlier writes sent. No resume can finish that run; a response adapter for the write tool lets later runs read its results as planned.
+If a write tool's response drifts so that a write's real result lacks a field a later write needs, the Apply stops there, with the earlier writes already sent. `resume` cannot finish that run. A response adapter for the write tool lets later runs read its results as planned.
 
-A write that fails while it is being sent may still have reached its server: a server can make the change and then answer with an error. pinfold never sends such a write again by itself. The run stops with that write in doubt, and `resume` refuses to go on. Check the server, then tell pinfold what you found with `resolve`. A write you resolve as `not-sent` is sent by the next `resume`; one resolved as `sent` never is, and the writes after it follow.
+A write that fails while it is being sent may still have reached its server: a server can make the change and then answer with an error. pinfold never sends such a write again by itself. The run stops with that write in doubt, and `resume` refuses to go on. Check the server, then tell pinfold what you found with `resolve`. The next `resume` sends a write you resolve as `not-sent`. It never sends a write you resolve as `sent`, and goes on with the writes after it.
 
-After you approve a plan in the terminal, the agent runs the same code again; after the dialog, pinfold does that itself. pinfold rebuilds the plan and sends the writes only if the plan has not changed. If it has changed, nothing is sent, and you need to approve the new plan. Inside a run, `Date` stands still and `Math.random` is seeded. The run after Approval gets the same time and seed, so a write that uses them rebuilds as you approved it. Local time in a run is UTC, with one exception: a date string with no time zone in a format other than ISO 8601, such as `Jan 1 2024 10:00`, is read in the time zone of the machine that runs pinfold.
+After you approve a plan in the terminal, the agent runs the same code again; after you approve in the dialog, pinfold reruns it itself. pinfold rebuilds the plan and sends the writes only if the plan has not changed. If it has changed, nothing is sent, and you need to approve the new plan. Inside a run, `Date` is frozen and `Math.random` is seeded. The run after Approval gets the same time and seed, so a write that uses them rebuilds as you approved it. Local time in a run is UTC, with one exception: a date string with no time zone in a format other than ISO 8601, such as `Jan 1 2024 10:00`, is read in the time zone of the machine that runs pinfold.
 
 ## Save a workflow
 
@@ -224,7 +224,7 @@ If a check fails, nothing is written, and the result names the failed check. A r
 
 A saved workflow is made of these files:
 
-- **`.workflows/<name>.ts`** holds the code and `export const settings = { writeBudget: 10 }`. You own this file and may edit it. Add `expose: true` to settings to give the agent the workflow as its own tool, named after it and taking `main`'s input as its arguments, from the next gateway start. Add `description: "..."` to say what the tool does. A workflow whose input is not an object, or that fails its checks, is left out, and the gateway says why on stderr.
+- **`.workflows/<name>.ts`** holds the code and `export const settings = { writeBudget: 10 }`. You own this file and may edit it. Add `expose: true` to `settings` to offer the workflow to the agent as its own tool from the next gateway start. The tool has the workflow's name and takes `main`'s input as its arguments. Add `description: "..."` to say what the tool does. A workflow whose input is not an object, or that fails its checks, is not exposed, and the gateway logs the reason to stderr.
 - **`.workflows/<name>.json`** holds the input schema, the tools the workflow calls, and its contract: the response fields the code read.
 - **`.workflows/fixtures/<name>.json`** holds the run's input and its read tool calls with their responses, after redaction. It is git-ignored.
 
@@ -236,30 +236,36 @@ node src/packages/cli/bin.ts list
 
 ## Run a workflow
 
-A saved workflow runs from the terminal, cron or CI, or from the agent with `run_workflow`. No LLM is called. Pass the input as one flag per field. A value is read as JSON where that fits the field, so `50` is a number for a number field, and as text otherwise. A flag without a value is `true`, and a value that starts with `--` is written `--field=--value`. A workflow whose `main` takes a string, a number or an array takes one value instead of flags.
+A saved workflow runs from the terminal, cron or CI, or from the agent with `run_workflow`. No LLM is called. Pass the input as one flag per field. A value is parsed as JSON where that fits the field's type and taken as text otherwise, so `50` is a number for a number field. A flag without a value is `true`, and a value that starts with `--` is written `--field=--value`. A workflow whose `main` takes a string, a number or an array takes one value instead of flags.
 
 ```sh
 node src/packages/cli/bin.ts run triage_sentry --project web --minEvents 50
 node src/packages/cli/bin.ts run search_issues "deadlock"
 ```
 
-pinfold checks the workflow before each run, since you may have edited it. The code must still export a typed `main(input)`, type-check against the SDK, and set a whole-number `writeBudget`. Every tool it calls must still be offered, and the input must fit `main`'s input type. If a check fails, the run is refused with the reason, and the command exits with 1. A run that reads a field its tool's baseline does not allow stops before its plan, since no drift there could be told.
+pinfold checks the workflow before each run, since you may have edited it. The code must still export a typed `main(input)`, type-check against the SDK, and set a whole-number `writeBudget`. Every tool it calls must still be offered by its server, and the input must fit `main`'s input type. If a check fails, pinfold refuses the run, gives the reason and exits with code 1. A run that reads a field its tool's baseline does not have stops before its plan, since pinfold could not detect drift in that field.
 
-Each run builds a plan. Its writes are sent without asking you, unless you have never approved writes of the workflow's code as it is now, a response adapter it reads through changed, or the plan has more writes than `writeBudget`. Any edit to the workflow's file counts as new code, whoever made it, so the first plan with writes after an edit waits for you. Then the run pauses: nothing is sent, the command prints the plan and its ID, and exits with 3. Review the plan with `plans`, which also shows the repair behind each changed adapter, approve it with `approve <plan-id>`, then run the workflow again with the same input to apply it.
+Each run builds a plan, and its writes are sent without asking you unless one of these holds:
+
+- you have never approved writes of the workflow's code as it is now;
+- a response adapter the run reads through has changed;
+- the plan has more writes than `writeBudget`.
+
+Any edit to the workflow's file counts as new code, whoever made it, so the first plan with writes after an edit waits for you. In these cases the run pauses: nothing is sent, the command prints the plan and its ID, and exits with 3. Review the plan with `plans`, which also shows the repair behind each changed adapter, approve it with `approve <plan-id>`, then run the workflow again with the same input to apply it.
 
 Every run is recorded in `.pinfold/runs.jsonl`, and `list` shows each workflow's last run.
 
 ## Repair drift
 
-Each tool's response shape is pinned in its baseline the first time a call shows its full shape, which is usually the first call. For a tool that declares no output schema, pinfold infers the shape from that response, waiting while an array in it is still empty, so it cannot know yet which fields are optional. Within an array, a field that some elements leave out or hold as null, while others have it, is not drift. A field missing from a single response is: if the server leaves it out at times, mark it optional in the baseline:
+pinfold pins each tool's response shape in a baseline the first time a call shows the full shape, usually on the first call. For a tool that declares no output schema, pinfold infers the shape from that response, and waits while any array in it is still empty. Since the shape comes from one response, pinfold cannot know which fields are optional. Within an array, a field that some elements omit or hold as null while others have it is not drift. A field missing from a response is drift. If the server sometimes leaves a field out, mark it optional in the baseline:
 
 ```sh
 node src/packages/cli/bin.ts baseline optional sentry.getIssue assignee
 ```
 
-A field marked optional may be missing or null, and workflows that read it must handle that to type-check. When a server later answers differently, say it renames `count` to `eventCount`, a run that reads `count` stops before it sends anything. Each run is checked against the fields it read itself, so an edit to the workflow, or an input that takes another branch, is checked as it runs. The run reports the tool, the fields that drifted and every workflow the drift affects. A run that does not read the drifted fields goes on as before.
+A field marked optional may be missing or null, and workflows that read it must handle that to type-check. When a server later changes its responses, for example by renaming `count` to `eventCount`, a run that reads `count` stops before it sends anything. Each run is checked against the fields it actually read, so edited code, or an input that takes another branch, is covered too. The run reports the tool, the fields that drifted and every workflow the drift affects. A run that does not read the drifted fields continues as before.
 
-pinfold then tries to repair the drift itself, with no model. It looks for a mapping from the live responses back to the baseline, such as a renamed field, a response now wrapped in another object, an object that became one of its fields (`milestone` now holds only the title), a field moved up out of its object, a number sent as text, or renamed enum values. It scores each candidate by how alike the field names are and by how well its values agree with those in the saved fixtures. Values count only where the fixtures hold at least three of them, from calls with the same arguments as the drifted run or, when those hold fewer, from every call; with fewer still, only a candidate whose field name matches outright, such as a wrapped response, can pass. A response that moves under another object after the tool's adapter already maps some of its fields gets the unwrap and, after it, those mappings again, since they no longer find their fields where the adapter's earlier ops look. When one candidate stands out and the mapped responses fit every workflow that uses the tool, pinfold writes it as a new version of the tool's response adapter and runs the workflow again. That run pauses for approval and shows the adapter diff, the value evidence and the write plan:
+pinfold then tries to repair the drift itself, with no model. It looks for a mapping from the live responses back to the baseline, such as a renamed field, a response now wrapped in another object, an object that became one of its fields (`milestone` now holds only the title), a field moved up out of its object, a number sent as text, or renamed enum values. It scores each candidate by how similar the field names are and how well its values agree with those in the saved fixtures. Values count only where the fixtures hold at least three of them. pinfold takes them from calls with the same arguments as the drifted run, or from every call when those hold fewer. With fewer still, only a candidate whose field name matches exactly, such as a wrapped response, can pass. If a response moves under another object after the tool's adapter already maps some of its fields, the repair adds the unwrap and then repeats those mappings, since the adapter's earlier ops no longer find their fields. When one candidate stands out and the mapped responses fit every workflow that uses the tool, pinfold saves it as a new version of the tool's response adapter and runs the workflow again. That run pauses for approval and shows the adapter diff, the value evidence and the write plan:
 
 ```text
 pinfold repaired the Response Adapter of sentry.listIssues, now version 1:
@@ -268,9 +274,9 @@ Value evidence, the live responses through this version next to the Fixtures:
   issues[].count: now median 128, range 73–210; in the Fixtures median 128, range 73–210
 ```
 
-Drift that no single mapping settles is recorded as pending. Your agent can repair it: `propose_repair` shows it the pending drift, with the fields that no longer fit, the baseline, a live response and the values in the fixtures, all redacted by your rules. When a tool has redaction rules, any value the drift moved away from where the baseline has it is redacted too, since the rules may no longer reach it. The agent then proposes the adapter operations to add. pinfold rejects any proposal whose mapped responses do not fit every workflow that uses the tool and gives the reason. A proposal that passes becomes the adapter's next version and waits for your approval like any other; the agent cannot approve it. You can also write an adapter of your own.
+Drift that no single mapping settles is recorded as pending. Your agent can repair it: `propose_repair` shows the agent the pending drift: the fields that no longer fit, the baseline, a live response and the fixture values, all redacted by your rules. When a tool has redaction rules, pinfold also redacts any value the drift moved away from its baseline path, since the rules may no longer reach it. The agent then proposes the adapter operations to add. pinfold rejects, with the reason, any proposal whose mapped responses do not fit every workflow that uses the tool. A proposal that passes becomes the adapter's next version and waits for your approval like any other; the agent cannot approve it. You can also write an adapter of your own.
 
-With `repairModel` set, pinfold first asks that model, unattended. The model sees what the agent would see through `propose_repair`, redacted the same way, and its proposal is checked the same way. One that passes becomes the adapter's next version, and the run pauses for your approval with the diff. pinfold also refuses a `default` from the model for a field the fixtures hold any other value of, since it would only make the data up. One that fails leaves the drift pending, and the run says why. pinfold does not ask the model again until the drift changes, so a stopped cron job does not pay on every run; a model that could not be reached is asked again on the next run. Each call's token counts and cost, as OpenRouter reports them, are added to `.pinfold/model-usage.jsonl`.
+If `repairModel` is set, pinfold first asks that model, unattended. The model sees what the agent would see through `propose_repair`, redacted the same way, and pinfold checks its proposal the same way. It also refuses a `default` from the model for a field the fixtures hold any other value for, since that would invent data. A proposal that passes becomes the adapter's next version, and the run pauses for your approval with the diff. A proposal that fails leaves the drift pending, and the run says why. pinfold does not ask the model again until the drift changes, so a stopped cron job does not pay on every run. A model that could not be reached is asked again on the next run. pinfold adds each call's token counts and cost, as OpenRouter reports them, to `.pinfold/model-usage.jsonl`.
 
 A response adapter lives in `.workflows/adapters/`, one file per tool. It maps the tool's live responses back to the baseline, so the workflow code never changes. A write tool's adapter maps the real results of its writes the same way, and later writes in the plan read them through it:
 
@@ -290,20 +296,20 @@ The ops run in order. A path such as `issues[].count` names the `count` of every
 - **`rename`** moves the field at `from` to `to`, within the same array elements.
 - **`wrap`** puts the value at `at` under `field`, and **`unwrap`** replaces the value at `at` with its `field`. Without `at`, they act on the whole response; an `at` that ends in `[]`, such as `labels[]`, acts on each element.
 - **`convert`** turns the value at `path` into a `number` or a `string`, or an ISO date into `epoch-ms` and back with `iso-date`.
-- **`map`** replaces enum values at `path` by the `values` they map to.
+- **`map`** replaces enum values at `path` with the `values` they map to.
 - **`default`** gives a missing field at `path` the `value`.
 
-Whoever proposes a `default`, the approval view says the server sends no value there and names the value given. A new or changed adapter makes the next run of every workflow that uses the tool pause for approval. That includes a workflow that sends no writes: its result is held back until you approve. A write tool can change too: when its server lists other arguments than its baseline and a planned write no longer fits them, the run stops before approval, with nothing sent, and says which argument no longer fits. `baseline migrate` shows the change. Some drift, such as a response that is now paged, cannot be mapped back by an adapter: pinfold reports that it needs a manual fix. Edit the workflow to read the new shape, and migrate the tool's baseline to it.
+For every `default`, whoever proposed it, the approval view says that the server sends no value there and names the value supplied. A new or changed adapter makes the next run of every workflow that uses the tool pause for approval. That includes a workflow that sends no writes: its result is held back until you approve. A write tool can change too. When its server lists different arguments from its baseline and a planned write no longer fits them, the run stops before approval with nothing sent and names the argument that no longer fits. `baseline migrate` shows the change. No adapter can map back some drift, such as a response that is now paged; pinfold reports that it needs a manual fix. Edit the workflow to read the new shape, and migrate the tool's baseline to it.
 
 ## Migrate a baseline
 
-A field a server adds stays out of the baseline, so no workflow can read it until you migrate the tool's baseline on purpose:
+A field that a server adds stays out of the baseline. No workflow can read it until you deliberately migrate the tool's baseline:
 
 ```sh
 node src/packages/cli/bin.ts baseline migrate sentry.listIssues
 ```
 
-pinfold calls the tool again with the arguments of its calls in the saved fixtures, and infers the shape the server gives it now. Where the server still lists an output schema that every response fits, it keeps that schema. A field whose values all still fit its old schema, an enum for one, keeps that schema too. Arguments that redaction kept out of the fixtures are not sent, and a write tool is never called: only the output schema its server lists can say its shape.
+pinfold calls the tool again with the arguments recorded in the saved fixtures and infers the shape the server returns now. Where the server still lists an output schema that every response fits, pinfold uses that schema. A field whose values all still fit its old schema, such as an enum, keeps that schema too. Arguments that redaction removed from the fixtures are not sent. A write tool is never called, so only the output schema its server lists can define its new shape.
 
 The command shows each field whose shape changes, and checks every workflow that calls the tool against the new baseline: its code must type-check, and every field it reads must be there. Nothing changes until you run it again with `--yes`:
 
@@ -319,7 +325,7 @@ Workflow triage_sentry: does not check against the new Baseline:
 Nothing changed yet. `pinfold baseline migrate sentry.listIssues --yes` re-pins the Baseline.
 ```
 
-With `--yes`, pinfold re-pins the baseline and resets the tool's response adapter as a new version with no ops, since the baseline is now the live shape. Like any changed adapter, that makes the next run of every workflow that uses the tool pause for approval, with the baseline's changes in the approval view. Pending drift of the tool is dropped, as it was drift from the old baseline. Edit each workflow that no longer checks before you run it again.
+With `--yes`, pinfold re-pins the baseline and resets the tool's response adapter as a new version with no ops, since the baseline is now the live shape. Like any changed adapter, that makes the next run of every workflow that uses the tool pause for approval, with the baseline's changes in the approval view. The tool's pending drift is dropped, since it was measured against the old baseline. Edit each workflow that no longer checks before you run it again.
 
 ## See what pinfold did
 
@@ -335,7 +341,7 @@ node src/packages/cli/bin.ts stats --json  # for scripts
 - repairs, by who made them;
 - the tokens and cost pinfold spent through the repair model.
 
-It never estimates tokens saved. Runs from before pinfold measured them are counted apart, not as zero. Repairs are counted from the repair log, which began with this version.
+It never estimates tokens saved. Runs recorded before pinfold measured these figures are counted separately, not as zero. Repairs are counted from the repair log, which began with this version.
 
 ## Benchmark
 
@@ -343,8 +349,8 @@ Measured on the Drift Kit with `deepseek/deepseek-v4.1-flash-1017`, pinned to on
 
 - A saved workflow ran each task in about 0.1 s with no tokens, 85 to 500 times faster than an agent writing a fresh program ([stage 2](docs/results/bench-2026-10-27/README.md)).
 - It succeeded on all 162 of its runs, against 76% to 100% for agents calling the tools directly, writing fresh code, or reusing a saved program ([stage 3](docs/results/bench-2026-10-28/README.md)).
-- Over 100 runs with three drifts, it paid back its first agent run by run 2 and kept working through every drift, pausing once for approval each time. An agent writing fresh code each run succeeded on 42 of them, and one reusing a saved program on 29, failing on most runs after the first drift.
-- Deterministic repair alone fixed 47 of 53 mappable drift cases from a generated grid (88.7%), with no wrong repair ([H2](docs/results/h2-2026-10-31.md)). On real changes from GitHub's MCP server it fixed all 13 that a mapping could fix, again with none wrong; the rest, fields the server dropped, stop with nothing sent and wait for your agent or the repair model ([changelog set](docs/results/h2-changelog-2026-10-31.md)).
+- Over 100 runs with three drifts, it recovered the cost of its first agent run by run 2 and kept working through every drift, pausing once for approval each time. An agent writing fresh code on each run succeeded on 42 runs. One reusing a saved program succeeded on 29 and failed most runs after the first drift.
+- Deterministic repair alone fixed 47 of 53 mappable drift cases from a generated grid (88.7%), with no wrong repair ([H2](docs/results/h2-2026-10-31.md)). On real changes from GitHub's MCP server it fixed all 13 that a mapping could fix, again with none wrong. The rest were fields the server dropped; runs that hit them stop with nothing sent and wait for your agent or the repair model ([changelog set](docs/results/h2-changelog-2026-10-31.md)).
 
 ## What pinfold guarantees, and what it does not
 
@@ -372,7 +378,7 @@ It does not guarantee:
 - **`.workflows/adapters/`** holds the response adapters.
 - **`.workflows/`** also holds the saved workflows. **`.workflows/fixtures/`** is git-ignored.
 
-Your approvals live in `.pinfold/runs.jsonl` and `.pinfold/plans/`. A workflow runs unattended only where they are: on a CI runner that starts each job afresh, keep `.pinfold/` between jobs, for example as a cache, or every run with writes pauses for approval. Keep `.workflows/fixtures/` there too: without the recorded values, deterministic repair has nothing to compare candidates with and proposes less.
+Your approvals live in `.pinfold/runs.jsonl` and `.pinfold/plans/`. A workflow runs unattended only where those files exist. On a CI runner that starts each job fresh, keep `.pinfold/` between jobs, for example in a cache; otherwise every run with writes pauses for approval. Keep `.workflows/fixtures/` too: without the recorded values, deterministic repair has nothing to compare candidates against and proposes fewer repairs.
 
 ## License
 
