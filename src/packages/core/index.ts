@@ -262,15 +262,25 @@ export async function openCore(
     proposeRepair: (request) => proposeRepair(project, request),
     migrateBaseline: (request) => migrateBaseline(project, request),
     resume: (run) => resume(project, run),
-    saveWorkflow: ({ run, name, confirmed }) =>
-      saveWorkflow(project.root, {
+    saveWorkflow: ({ run, name, confirmed }) => {
+      const exploration = explorations.get(run);
+      return saveWorkflow(project.root, {
         name,
         run,
-        exploration: explorations.get(run),
+        exploration,
         confirmed,
         declarations: declarations(project.sdkTools()),
         redact: config.redact ?? {},
-      }),
+        unprotected: (exploration?.tools ?? []).filter((name) => {
+          const tool = project.tools.get(name);
+          return (
+            tool !== undefined &&
+            project.isRead(tool) &&
+            project.baselines.get(tool.server, tool.tool) === undefined
+          );
+        }),
+      });
+    },
     close: () => project.close(),
   };
 }

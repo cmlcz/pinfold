@@ -31,7 +31,15 @@ import {
   type RunEntry,
 } from "./workflows.ts";
 
-export type WorkflowRunRequest = { name: string } & GivenInput;
+export type WorkflowRunRequest = {
+  name: string;
+  /**
+   * The agent started the run, through the Gateway, with an input of its own
+   * choosing. Its writes then wait for Approval even once the Workflow's code
+   * is approved; only a run the developer starts can send unattended.
+   */
+  agent?: boolean;
+} & GivenInput;
 
 type GivenInput =
   | { input: unknown }
@@ -41,11 +49,11 @@ type GivenInput =
 /** Runs a saved Workflow and keeps the run in the run history. */
 export async function runWorkflow(
   project: Project,
-  { name, ...given }: WorkflowRunRequest
+  { name, agent = false, ...given }: WorkflowRunRequest
 ): Promise<WorkflowRunResult> {
   const ran: Ran = {};
   const { value: result, traffic } = await metered(() =>
-    runOnce(project, name, given, ran)
+    runOnce(project, name, given, ran, agent)
   );
   await recordRun(project.root, {
     workflow: name,
@@ -71,6 +79,7 @@ async function runOnce(
   name: string,
   given: GivenInput,
   ran: Ran,
+  agent: boolean,
   /** The Repair the run before this one made, which this run shows. */
   repaired?: RepairRecord
 ): Promise<WorkflowRunResult> {
@@ -109,7 +118,7 @@ async function runOnce(
         ? await repairDrift(project, name, drift, adapters!)
         : undefined;
     if (found?.kind === "repaired") {
-      return runOnce(project, name, given, ran, found.record);
+      return runOnce(project, name, given, ran, agent, found.record);
     }
     return {
       ok: false,
@@ -140,7 +149,7 @@ async function runOnce(
   const { plan, reason, changedAdapters } = approvalFor(
     workflow,
     await runHistory(project.root),
-    { key, source, tools, adapters: digests },
+    { key, source, tools, adapters: digests, agent },
     writes
   );
   const outcome = await planOutcome(project, plan, result.value, {
@@ -208,8 +217,8 @@ async function settleDrift(project: Project, observed: Observed[]) {
 /**
  * The Write Plan of a Workflow Run and why it needs Approval, if it does:
  * the developer never approved writes of this code, an Adapter changed
- * since the developer last saw its results, or the plan exceeds the Write
- * Budget.
+ * since the developer last saw its results, the plan exceeds the Write
+ * Budget, or the agent started a run that writes.
  */
 function approvalFor(
   workflow: LoadedWorkflow,
@@ -223,6 +232,7 @@ function approvalFor(
     source: string;
     tools: string[];
     adapters: Record<string, string>;
+    agent: boolean;
   },
   writes: PlannedWrite[]
 ): { plan: WritePlan; reason?: string; changedAdapters: string[] } {
@@ -277,6 +287,13 @@ function approvalFor(
   if (plan.writes.length > workflow.writeBudget) {
     return needs(
       `the Write Plan has ${writeCount(plan)}, over the Write Budget of ${workflow.writeBudget}`
+    );
+  }
+  // Approval covers the code, not the input. A run the agent starts picks
+  // its own input, so the developer sees the plan of each such run.
+  if (ran.agent && plan.writes.length > 0) {
+    return needs(
+      `the agent started Workflow ${name}, and the developer has not approved this Write Plan`
     );
   }
   return { plan, changedAdapters };

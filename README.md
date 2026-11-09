@@ -80,6 +80,7 @@ After you approve the code of a workflow, later runs can write without approval.
 - The code of the workflow changes.
 - A response adapter changes. A response adapter is described below.
 - A plan is larger than the write budget.
+- Your agent started the run. The agent chooses the input of such a run, so each plan that it builds with writes waits for you. Only a run that you start, from the terminal or cron, can write without approval.
 
 If a run stops in the middle, use `pinfold resume <run-id>`. It sends the writes that pinfold did not send. A write can possibly reach the server, but pinfold has no proof that it did. pinfold keeps that write blocked. You must check the server and mark the write as resolved. In this way, pinfold never sends a write two times by mistake.
 
@@ -108,6 +109,7 @@ There are two limits:
 
 ## Before you rely on it
 
+- **Drift protection needs structured responses.** pinfold can check and repair only the responses that are JSON objects or arrays. A tool that answers in plain text has no saved shape, so a change in its text goes unseen. When the agent saves a workflow, pinfold names each read tool that has no drift protection.
 - **You decide the classification.** pinfold runs a tool that you mark as read immediately. It does not ask for a review. Check each tool.
 - **The sandbox limits what a program can reach. It does not limit what a program can send.** Data can leave through tool arguments. This includes the arguments of read tools.
 - **Approvals are local.** In CI, keep `.pinfold/` and `.workflows/fixtures/` between runs. If you do not, you lose the approvals and the repair evidence.
@@ -118,7 +120,7 @@ There are two limits:
 These results are from one model, six synthetic tasks, and small samples. They show a trend. They do not give a guarantee.
 
 - **Speed and cost.** Saved workflows ran in about 0.1 seconds and used no model tokens. This is 85 to 500 times faster than an agent that writes a new program for each run. In stage 3, all 162 workflow runs succeeded. Refer to the [benchmark results](docs/results/bench-2026-10-28/README.md) and the [measurement setup](docs/results/bench-2026-10-27/README.md).
-- **Repair.** Generated drift scenarios that a mapping can fix gave 53 runs. The search of pinfold repaired 47 of them. It made no wrong repair. The scenarios favor the name matching of pinfold. Refer to the [H2 results](docs/results/h2-2026-10-31.md).
+- **Repair.** The generated drift scenarios gave 91 runs. A mapping can fix 53 of them, and the search of pinfold repaired 47 of those. It made no wrong repair. The other 38 are removed fields and paged responses, which a mapping cannot fix, so 47 of 91 runs (52%) were repaired. The scenarios favor the name matching of pinfold. Refer to the [H2 results](docs/results/h2-2026-10-31.md).
 - **Clients.** Claude Code and Codex CLI each completed all six tasks through the gateway. Antigravity CLI completed five. These checks ran without a screen. They did not test approval dialogs. Refer to the [versions and results](docs/results/compat-2026-11-01/README.md).
 
 ## Documentation

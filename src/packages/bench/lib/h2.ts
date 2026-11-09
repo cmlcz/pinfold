@@ -283,6 +283,8 @@ export function formatResults(
     "",
     `Deterministic Repair alone repaired **${repaired.length} of ${mappable.length}** runs of mappable Drift Scenarios (${(rate * 100).toFixed(1)}%), against a target of 80%. A run is one task's Workflow facing one scenario; it counts as repaired only if the repaired run then passes the task's checker.`,
     "",
+    `Over all ${runs.length} runs, including the ${runs.length - mappable.length} that no mapping can fix (a removed field, a paged response), ${repaired.length} were repaired (${((repaired.length / runs.length) * 100).toFixed(1)}%).`,
+    "",
     "The grid renames each field by a fixed rule that keeps the old name's words ([ADR 0010](../adr/0010-generate-the-h2-scenario-grid.md)), which favours deterministic Repair's name matching. Scenarios taken from real MCP server changelogs, which H2 reports apart, are not in this run.",
     "",
     `| Kind | Mappable | ${outcomes.join(" | ")} |`,

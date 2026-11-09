@@ -173,9 +173,13 @@ export function createGateway(
       if (!result.ok) {
         return failure(`${result.error}\nFailed check: ${result.check}`);
       }
-      const { workflow } = result;
+      const { workflow, unprotected } = result;
+      const warning =
+        unprotected.length > 0
+          ? `\n\nNo drift protection for ${unprotected.join(", ")}: the responses are plain text or empty, so pinfold cannot see when they change shape. Tell the developer to check this Workflow's result after those servers update.`
+          : "";
       return reply(
-        `Saved Workflow ${workflow.name} as .workflows/${workflow.name}.ts.\n\n${formatWorkflows([workflow])}`
+        `Saved Workflow ${workflow.name} as .workflows/${workflow.name}.ts.\n\n${formatWorkflows([workflow])}${warning}`
       );
     }
   );
@@ -185,7 +189,7 @@ export function createGateway(
     {
       description: [
         "Run a saved Workflow with an input, without writing code: list_workflows shows each one's inputs.",
-        "The run is a Plan, then an Apply. Its writes are sent unattended unless Approval is required: the developer has not approved writes of the Workflow's code as it is now, a Response Adapter it reads through changed, or its Write Plan exceeds its Write Budget. Then the run pauses and nothing is sent until the developer approves the Write Plan, in a dialog of the client when it can show one, or else in a terminal.",
+        "The run is a Plan, then an Apply. Every run you start that would write pauses for the developer's Approval of its Write Plan, since you choose the input. Only runs the developer starts, from a terminal or cron, can send writes unattended. A paused run sends nothing until the developer approves the Write Plan, in a dialog of the client when it can show one, or else in a terminal.",
         "The Workflow is checked before it runs, since the developer may have edited it; a run refused by a check says why.",
       ].join("\n"),
       inputSchema: z.object({
@@ -201,7 +205,7 @@ export function createGateway(
     ({ name, input }, ctx) =>
       withApproval(
         ctx,
-        () => core.runWorkflow({ name, input: input ?? {} }),
+        () => core.runWorkflow({ name, input: input ?? {}, agent: true }),
         formatWorkflowRun
       )
   );
@@ -286,7 +290,7 @@ export function createGateway(
         (args, ctx) =>
           withApproval(
             ctx,
-            () => core.runWorkflow({ name, input: args }),
+            () => core.runWorkflow({ name, input: args, agent: true }),
             formatWorkflowRun
           )
       );
