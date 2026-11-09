@@ -49,7 +49,16 @@ export type Exploration = {
 export type SaveCheck = "name" | "run" | "confirmation" | "main" | "types";
 
 export type SaveResult =
-  | { ok: true; workflow: WorkflowSummary }
+  | {
+      ok: true;
+      workflow: WorkflowSummary;
+      /**
+       * Read Tools the code calls that have no pinned Baseline, because
+       * their responses are plain text or empty: Drift in them goes
+       * unseen.
+       */
+      unprotected: string[];
+    }
   | { ok: false; check: SaveCheck; error: string };
 
 const recordSchema = z.object({
@@ -94,6 +103,7 @@ export async function saveWorkflow(
     declarations: string;
     /** Redaction rules by server, then Tool. */
     redact: Record<string, Record<string, string[]>>;
+    unprotected: string[];
   }
 ): Promise<SaveResult> {
   const { name, exploration } = request;
@@ -174,7 +184,11 @@ export async function saveWorkflow(
     join(dir, `${name}.json`),
     `${JSON.stringify(record, null, 2)}\n`
   );
-  return { ok: true, workflow: summary(record, true) };
+  return {
+    ok: true,
+    workflow: summary(record, true),
+    unprotected: request.unprotected,
+  };
 }
 
 /**

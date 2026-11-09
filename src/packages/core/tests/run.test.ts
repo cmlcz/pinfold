@@ -120,6 +120,68 @@ describe("run_workflow", () => {
     expect(await openPlans(ws.dir).pending()).toEqual(pending);
   });
 
+  it("pauses a run the agent starts, even once the code is approved", async () => {
+    const core = await openTriage();
+    await saveTriage(core);
+    const first = succeeded(
+      await core.runWorkflow({ name: "triage_sentry", input })
+    );
+    await openPlans(ws.dir).approve(first.plan.id);
+    succeeded(await core.runWorkflow({ name: "triage_sentry", input }));
+    // The developer starts this run, which applies unattended.
+    const other = { name: "triage_sentry", input: { ...input, minEvents: 10 } };
+    expect(succeeded(await core.runWorkflow(other)).status).toBe("applied");
+
+    const byAgent = succeeded(
+      await core.runWorkflow({
+        ...other,
+        input: { ...input, minEvents: 1 },
+        agent: true,
+      })
+    );
+
+    expect(byAgent.status).toBe("pending");
+    expect(byAgent.approvalReason).toContain("the agent started Workflow");
+    await openPlans(ws.dir).approve(byAgent.plan.id);
+    const approved = succeeded(
+      await core.runWorkflow({
+        ...other,
+        input: { ...input, minEvents: 1 },
+        agent: true,
+      })
+    );
+    expect(approved.status).toBe("applied");
+  });
+
+  it("names the Read Tools a saved Workflow calls that have no drift protection", async () => {
+    const core = await ws.open({
+      servers: {
+        sentry: ws.sentry(),
+        text: {
+          command: process.execPath,
+          args: [fileURLToPath(new URL("text-server.ts", import.meta.url))],
+        },
+      },
+      classification: { ...sentryReads, text: { report: "read" } },
+    });
+    const explored = await core.explore({
+      code: `export async function main(input: { project: string }) {
+        await sdk.sentry.listIssues({ project: input.project });
+        return await sdk.text.report({});
+      }`,
+      input,
+    });
+    if (!explored.ok) throw new Error(explored.error);
+
+    const saved = await core.saveWorkflow({
+      run: explored.exploration,
+      name: "report",
+      confirmed: true,
+    });
+
+    expect(saved).toMatchObject({ ok: true, unprotected: ["text.report"] });
+  });
+
   it("asks again for a declined plan, even once the Workflow runs unattended", async () => {
     const core = await openTriage();
     await saveTriage(core);

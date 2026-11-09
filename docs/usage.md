@@ -231,7 +231,8 @@ Each run builds a plan, and its writes are sent without asking you unless one of
 
 - you have never approved writes of the workflow's code as it is now;
 - a response adapter the run reads through has changed;
-- the plan has more writes than `writeBudget`.
+- the plan has more writes than `writeBudget`;
+- your agent started the run through the gateway. The agent chooses the input of such a run, so its plan waits for you every time it has writes.
 
 Any edit to the workflow's file counts as new code, whoever made it, so the first plan with writes after an edit waits for you. In these cases the run pauses: nothing is sent, the command prints the plan and its ID, and exits with 3. Review the plan with `plans`, which also shows the repair behind each changed adapter, approve it with `approve <plan-id>`, then run the workflow again with the same input to apply it.
 
@@ -345,7 +346,7 @@ These hold as long as only you, not your agent, run `pinfold approve`, `classify
 
 It does not guarantee:
 
-- **That you see every unattended write.** Approval is per version of a workflow's code. Once approved, that code sends later plans unattended, with other inputs, as long as they stay within its write budget and no adapter changed.
+- **That you see every unattended write.** Approval is per version of a workflow's code. Once approved, a run that you start (`pinfold run`, cron) sends later plans unattended, with other inputs, as long as they stay within its write budget and no adapter changed. A run that your agent starts does not.
 - **Branches the type check cannot see.** A placeholder cast to `any`, or passed through a call such as `Boolean(x)`, can still decide a branch unseen.
 - **Semantic drift.** If `count` keeps its name and type but starts counting something else, nothing stops the run.
 - **Drift a single response cannot map.** A response that is now paged needs a manual edit and a baseline migration.
