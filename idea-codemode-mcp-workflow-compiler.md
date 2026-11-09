@@ -1,13 +1,13 @@
 # pinfold: plan-first workflows that survive API drift
 
-_Design document for pinfold v1. Status: the Gateway, Plan and Apply, Repair, Baseline Migration, Approval in the client and `pinfold stats` are built. The benchmark is not built yet (§10.2). Last reviewed 2026-10-27._
+_Design document for pinfold v1. Status: the Gateway, Plan and Apply, Repair, Baseline Migration, Approval in the client, `pinfold stats` and the benchmark are built. npm publication is pending. Last reviewed 2026-11-02._
 
 pinfold is a local MCP (Model Context Protocol) **Gateway** for coding agents such as Claude Code, Codex CLI and Antigravity CLI. An agent solves a multi-tool task once by writing a short TypeScript program during an **Exploration Run**. pinfold saves that program as a **Workflow** the developer owns, and runs it again without an LLM. Two ideas distinguish pinfold from existing tools:
 
 1. **Every Workflow Run is a Plan followed by an Apply.** **Read Tools** run live, and calls to **Write Tools** are recorded into a **Write Plan** instead of being sent. Apply sends that Write Plan and nothing else.
 2. **Drift is repaired at the boundary, not in the Workflow's code.** Each **Tool** is pinned to a **Baseline** response shape. When a **Downstream Server** changes its responses, pinfold proposes a new version of the Tool's **Response Adapter**, a declarative mapping back to the Baseline. Once the developer approves it, every Workflow that uses the Tool runs again unchanged. No LLM ever edits a Workflow file.
 
-In one sentence: an agent writes the Workflow once; pinfold runs it as Downstream Servers change, and sends no write outside a Write Plan that the developer approved or that meets the conditions for running unattended (§4.3).
+In short, an agent writes the Workflow once, and pinfold runs it as Downstream Servers change, and sends no write outside a Write Plan that the developer approved or that meets the conditions for running unattended (§4.3).
 
 Capitalized terms introduced in **bold** are defined in [GLOSSARY.md](GLOSSARY.md). Architectural decisions live in [docs/adr/](docs/adr/). Configuration and commands are documented in the [README](README.md).
 
@@ -19,7 +19,7 @@ Capitalized terms introduced in **bold** are defined in [GLOSSARY.md](GLOSSARY.m
 - **Saved code goes stale.** Saving the agent's code and reusing it has already been proposed by Anthropic and implemented by several tools (§3). Saved code that reads a Downstream Server's responses breaks when the server renames a field or wraps a response. Tools that repair such breaks by letting an LLM edit the code can alter business logic to make checks pass. A 2026 study of autonomous test repair found agents converging through "assertion weakening and test-case deletion" (arXiv 2605.01471).
 - **Writes are the dangerous part.** A reused program that crashes halfway through, retries, or runs after a faulty repair can create duplicate tickets or post wrong messages. Reelier, the closest existing tool (§3), avoids this by running saved work read-only by default.
 
-How large these costs are is what the benchmark measures (§10). This document makes no numeric claim that it does not test.
+The benchmark measures how large these costs are (§10). This document makes no numeric claim that it does not test.
 
 ---
 
@@ -30,29 +30,29 @@ How large these costs are is what the benchmark measures (§10). This document m
 1. Reuse an agent's solved multi-tool task as a Workflow that runs with no LLM (tested by H1, §10.3).
 2. Keep Workflows running through Drift without editing their code: repair deterministically where one mapping stands out, and otherwise through the developer's agent or a Repair Model (tested by H2).
 3. Send no write outside a Write Plan that the developer approved or that meets the conditions for running unattended (tested by H3).
-4. Run from a fresh clone on a CI runner, and later from npm (tested by H4; publishing is tracked in [#23](https://github.com/cmlcz/pinfold/issues/23)).
+4. Run from a fresh clone on a CI runner, and from npm once it is published (tested by H4; see [#23](https://github.com/cmlcz/pinfold/issues/23)).
 
 ### 2.2 Scope of v1
 
-| Item                                                                                                                                                                                                                           | Status                                                     |
-| :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------- |
-| Gateway with six fixed tools (`search_sdk`, `run_sandbox`, `save_workflow`, `list_workflows`, `run_workflow`, `propose_repair`) and opt-in Exposed Workflows; stdio and Streamable HTTP Downstream Servers with static headers | Built                                                      |
-| Per-Tool Read/Write classification, TypeScript SDK generation from Baselines, SDK signature search                                                                                                                             | Built                                                      |
-| QuickJS/Wasm sandbox with time, memory and Tool-call limits                                                                                                                                                                    | Built                                                      |
-| Exploration Runs and the `save_workflow` checks                                                                                                                                                                                | Built                                                      |
-| Plan and Apply with Placeholders, Approval in the terminal and in an **Approval Dialog**, the Apply Journal, `pinfold resume` and `pinfold resolve`                                                                            | Built                                                      |
-| Baselines, Contracts, Response Adapters; deterministic Repair, Repair through the agent, and an optional Repair Model                                                                                                          | Built                                                      |
-| Developer-initiated **Baseline Migration** and marking a Baseline field optional ([ADR 0008](docs/adr/0008-baseline-migration-from-live-responses.md))                                                                         | Built                                                      |
-| Redacted, git-ignored Fixtures                                                                                                                                                                                                 | Built                                                      |
-| `pinfold stats`                                                                                                                                                                                                                | Built                                                      |
-| Property-based tests of H3 over the Drift Kit                                                                                                                                                                                  | Built                                                      |
-| **Drift Kit** with Sentry-, Linear- and GitHub-shaped servers and six **Drift Scenarios**                                                                                                                                      | Built                                                      |
-| The six benchmark tasks and their checkers (`src/packages/bench/`)                                                                                                                                                             | Built                                                      |
-| `pinfold bench` with the four Arms and the minimal loop, Claude Code and Codex CLI drivers ([ADR 0011](docs/adr/0011-pin-the-cli-drivers-through-a-local-proxy.md))                                                            | Built                                                      |
-| The lifecycle experiment with published results                                                                                                                                                                                | Planned: [#22](https://github.com/cmlcz/pinfold/issues/22) |
-| A `pinfold` command from a clone (`npm link`)                                                                                                                                                                                  | Built                                                      |
-| A build to JavaScript in `dist/`, run by CI through `npx` from the packed tarball                                                                                                                                              | Built                                                      |
-| npm publication                                                                                                                                                                                                                | Planned: [#23](https://github.com/cmlcz/pinfold/issues/23) |
+| Item                                                                                                                                                                                                                           | Status                                                          |
+| :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------- |
+| Gateway with six fixed tools (`search_sdk`, `run_sandbox`, `save_workflow`, `list_workflows`, `run_workflow`, `propose_repair`) and opt-in Exposed Workflows; stdio and Streamable HTTP Downstream Servers with static headers | Built                                                           |
+| Per-Tool Read/Write classification, TypeScript SDK generation from Baselines, SDK signature search                                                                                                                             | Built                                                           |
+| QuickJS/Wasm sandbox with time, memory and Tool-call limits                                                                                                                                                                    | Built                                                           |
+| Exploration Runs and the `save_workflow` checks                                                                                                                                                                                | Built                                                           |
+| Plan and Apply with Placeholders, Approval in the terminal and in an **Approval Dialog**, the Apply Journal, `pinfold resume` and `pinfold resolve`                                                                            | Built                                                           |
+| Baselines, Contracts, Response Adapters; deterministic Repair, Repair through the agent, and an optional Repair Model                                                                                                          | Built                                                           |
+| Developer-initiated **Baseline Migration** and marking a Baseline field optional ([ADR 0008](docs/adr/0008-baseline-migration-from-live-responses.md))                                                                         | Built                                                           |
+| Redacted, git-ignored Fixtures                                                                                                                                                                                                 | Built                                                           |
+| `pinfold stats`                                                                                                                                                                                                                | Built                                                           |
+| Property-based tests of H3 over the Drift Kit                                                                                                                                                                                  | Built                                                           |
+| **Drift Kit** with Sentry-, Linear- and GitHub-shaped servers and six **Drift Scenarios**                                                                                                                                      | Built                                                           |
+| The six benchmark tasks and their checkers (`src/packages/bench/`)                                                                                                                                                             | Built                                                           |
+| `pinfold bench` with the four Arms and the minimal loop, Claude Code and Codex CLI drivers ([ADR 0011](docs/adr/0011-pin-the-cli-drivers-through-a-local-proxy.md))                                                            | Built                                                           |
+| The lifecycle experiment with published results                                                                                                                                                                                | Built: [#22](https://github.com/cmlcz/pinfold/issues/22)        |
+| A `pinfold` command from a clone (`npm link`)                                                                                                                                                                                  | Built                                                           |
+| A build to JavaScript in `dist/`, run by CI through `npx` from the packed tarball                                                                                                                                              | Built                                                           |
+| npm publication                                                                                                                                                                                                                | Pending: `@cmlcz/pinfold` 0.1.0 is packed in CI, not yet on npm |
 
 ### 2.3 Non-goals
 
@@ -132,7 +132,7 @@ export async function main(input: { project: string; minEvents: number }) {
 }
 ```
 
-The code runs in the sandbox under the same Plan rules as any Workflow Run. The `createIssue` calls are recorded into a Write Plan and need Approval before Apply, so freshly written code cannot send a write unseen. `ticket.id` is itself a Placeholder, which may be returned or passed to another Write Tool, also nested inside its arguments. Large Sentry responses stay in the sandbox; only the return value reaches the agent, with Placeholders replaced by real results after Apply. pinfold records the Read Tool calls with their responses as Fixtures, and tracks which response fields the code read.
+The code runs in the sandbox under the same Plan rules as any Workflow Run. The `createIssue` calls are recorded into a Write Plan and need Approval before Apply, so freshly written code cannot send a write unseen. `ticket.id` is itself a Placeholder. It may be returned, or passed to another Write Tool, including nested inside that Tool's arguments. Large Sentry responses stay in the sandbox; only the return value reaches the agent, with Placeholders replaced by real results after Apply. pinfold records the Read Tool calls with their responses as Fixtures, and tracks which response fields the code read.
 
 The `searchIssues` call finds the tickets earlier runs filed, because each ticket's description holds the culprit it searches for. Deduplicating across runs is the Workflow's job: pinfold never deduplicates separate runs (§6.1).
 
@@ -157,7 +157,7 @@ Each Tool's Baseline was already pinned during the Exploration Run. A Tool that 
 
 A saved Workflow runs from cron or CI (`pinfold run triage_sentry --project web --minEvents 50`), or when the agent calls `run_workflow`. Each **Workflow Run** has two phases, with Approval between them when it is required:
 
-1. **Plan.** The code runs in the sandbox. Read Tools execute live. Each Write Tool call is recorded and returns an opaque Placeholder. `Date` stands still and `Math.random` is seeded for the whole run. The output is a Write Plan, identified by a hash of the run's code and input, its writes, and the Response Adapters it was built through:
+1. **Plan.** The code runs in the sandbox. Read Tools execute live. Each Write Tool call is recorded and returns an opaque Placeholder. `Date` is frozen and `Math.random` is seeded for the whole run. The output is a Write Plan, identified by a hash of the run's code and input, its writes, and the Response Adapters it was built through:
 
    ```text
    Write Plan 7f3c09a1b2c4: 2 writes, none sent yet
@@ -215,7 +215,7 @@ Two months later, Sentry's MCP server renames `count` to `eventCount`.
 
 ```text
  Agent client (Claude Code / Codex CLI / Antigravity CLI)      pinfold CLI (run, list, classify, plans, approve, decline,
-                 │ MCP (stdio)                                   resume, resolve, baseline, stats; bench planned)
+                 │ MCP (stdio)                                   resume, resolve, baseline, stats, bench)
                  ▼                                                               │
  ┌──────────────────────────────────── pinfold ──────────────────────────────────┴─────┐
  │  Gateway: search_sdk, run_sandbox, save_workflow, list_workflows, run_workflow,     │
@@ -243,9 +243,9 @@ Two months later, Sentry's MCP server renames `count` to `eventCount`.
 | Repair                          | Runs deterministic Repair first, then the Repair Model if configured, then the developer's agent; all proposals are checked the same way                              | Limited to the closed set of declarative ops ([ADR 0001](docs/adr/0001-repair-drift-with-response-adapters.md))                                                                                             |
 | Approval                        | Shows the Write Plan, the Adapter diff and value evidence; no MCP tool approves                                                                                       | Terminal everywhere; Approval Dialog where the client supports elicitation forms ([ADR 0009](docs/adr/0009-approval-through-mcp-elicitation.md))                                                            |
 | Apply and Apply Journal         | Sends an approved or unattended plan, stops at the first failed write, and holds a write that may have been sent in doubt                                             | `pinfold resume` skips writes the journal records as sent; `pinfold resolve` settles a write in doubt                                                                                                       |
-| Model client                    | Optional OpenRouter client for the Repair Model and, once built, the benchmark                                                                                        | Off unless a Repair Model is named and `OPENROUTER_API_KEY` is set                                                                                                                                          |
+| Model client                    | Optional OpenRouter client for the Repair Model and the benchmark                                                                                                     | Off unless a Repair Model is named and `OPENROUTER_API_KEY` is set                                                                                                                                          |
 
-**On-disk layout.** Workflows, Baselines, Contracts and Response Adapters live in `.workflows/` and are committed to version control. Fixtures live in `.workflows/fixtures/` and are git-ignored. Run history, approvals, the Apply Journal (SQLite through `node:sqlite`) and the logs that `stats` reads live in `.pinfold/`, also git-ignored. pinfold needs Node 22.18 or newer. It runs from a clone today; npm publication under the MIT license is planned (§2.2).
+**On-disk layout.** Workflows, Baselines, Contracts and Response Adapters live in `.workflows/` and are committed to version control. Fixtures live in `.workflows/fixtures/` and are git-ignored. Run history, approvals, the Apply Journal (SQLite through `node:sqlite`) and the logs that `stats` reads live in `.pinfold/`, also git-ignored. pinfold needs Node 22.18 or newer. It runs from a clone today; publication to npm as `@cmlcz/pinfold`, under the MIT license, is pending (§2.2).
 
 ---
 
@@ -253,7 +253,7 @@ Two months later, Sentry's MCP server renames `count` to `eventCount`.
 
 ### 6.1 What pinfold guarantees
 
-These hold as long as only the developer, not the agent, runs `pinfold approve`, `classify` and `resolve`, and edits `.pinfold/` and the classification in `pinfold.json` (§7, risk R1).
+These hold as long as only the developer, not the agent, runs `pinfold approve`, `classify`, `resolve` and `baseline optional`, and edits `.pinfold/`, `.workflows/baselines/` and the classification in `pinfold.json` (§7, risk R1).
 
 - **No write outside an approved or unattended plan.** A write reaches a Downstream Server only as part of a Write Plan that the developer approved, or that met the conditions for running unattended (§4.3). After Approval, a write is sent only if the rebuilt plan's ID equals the approved one.
 - **No Placeholder used as data.** A Placeholder may only be passed to a Write Tool or returned from `main`. Formatting a Placeholder, calling it, or passing it to a Read Tool fails the Plan, and a Workflow that does so cannot be saved. The SDK types every Write Tool result as `Placeholder<T>`, so the type check refuses code where one decides an `if`, a loop, a conditional, `!`, `&&`, `||` or `??`, a comparison, or a `switch`, or has its `typeof` taken.
@@ -266,7 +266,7 @@ These hold as long as only the developer, not the agent, runs `pinfold approve`,
 - **Every unattended write seen by the developer.** Approval is per version of a Workflow's code. Once approved, the code sends later Write Plans unattended, with other inputs and targets, as long as they stay within the Write Budget and no Response Adapter changed.
 - **Branches on Placeholders the type check cannot see.** A JavaScript Proxy cannot observe truthiness, `===` or `typeof` at run time, so the check is static ([#29](https://github.com/cmlcz/pinfold/issues/29)). A Placeholder that loses its type, through a cast to `any` or a call such as `Boolean(ticket.id)`, can still decide a branch unseen.
 - **Semantic drift without structural drift.** If `count` keeps its name and type but starts counting something else, no field is missing or mistyped, and nothing stops the run.
-- **Changed Read Tool arguments.** A planned write that no longer fits the arguments its Write Tool lists now stops the run before Approval, with nothing sent. A Read Tool is called live during the Plan, so a change in what it accepts shows only as a failed call.
+- **Changed Read Tool arguments.** A Read Tool is called live during the Plan, so a change in the arguments it accepts shows only as a failed call. Write Tools are covered: a planned write that no longer fits the arguments its Write Tool lists stops the run before Approval, with nothing sent.
 - **Drift beyond a single-response mapping.** A response that is now paged, or data that needs an extra Tool call, cannot be mapped by a Response Adapter. pinfold reports that it needs a manual edit and a Baseline Migration.
 - **Data leaving through Read Tool arguments.** The sandbox has no network, filesystem or environment access, but data can still leave through the arguments of a Read Tool call, such as a search query.
 - **Approval when the client answers for the developer.** A client hook or setting that answers elicitations without showing them approves every plan unread. The README warns against it.
@@ -320,7 +320,7 @@ These hold as long as only the developer, not the agent, runs `pinfold approve`,
 | Terminal Approval through `pinfold approve` | Yes                         | Yes                                                                                    | Yes                               |
 | Exposed Workflows visible as tools          | After a Gateway restart     | After a Gateway restart                                                                | Undocumented (use `run_workflow`) |
 | Repair through the developer's agent        | Yes                         | Yes                                                                                    | Yes                               |
-| Planned benchmark coverage                  | Measured through OpenRouter | Measured through OpenRouter                                                            | Compatibility check only          |
+| Benchmark coverage                          | Measured through OpenRouter | Measured through OpenRouter                                                            | Compatibility check only          |
 
 _Sources: each CLI's official documentation, verified 2026-10-18. Exposed Workflows are registered when the Gateway starts, and the Gateway sends no tool-list updates, so no client sees a newly exposed Workflow until it restarts pinfold._
 
@@ -341,18 +341,18 @@ It never estimates tokens saved, because pinfold cannot observe the host agent's
 
 ### 10.2 Benchmark (`pinfold bench`)
 
-_Partly built._ The work is split across four issues:
+_Built._ The work is split across four issues:
 
 - [#19](https://github.com/cmlcz/pinfold/issues/19): the GitHub-shaped server and the six tasks (built);
 - [#20](https://github.com/cmlcz/pinfold/issues/20): the harness and the minimal agent loop, for all four Arms (built: `pinfold bench`);
 - [#21](https://github.com/cmlcz/pinfold/issues/21): the Claude Code and Codex CLI drivers (built: `--driver claude-code|codex`, [ADR 0011](docs/adr/0011-pin-the-cli-drivers-through-a-local-proxy.md));
-- [#22](https://github.com/cmlcz/pinfold/issues/22): the lifecycle experiment.
+- [#22](https://github.com/cmlcz/pinfold/issues/22): the lifecycle experiment (built: results in [docs/results/bench-2026-10-28](docs/results/bench-2026-10-28/README.md)).
 
-It is built in three stages, each ending with results that stand on their own:
+It was built in three stages, each ending with results that stand on their own:
 
-1. **H2, no LLM.** The GitHub-shaped server, the six tasks and their checkers (#19), and the Drift Scenario suite run against deterministic Repair alone. Done: deterministic Repair alone repaired 46 of 53 runs of mappable scenarios (86.8%), with no wrong Repair ([results](docs/results/h2-2026-10-27.md)). On the changelog set, ported from github/github-mcp-server's trims of its responses, it first repaired 3 of 10 fields an Adapter could map back, missing every object that became one of its fields ([results](docs/results/h2-changelog-2026-10-28.md)). After #50 it proposes a wrap there, a rename back into an object a field was lifted out of, and a wrap of each element of an array. That makes three more fields mappable. It also checks values against every Fixture call when those with the drifted run's arguments hold too few, as when the run stopped at its first call. It then repaired all 13, with no wrong Repair, and the grid rose to 47 of 53 (88.7%) ([changelog](docs/results/h2-changelog-2026-10-31.md), [grid](docs/results/h2-2026-10-31.md)).
+1. **H2, no LLM.** The GitHub-shaped server, the six tasks and their checkers (#19), and the Drift Scenario suite run against deterministic Repair alone. Done: deterministic Repair alone repaired 46 of 53 runs of mappable scenarios (86.8%), with no wrong Repair ([results](docs/results/h2-2026-10-27.md)). On the changelog set, ported from changes in which github/github-mcp-server trimmed its responses, it first repaired 3 of 10 fields an Adapter could map back; it missed every object that had been reduced to one of its fields ([results](docs/results/h2-changelog-2026-10-28.md)). After #50 it proposes a wrap there, a rename back into an object a field was lifted out of, and a wrap of each element of an array. That makes three more fields mappable. It also checks values against every Fixture call when those with the drifted run's arguments hold too few, as when the run stopped at its first call. It then repaired all 13, with no wrong Repair, and the grid rose to 47 of 53 (88.7%) ([changelog](docs/results/h2-changelog-2026-10-31.md), [grid](docs/results/h2-2026-10-31.md)).
 2. **H1 and H5 on A2 and A4.** The harness with the minimal OpenRouter agent loop (#20), run on A2 against A4, and the lifecycle experiment for those two Arms (#22). H1 measured: A4 ran 85 to 500 times faster than A2 at the median, with no tokens ([results](docs/results/bench-2026-10-27/README.md)).
-3. **The other Arms and clients.** A1, A3, and the Claude Code and Codex CLI drivers (#21), added only once stages 1 and 2 have results. Measured: A4 succeeded on all 162 runs across the three drivers, against 76% to 100% for the agent Arms, and over the 100-run lifecycle A4 reached its Break-even Point against A2 at run 2 ([results](docs/results/bench-2026-10-28/README.md)).
+3. **The other Arms and clients.** A1, A3, and the Claude Code and Codex CLI drivers (#21), added only after stages 1 and 2 had results. Measured: A4 succeeded on all 162 runs across the three drivers, against 76% to 100% for the agent Arms, and over the 100-run lifecycle A4 reached its Break-even Point against A2 at run 2 ([results](docs/results/bench-2026-10-28/README.md)).
 
 The benchmark compares four **Arms** on identical tasks:
 
